@@ -3,6 +3,7 @@
   <title>DOAB — Newest EPUB</title>
   <id>urn:doab-expanded:DOAB — Newest EPUB</id>
   <updated>2026-11-05T00:00:00Z</updated>
+  <link rel="search" type="application/opensearchdescription+xml" href="opds-search.xml"/>
   <entry>
     <title>DOAB — Newest EPUB — page 1</title>
     <id>urn:doab-expanded:page-1</id>

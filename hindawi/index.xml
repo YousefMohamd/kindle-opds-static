@@ -3,6 +3,7 @@
   <title>Hindawi</title>
   <id>urn:hindawi:Hindawi</id>
   <updated>2026-11-04T00:00:00Z</updated>
+  <link rel="search" type="application/opensearchdescription+xml" href="opds-search.xml"/>
   <entry>
     <title>Hindawi — page 1</title>
     <id>urn:hindawi:page-1</id>
