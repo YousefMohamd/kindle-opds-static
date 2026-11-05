@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Hindawi</title>
+  <id>urn:hindawi:Hindawi</id>
+  <updated>2026-11-04T00:00:00Z</updated>
+  <entry>
+    <title>Hindawi — page 1</title>
+    <id>urn:hindawi:page-1</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p01.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 2</title>
+    <id>urn:hindawi:page-2</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p02.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 3</title>
+    <id>urn:hindawi:page-3</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p03.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 4</title>
+    <id>urn:hindawi:page-4</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p04.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 5</title>
+    <id>urn:hindawi:page-5</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p05.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 6</title>
+    <id>urn:hindawi:page-6</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p06.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 7</title>
+    <id>urn:hindawi:page-7</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p07.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 8</title>
+    <id>urn:hindawi:page-8</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p08.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 9</title>
+    <id>urn:hindawi:page-9</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p09.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 10</title>
+    <id>urn:hindawi:page-10</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p10.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 11</title>
+    <id>urn:hindawi:page-11</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p11.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 12</title>
+    <id>urn:hindawi:page-12</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p12.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 13</title>
+    <id>urn:hindawi:page-13</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p13.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 14</title>
+    <id>urn:hindawi:page-14</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p14.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 15</title>
+    <id>urn:hindawi:page-15</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p15.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 16</title>
+    <id>urn:hindawi:page-16</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p16.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 17</title>
+    <id>urn:hindawi:page-17</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p17.xml"/>
+  </entry>
+  <entry>
+    <title>Hindawi — page 18</title>
+    <id>urn:hindawi:page-18</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p18.xml"/>
+  </entry>
+</feed>
