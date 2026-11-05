@@ -1,0 +1,706 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Hindawi — page 14</title>
+  <id>urn:hindawi:Hindawi — page 14</id>
+  <updated>2026-11-04T00:00:00Z</updated>
+  <entry>
+    <title>عبقرية خالد</title>
+    <id>urn:hindawi:80306317</id>
+    <author><name>عباس محمود العقاد</name></author>
+    <category term="biographies"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80306317.epub"/>
+  </entry>
+  <entry>
+    <title>أبطال مصر</title>
+    <id>urn:hindawi:80313908</id>
+    <author><name>محمد السباعي</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80313908.epub"/>
+  </entry>
+  <entry>
+    <title>التعريف بشكسبير</title>
+    <id>urn:hindawi:80382405</id>
+    <author><name>عباس محمود العقاد</name></author>
+    <category term="biographies"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80382405.epub"/>
+  </entry>
+  <entry>
+    <title>طبيب الجريمة</title>
+    <id>urn:hindawi:80383928</id>
+    <author><name>إرنست ويليام هورنونج</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80383928.epub"/>
+  </entry>
+  <entry>
+    <title>كتاب المساكين</title>
+    <id>urn:hindawi:80383953</id>
+    <author><name>مصطفى صادق الرافعي</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80383953.epub"/>
+  </entry>
+  <entry>
+    <title>رَمْلٌ وزَبَدٌ</title>
+    <id>urn:hindawi:80390379</id>
+    <author><name>جبران خليل جبران</name></author>
+    <category term="poetry"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80390379.epub"/>
+  </entry>
+  <entry>
+    <title>الميكانيكا الكلاسيكية: مقدمة أساسية</title>
+    <id>urn:hindawi:80460295</id>
+    <author><name>مايكل كوهين</name></author>
+    <category term="science"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80460295.epub"/>
+  </entry>
+  <entry>
+    <title>خواطر الخيال وإملاء الوجدان</title>
+    <id>urn:hindawi:80480207</id>
+    <author><name>محمد كامل حجاج</name></author>
+    <category term="literary.criticism,literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80480207.epub"/>
+  </entry>
+  <entry>
+    <title>كيف ينهض العرب</title>
+    <id>urn:hindawi:80486960</id>
+    <author><name>عمر فاخوري</name></author>
+    <category term="politics,social.sciences"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80486960.epub"/>
+  </entry>
+  <entry>
+    <title>في المسرح المصري المعاصر</title>
+    <id>urn:hindawi:80509160</id>
+    <author><name>محمد مندور</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80509160.epub"/>
+  </entry>
+  <entry>
+    <title>مجددون ومجترون</title>
+    <id>urn:hindawi:80518364</id>
+    <author><name>مارون عبود</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80518364.epub"/>
+  </entry>
+  <entry>
+    <title>قصر آل العظم في دمشق</title>
+    <id>urn:hindawi:80538136</id>
+    <author><name>عيسى إسكندر المعلوف</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80538136.epub"/>
+  </entry>
+  <entry>
+    <title>القَلَنسوَة الأُرجوانية</title>
+    <id>urn:hindawi:80583686</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80583686.epub"/>
+  </entry>
+  <entry>
+    <title>أمير لبنان</title>
+    <id>urn:hindawi:80603582</id>
+    <author><name>يعقوب صرُّوف</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80603582.epub"/>
+  </entry>
+  <entry>
+    <title>لب التاريخ العام فيما صدر من غابر الأعوام</title>
+    <id>urn:hindawi:80605046</id>
+    <author><name>أحمد حسن</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80605046.epub"/>
+  </entry>
+  <entry>
+    <title>دخول الحمام مش زي خروجه</title>
+    <id>urn:hindawi:80617137</id>
+    <author><name>إبراهيم رمزي</name></author>
+    <category term="plays"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80617137.epub"/>
+  </entry>
+  <entry>
+    <title>ذخائر لبنان</title>
+    <id>urn:hindawi:80618203</id>
+    <author><name>إبراهيم الأسود</name></author>
+    <category term="history,geography"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80618203.epub"/>
+  </entry>
+  <entry>
+    <title>مصر والشام بين دولتين</title>
+    <id>urn:hindawi:80635758</id>
+    <author><name>جمال الدين الشيال</name></author>
+    <category term="history,novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80635758.epub"/>
+  </entry>
+  <entry>
+    <title>أَبُو صِيرٍ وَأَبُو قِيرٍ</title>
+    <id>urn:hindawi:80735394</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80735394.epub"/>
+  </entry>
+  <entry>
+    <title>الْأَرْنَبُ وَالصَّيَّادُ</title>
+    <id>urn:hindawi:80757571</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80757571.epub"/>
+  </entry>
+  <entry>
+    <title>قصّاص الأثر</title>
+    <id>urn:hindawi:80757592</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80757592.epub"/>
+  </entry>
+  <entry>
+    <title>أقزام جبابرة</title>
+    <id>urn:hindawi:80804060</id>
+    <author><name>مارون عبود</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80804060.epub"/>
+  </entry>
+  <entry>
+    <title>موبي ديك</title>
+    <id>urn:hindawi:80807315</id>
+    <author><name>هيرمان ميلفيل</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80807315.epub"/>
+  </entry>
+  <entry>
+    <title>غَفْلَةُ بُهْلُولٍ</title>
+    <id>urn:hindawi:80817035</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80817035.epub"/>
+  </entry>
+  <entry>
+    <title>هلاك آل بندراجون: حكمة الأب براون (٢٠)</title>
+    <id>urn:hindawi:80838157</id>
+    <author><name>جِلبرت كيث تشسترتون</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80838157.epub"/>
+  </entry>
+  <entry>
+    <title>في الأعماق السحيقة</title>
+    <id>urn:hindawi:80850390</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80850390.epub"/>
+  </entry>
+  <entry>
+    <title>الشبح ذو القدم المعوجة</title>
+    <id>urn:hindawi:80920418</id>
+    <author><name>روبرت بار</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80920418.epub"/>
+  </entry>
+  <entry>
+    <title>الحقيقة اللبنانية: خواطر وأحاديث</title>
+    <id>urn:hindawi:80929709</id>
+    <author><name>عمر فاخوري</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80929709.epub"/>
+  </entry>
+  <entry>
+    <title>دراسات في المذاهب الأدبية والاجتماعية</title>
+    <id>urn:hindawi:80940683</id>
+    <author><name>عباس محمود العقاد</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80940683.epub"/>
+  </entry>
+  <entry>
+    <title>العاشقة الروسية: روكامبول (الجزء السابع)</title>
+    <id>urn:hindawi:80940860</id>
+    <author><name>بونسون دو ترايل</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80940860.epub"/>
+  </entry>
+  <entry>
+    <title>باب القمر</title>
+    <id>urn:hindawi:80968603</id>
+    <author><name>إبراهيم رمزي</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80968603.epub"/>
+  </entry>
+  <entry>
+    <title>تونس الخضراء</title>
+    <id>urn:hindawi:80972957</id>
+    <author><name>تونس الخضراء</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/80972957.epub"/>
+  </entry>
+  <entry>
+    <title>الشاردة</title>
+    <id>urn:hindawi:81308482</id>
+    <author><name>جون جالسورذي</name></author>
+    <category term="plays"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81308482.epub"/>
+  </entry>
+  <entry>
+    <title>التَّصوف الإسلامي في الأدب والأخلاق</title>
+    <id>urn:hindawi:81316951</id>
+    <author><name>زكي مبارك</name></author>
+    <category term="philosophy"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81316951.epub"/>
+  </entry>
+  <entry>
+    <title>منهاج مفصل لدروس في العوامل التاريخية في بناء الأمة العربية على ما هي عليه اليوم</title>
+    <id>urn:hindawi:81319429</id>
+    <author><name>محمد شفيق غربال</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81319429.epub"/>
+  </entry>
+  <entry>
+    <title>موسوعة مصر القديمة (الجزء الرابع): عهد الهكسوس وتأسيس الإمبراطورية</title>
+    <id>urn:hindawi:81363602</id>
+    <author><name>سليم حسن</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81363602.epub"/>
+  </entry>
+  <entry>
+    <title>لغز شارع جيكوب</title>
+    <id>urn:hindawi:81369493</id>
+    <author><name>آر أوستن فريمان</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81369493.epub"/>
+  </entry>
+  <entry>
+    <title>الريحانيات</title>
+    <id>urn:hindawi:81380829</id>
+    <author><name>أمين الريحاني</name></author>
+    <category term="literary.criticism,literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81380829.epub"/>
+  </entry>
+  <entry>
+    <title>فكتوريا: ملكة الإنجليز وإمبراطورة الهند</title>
+    <id>urn:hindawi:81392607</id>
+    <author><name>يعقوب صرُّوف</name></author>
+    <category term="biographies,history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81392607.epub"/>
+  </entry>
+  <entry>
+    <title>المملوك الشارد</title>
+    <id>urn:hindawi:81407240</id>
+    <author><name>جُرجي زيدان</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81407240.epub"/>
+  </entry>
+  <entry>
+    <title>الباب المرصود</title>
+    <id>urn:hindawi:81483642</id>
+    <author><name>عمر فاخوري</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81483642.epub"/>
+  </entry>
+  <entry>
+    <title>ضجة فارغة</title>
+    <id>urn:hindawi:81503706</id>
+    <author><name>ويليام شكسبير</name></author>
+    <category term="plays"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81503706.epub"/>
+  </entry>
+  <entry>
+    <title>العباسة أخت الرشيد</title>
+    <id>urn:hindawi:81504027</id>
+    <author><name>جُرجي زيدان</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81504027.epub"/>
+  </entry>
+  <entry>
+    <title>نخب العدو</title>
+    <id>urn:hindawi:81517515</id>
+    <author><name>سعيد تقي الدين</name></author>
+    <category term="plays"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81517515.epub"/>
+  </entry>
+  <entry>
+    <title>الجامعة الإسلامية وأوربا</title>
+    <id>urn:hindawi:81525308</id>
+    <author><name>رفيق العظم</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81525308.epub"/>
+  </entry>
+  <entry>
+    <title>سأم</title>
+    <id>urn:hindawi:81537939</id>
+    <author><name>صلاح لبكي</name></author>
+    <category term="poetry"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81537939.epub"/>
+  </entry>
+  <entry>
+    <title>مطالعات في الكتب والحياة</title>
+    <id>urn:hindawi:81581424</id>
+    <author><name>عباس محمود العقاد</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81581424.epub"/>
+  </entry>
+  <entry>
+    <title>الأميرُ الحادِي وَالخَمْسُونَ</title>
+    <id>urn:hindawi:81584297</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81584297.epub"/>
+  </entry>
+  <entry>
+    <title>مصر والحضارة الإسلامية</title>
+    <id>urn:hindawi:81590631</id>
+    <author><name>زكي محمد حسن</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81590631.epub"/>
+  </entry>
+  <entry>
+    <title>حكم ناپوليون</title>
+    <id>urn:hindawi:81614607</id>
+    <author><name>محمد لطفي جمعة</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81614607.epub"/>
+  </entry>
+  <entry>
+    <title>وداعًا أيها الشرق</title>
+    <id>urn:hindawi:81713528</id>
+    <author><name>نقولا حداد</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81713528.epub"/>
+  </entry>
+  <entry>
+    <title>المعاهد المصرية في بيت المقدس</title>
+    <id>urn:hindawi:81714839</id>
+    <author><name>أحمد سامح الخالدي</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81714839.epub"/>
+  </entry>
+  <entry>
+    <title>أسْوَاقُ الذَّهَبِ</title>
+    <id>urn:hindawi:81725259</id>
+    <author><name>أحمد شوقي</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81725259.epub"/>
+  </entry>
+  <entry>
+    <title>أموال الموتى</title>
+    <id>urn:hindawi:81747580</id>
+    <author><name>جوزيف سميث فليتشر</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81747580.epub"/>
+  </entry>
+  <entry>
+    <title>لغز وادي بوسكومب</title>
+    <id>urn:hindawi:81792484</id>
+    <author><name>آرثر كونان دويل</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81792484.epub"/>
+  </entry>
+  <entry>
+    <title>أبو ريدة وكعب الخير</title>
+    <id>urn:hindawi:81793639</id>
+    <author><name>يعقوب صنوع</name></author>
+    <category term="plays"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81793639.epub"/>
+  </entry>
+  <entry>
+    <title>دمشق مدينة السحر والشعر</title>
+    <id>urn:hindawi:81802595</id>
+    <author><name>محمد كرد علي</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81802595.epub"/>
+  </entry>
+  <entry>
+    <title>الصهيونية: ملخص تاريخها، غايتها وامتدادها حتى سنة ١٩٠٥م</title>
+    <id>urn:hindawi:81802831</id>
+    <author><name>نجيب نصَّار</name></author>
+    <category term="politics,history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81802831.epub"/>
+  </entry>
+  <entry>
+    <title>مغامرة المنزل الخالي</title>
+    <id>urn:hindawi:81830758</id>
+    <author><name>آرثر كونان دويل</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81830758.epub"/>
+  </entry>
+  <entry>
+    <title>التاريخ يفسر التضخم والتقلص</title>
+    <id>urn:hindawi:81848130</id>
+    <author><name>زكريا مهران</name></author>
+    <category term="economics"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81848130.epub"/>
+  </entry>
+  <entry>
+    <title>فرانكنشتاين</title>
+    <id>urn:hindawi:81850313</id>
+    <author><name>ماري شيلي</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81850313.epub"/>
+  </entry>
+  <entry>
+    <title>وحي الكلب: شكُّ الأب براون (٢٧)</title>
+    <id>urn:hindawi:81863920</id>
+    <author><name>جِلبرت كيث تشسترتون</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81863920.epub"/>
+  </entry>
+  <entry>
+    <title>الرحلة اليابانية</title>
+    <id>urn:hindawi:81869031</id>
+    <author><name>علي أحمد الجرجاوي</name></author>
+    <category term="travel.literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81869031.epub"/>
+  </entry>
+  <entry>
+    <title>قاموس العادات والتقاليد والتعابير المصرية</title>
+    <id>urn:hindawi:81902572</id>
+    <author><name>أحمد أمين</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81902572.epub"/>
+  </entry>
+  <entry>
+    <title>الغادة الإنجليزية</title>
+    <id>urn:hindawi:81936309</id>
+    <author><name>لبيبة ماضي هاشم</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81936309.epub"/>
+  </entry>
+  <entry>
+    <title>مرح الوليد</title>
+    <id>urn:hindawi:81947462</id>
+    <author><name>علي الجارم</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81947462.epub"/>
+  </entry>
+  <entry>
+    <title>فلسفة التفاحة: جاذبية نيوتن</title>
+    <id>urn:hindawi:81962524</id>
+    <author><name>نقولا حداد</name></author>
+    <category term="science"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81962524.epub"/>
+  </entry>
+  <entry>
+    <title>إغواء تافرنيك</title>
+    <id>urn:hindawi:81964971</id>
+    <author><name>إدوارد فيليبس أوبنهايم</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/81964971.epub"/>
+  </entry>
+  <entry>
+    <title>قصة السيد بلاتنر</title>
+    <id>urn:hindawi:82031358</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82031358.epub"/>
+  </entry>
+  <entry>
+    <title>الترقيم وعلاماته في اللغة العربية</title>
+    <id>urn:hindawi:82047270</id>
+    <author><name>أحمد زكي</name></author>
+    <category term="linguistics"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82047270.epub"/>
+  </entry>
+  <entry>
+    <title>ديوان الأسرار والرموز</title>
+    <id>urn:hindawi:82053596</id>
+    <author><name>محمد إقبال</name></author>
+    <category term="poetry"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82053596.epub"/>
+  </entry>
+  <entry>
+    <title>العقل الباطن</title>
+    <id>urn:hindawi:82064868</id>
+    <author><name>سلامة موسى</name></author>
+    <category term="psychology"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82064868.epub"/>
+  </entry>
+  <entry>
+    <title>عبقرية عمر</title>
+    <id>urn:hindawi:82068526</id>
+    <author><name>عباس محمود العقاد</name></author>
+    <category term="biographies"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82068526.epub"/>
+  </entry>
+  <entry>
+    <title>محاضرات عن إبراهيم المازني</title>
+    <id>urn:hindawi:82091393</id>
+    <author><name>محمد مندور</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82091393.epub"/>
+  </entry>
+  <entry>
+    <title>معضلة الزنزانة رقم ١٣</title>
+    <id>urn:hindawi:82094946</id>
+    <author><name>جاك فوتريل</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82094946.epub"/>
+  </entry>
+  <entry>
+    <title>بَطَل أَتِينا</title>
+    <id>urn:hindawi:82096470</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82096470.epub"/>
+  </entry>
+  <entry>
+    <title>اللغة العربية في أوروبا</title>
+    <id>urn:hindawi:82405713</id>
+    <author><name>فيليب دي طرازي</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82405713.epub"/>
+  </entry>
+  <entry>
+    <title>عذراء الهند</title>
+    <id>urn:hindawi:82416046</id>
+    <author><name>أحمد شوقي</name></author>
+    <category term="literature,novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82416046.epub"/>
+  </entry>
+  <entry>
+    <title>المحالفة الثلاثية في المملكة الحيوانية</title>
+    <id>urn:hindawi:82418169</id>
+    <author><name>أمين الريحاني</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82418169.epub"/>
+  </entry>
+  <entry>
+    <title>أوهام شعراء العرب في المعاني</title>
+    <id>urn:hindawi:82470468</id>
+    <author><name>أحمد تيمور باشا</name></author>
+    <category term="literary.criticism"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82470468.epub"/>
+  </entry>
+  <entry>
+    <title>زهرة الأوركيد الغريبة</title>
+    <id>urn:hindawi:82472790</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82472790.epub"/>
+  </entry>
+  <entry>
+    <title>مغامرة البقعة الثانية</title>
+    <id>urn:hindawi:82484081</id>
+    <author><name>آرثر كونان دويل</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82484081.epub"/>
+  </entry>
+  <entry>
+    <title>الاشتراكية</title>
+    <id>urn:hindawi:82490691</id>
+    <author><name>سلامة موسى</name></author>
+    <category term="social.sciences"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82490691.epub"/>
+  </entry>
+  <entry>
+    <title>أسرار مصر</title>
+    <id>urn:hindawi:82495926</id>
+    <author><name>نقولا حداد</name></author>
+    <category term="novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82495926.epub"/>
+  </entry>
+  <entry>
+    <title>الْأَرْنَبُ الْعَاصِي</title>
+    <id>urn:hindawi:82514958</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82514958.epub"/>
+  </entry>
+  <entry>
+    <title>رحلة مِشعل المَحمل</title>
+    <id>urn:hindawi:82613636</id>
+    <author><name>محمد صادق باشا</name></author>
+    <category term="travel.literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82613636.epub"/>
+  </entry>
+  <entry>
+    <title>دُوَلُ العَـرب وعُظَماء الإسلامِ</title>
+    <id>urn:hindawi:82642829</id>
+    <author><name>أحمد شوقي</name></author>
+    <category term="poetry"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82642829.epub"/>
+  </entry>
+  <entry>
+    <title>المساواة</title>
+    <id>urn:hindawi:82646393</id>
+    <author><name>مي زيادة</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82646393.epub"/>
+  </entry>
+  <entry>
+    <title>صَيَّادُ الْغِزْلانِ</title>
+    <id>urn:hindawi:82685090</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82685090.epub"/>
+  </entry>
+  <entry>
+    <title>حرب العوالم</title>
+    <id>urn:hindawi:82686040</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82686040.epub"/>
+  </entry>
+  <entry>
+    <title>الإرسالية القبطية الحبشية في البلاد الروسية: نيافة الأنبا متاءوس في بلاد الروس</title>
+    <id>urn:hindawi:82702853</id>
+    <author><name>أنطون نجيب</name></author>
+    <category term="history"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82702853.epub"/>
+  </entry>
+  <entry>
+    <title>فضيحة الأب براون: فضيحة الأب براون (٤٣)</title>
+    <id>urn:hindawi:82717191</id>
+    <author><name>جِلبرت كيث تشسترتون</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82717191.epub"/>
+  </entry>
+  <entry>
+    <title>جَبَّارَةُ الْغَابَةِ</title>
+    <id>urn:hindawi:82724081</id>
+    <author><name>كامل كيلاني</name></author>
+    <category term="children.stories"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82724081.epub"/>
+  </entry>
+  <entry>
+    <title>شيطان بنتاءور: أو لِبَد لقمانْ وهُدهُد سُلَيمان</title>
+    <id>urn:hindawi:82727906</id>
+    <author><name>أحمد شوقي</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82727906.epub"/>
+  </entry>
+  <entry>
+    <title>مرور في أرض الهناء ونبأ من عالم البقاء</title>
+    <id>urn:hindawi:82731791</id>
+    <author><name>شكري الخوري</name></author>
+    <category term="literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82731791.epub"/>
+  </entry>
+  <entry>
+    <title>لغز الخيط القرمزي</title>
+    <id>urn:hindawi:82793686</id>
+    <author><name>جاك فوتريل</name></author>
+    <category term="detective.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82793686.epub"/>
+  </entry>
+  <entry>
+    <title>ذكريات باريس</title>
+    <id>urn:hindawi:82796808</id>
+    <author><name>زكي مبارك</name></author>
+    <category term="travel.literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82796808.epub"/>
+  </entry>
+  <entry>
+    <title>مملكة الفحم</title>
+    <id>urn:hindawi:82835153</id>
+    <author><name>أبتون سِنكلير</name></author>
+    <category term="literature,novels"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82835153.epub"/>
+  </entry>
+  <entry>
+    <title>حلمٌ بمعركة هرمجدون</title>
+    <id>urn:hindawi:82839620</id>
+    <author><name>هربرت جورج ويلز</name></author>
+    <category term="science.fiction"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82839620.epub"/>
+  </entry>
+  <entry>
+    <title>جدد وقدماء: دراسات ونقد ومناقشات</title>
+    <id>urn:hindawi:82857304</id>
+    <author><name>مارون عبود</name></author>
+    <category term="literary.criticism,literature"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.hindawi.org/books/82857304.epub"/>
+  </entry>
+</feed>
