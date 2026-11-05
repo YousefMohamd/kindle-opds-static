@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>DOAB — Newest EPUB</title>
+  <id>urn:doab-expanded:DOAB — Newest EPUB</id>
+  <updated>2026-11-05T00:00:00Z</updated>
+  <entry>
+    <title>DOAB — Newest EPUB — page 1</title>
+    <id>urn:doab-expanded:page-1</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p01.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 2</title>
+    <id>urn:doab-expanded:page-2</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p02.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 3</title>
+    <id>urn:doab-expanded:page-3</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p03.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 4</title>
+    <id>urn:doab-expanded:page-4</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p04.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 5</title>
+    <id>urn:doab-expanded:page-5</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p05.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 6</title>
+    <id>urn:doab-expanded:page-6</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p06.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 7</title>
+    <id>urn:doab-expanded:page-7</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p07.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 8</title>
+    <id>urn:doab-expanded:page-8</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p08.xml"/>
+  </entry>
+  <entry>
+    <title>DOAB — Newest EPUB — page 9</title>
+    <id>urn:doab-expanded:page-9</id>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog" href="p09.xml"/>
+  </entry>
+</feed>
