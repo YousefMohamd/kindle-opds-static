@@ -1,0 +1,97 @@
+# Telegram book index — scheduled sync (merged into kindle-opds-static).
+#
+# Runs the Telegram indexer (telegram/) and publishes its section to
+# Cloudflare Pages at /telegram/ (site/telegram/ in this repo, reached
+# through the _redirects rewrite at the repo root).
+#
+# Schedule: daily at 03:00 UTC, plus manual runs (workflow_dispatch).
+# The job is --backfill: new posts first, then ONE block of 3000 posts
+# below the oldest indexed post per channel per run, so the deep history
+# beyond the local run's 3000-post cap fills in gradually over successive
+# runs. A channel is complete when a block reaches post 1 or returns
+# fewer than 3000 posts; once every channel is complete, backfill runs
+# only check for new posts — the same as --new-only — and this workflow
+# can be switched to `tbi index --new-only`.
+#
+# Protection layer (same as the OPDS deploy): per-channel isolation (one
+# channel failing never stops the others), the DB is validated before
+# publishing, the site is built in a staging directory and swapped in
+# atomically (only if valid), the last-good site stays live on failure,
+# and every run writes a report (index-report.md) that is published even
+# when the run fails.
+#
+# No API credentials, no Telegram login, no always-on server, no Mac:
+# the job runs on GitHub's runner, reads public t.me/s/ previews only
+# (metadata only — no book files are downloaded), and publishes a static
+# site. The seed index.db is committed in telegram/ by design.
+name: telegram-sync
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# Two telegram-sync runs must never overlap: they share index.db.
+concurrency:
+  group: kindle-opds-static-telegram-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the indexer
+        run: pip install -e .
+
+      - name: Seed check
+        run: |
+          if [ ! -f index.db ]; then
+            echo "::error::telegram/index.db is missing — the scheduled job cannot start without the seed index (push it first, see telegram/PUSH_GUIDE.md)."
+            exit 1
+          fi
+
+      - name: Index (backfill in blocks)
+        timeout-minutes: 100
+        run: tbi index --backfill --backfill-block 3000
+
+      - name: Build the static site (staging)
+        run: |
+          tbi export-static --db index.db --out ../site/telegram.new --report index-report.md
+          cp ../site/telegram/index.html ../site/telegram.new/index.html
+          ls -la ../site/telegram.new
+
+      - name: Validate before publish
+        run: tbi validate --db index.db --json ../site/telegram.new/index.json
+
+      - name: Publish atomically
+        working-directory: .
+        run: |
+          rm -rf site/telegram
+          mv site/telegram.new site/telegram
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telegram/index.db telegram/index-report.md site/telegram/
+          git commit -m "[telegram-sync] daily index update" || echo "nothing to commit"
+          git push
+
+      - name: Report the failure (keeps the last-good site live)
+        if: failure()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index-report.md || true
+          git commit -m "[telegram-sync] run failed — report only" || echo "nothing to commit"
+          git push || echo "could not push the failure report"

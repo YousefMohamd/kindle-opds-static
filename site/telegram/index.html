@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>فهرس كتب تيليجرام — Telegram Book Index</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+         max-width: 760px; margin: 0 auto; padding: 1.2rem;
+         line-height: 1.7; color: #1c1c1c; background: #fdfdf8; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.2rem; }
+  .sub { color: #555; font-size: 0.95rem; margin-top: 0; }
+  .stats { color: #555; font-size: 0.9rem; }
+  input[type="search"], select {
+    font: inherit; padding: 0.5rem 0.7rem; border: 1px solid #999;
+    border-radius: 6px; background: #fff; }
+  input[type="search"] { width: 100%; box-sizing: border-box; }
+  .filters { display: flex; gap: 0.6rem; margin-top: 0.7rem; flex-wrap: wrap; }
+  .filters select { flex: 1; min-width: 9rem; }
+  #count { margin: 0.9rem 0 0.3rem; color: #444; }
+  ul { list-style: none; padding: 0; }
+  li { border-bottom: 1px solid #ddd; padding: 0.7rem 0; }
+  .title { font-weight: 700; }
+  .meta { color: #555; font-size: 0.9rem; }
+  .badge { display: inline-block; background: #e8e4d8; border-radius: 4px;
+           padding: 0 0.4rem; font-size: 0.85rem; margin-inline-start: 0.4rem; }
+  .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
+           border-radius: 6px; padding: 0.8rem 1rem; }
+  a { color: #0b5cad; }
+  footer { margin-top: 2rem; color: #666; font-size: 0.85rem;
+           border-top: 1px solid #ddd; padding-top: 0.8rem; }
+</style>
+</head>
+<body>
+<h1>فهرس كتب تيليجرام</h1>
+<p class="sub">Telegram Book Index — فهرس ميتاداتا فقط: عنوان الكتاب وصيغته وحجمه
+ورابط البوست الأصلي في تيليجرام. لا ملفات كتب مستضافة هنا؛ التنزيل يتم من
+تيليجرام نفسه. المصادر قانونية فقط (كتب قديمة / مرخّصة / ملفات شخصية).</p>
+
+<input type="search" id="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="بحث">
+<div class="filters">
+  <select id="fmt" aria-label="الصيغة">
+    <option value="">كل الصيغ</option>
+  </select>
+  <select id="src" aria-label="المصدر">
+    <option value="">كل المصادر</option>
+  </select>
+</div>
+<p id="count" class="stats">جارٍ تحميل الفهرس…</p>
+<p id="notfound" class="notfound" hidden></p>
+<ul id="results"></ul>
+<footer>
+  <p id="stats" class="stats"></p>
+  <p><a href="index-report.md">تقرير الفهرسة</a> — القنوات المفهرسة، والفشل،
+  والقنوات بلا كتب، والقنوات الضخمة. •
+  <a href="https://github.com/YousefMohamd/kindle-opds-static">المشروع على GitHub</a> •
+  <a href="../">← المكتبات (الكتالوج الرئيسي)</a></p>
+</footer>
+
+<script>
+"use strict";
+// Same normalization as tbi.books.normalize_arabic: NFKC, strip
+// tashkeel + tatweel, unify alef forms, ة->ه, ى->ي. Display text is
+// never changed; this is only for matching, so a plain query like
+// "متون" finds a filename stored with full tashkeel.
+function norm(s) {
+  return (s || "").normalize("NFKC")
+    // Same set as Python: [\u064B-\u0652\u0670\u0640] (harakat,
+    // shadda, superscript alef, tatweel). Written as escapes on
+    // purpose: literal Arabic chars here once silently widened the
+    // range to U+0672 and ate Arabic-Indic digits.
+    .replace(/[\u064B-\u0652\u0670\u0640]/g, "")
+    .replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
+    .toLowerCase();
+}
+
+let DATA = null;
+const qEl = document.getElementById("q");
+const fmtEl = document.getElementById("fmt");
+const srcEl = document.getElementById("src");
+const countEl = document.getElementById("count");
+const notfoundEl = document.getElementById("notfound");
+const listEl = document.getElementById("results");
+const statsEl = document.getElementById("stats");
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function render() {
+  if (!DATA) return;
+  const q = norm(qEl.value.trim());
+  const fmt = fmtEl.value;
+  const src = srcEl.value;
+  const hits = [];
+  for (const b of DATA.books) {
+    if (fmt && b.ext !== fmt) continue;
+    if (src && b.source !== src) continue;
+    if (q) {
+      const hay = norm(b.title + " " + (b.author || "") + " " + b.filename);
+      if (!hay.includes(q)) continue;
+    }
+    hits.push(b);
+    if (hits.length >= 100) break;
+  }
+  countEl.textContent = q || fmt || src
+    ? "النتائج: " + hits.length + (hits.length >= 100 ? " (أول 100 فقط — ضيّق البحث)" : "")
+    : "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
+  // "Not in the index yet": the book may live in a channel whose deep
+  // history is still being backfilled, or in a channel nobody added.
+  // A priority request (via the Telegram bot, Phase 2) searches that
+  // channel directly and queues its backfill first — see the README.
+  if (q && hits.length === 0) {
+    notfoundEl.hidden = false;
+    notfoundEl.innerHTML = "«" + esc(qEl.value.trim()) +
+      "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
+      "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
+      "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
+      "بوت تيليجرام (المرحلة 2 — لسه ما اتبنتش): البوت بيدوّر في القناة " +
+      "مباشرة ويرجع لك الرابط فورًا لو لقاه، ولو ما لقاهوش بيحط القناة " +
+      "في أول طابور الفهرسة.";
+  } else {
+    notfoundEl.hidden = true;
+    notfoundEl.textContent = "";
+  }
+  listEl.innerHTML = hits.map(b => {
+    const meta = [b.author, b.source, b.size, b.date].filter(Boolean).join(" • ");
+    return "<li><div class=\"title\">" + esc(b.title) +
+      "<span class=\"badge\">" + esc(b.ext) + "</span></div>" +
+      (meta ? "<div class=\"meta\">" + esc(meta) + "</div>" : "") +
+      "<div><a href=\"" + esc(b.url) + "\" target=\"_blank\" rel=\"noopener\">" +
+      "فتح البوست في تيليجرام ↗</a>" +
+      (b.sources > 1 ? " <span class=\"meta\">(موجود في " + b.sources + " مصادر)</span>" : "") +
+      "</div></li>";
+  }).join("");
+}
+
+fetch("index.json").then(r => {
+  if (!r.ok) throw new Error("index.json not found (HTTP " + r.status + ")");
+  return r.json();
+}).then(data => {
+  DATA = data;
+  const fmts = [...new Set(data.books.map(b => b.ext))].sort();
+  for (const f of fmts) {
+    const o = document.createElement("option");
+    o.value = f; o.textContent = f; fmtEl.appendChild(o);
+  }
+  for (const s of (data.sources || [])) {
+    const o = document.createElement("option");
+    o.value = s.name; o.textContent = s.name; srcEl.appendChild(o);
+  }
+  const t = data.totals || {};
+  statsEl.textContent = "الفهرس: " + (t.books || 0) + " كتاب مميز، " +
+    (t.files || 0) + " ملف، " + (t.posts || 0) + " بوست، من " +
+    (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated || "؟");
+  countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
+  render();
+}).catch(err => {
+  countEl.textContent = "تعذّر تحميل الفهرس: " + err.message;
+});
+
+qEl.addEventListener("input", render);
+fmtEl.addEventListener("change", render);
+srcEl.addEventListener("change", render);
+</script>
+</body>
+</html>

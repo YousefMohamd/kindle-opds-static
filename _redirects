@@ -1,0 +1,12 @@
+# Cloudflare Pages rewrites (this repo's Pages project serves the repo
+# ROOT, so the Telegram section lives at site/telegram/ on disk).
+#
+# The Telegram search page is published at /telegram/ (the URL the
+# Kindle OPDS catalog links to), rewritten internally to
+# /site/telegram/ — a 200 rewrite, not a redirect, so the URL stays
+# /telegram/ and the page's relative fetch("index.json") keeps working.
+# The OPDS feeds at the root (/khazendar/, /sahwa/, /electronic/,
+# /hindawi/, /doab/, /index.xml) are untouched by this rule.
+# If the rewrite ever stops working, the section is still directly
+# reachable at /site/telegram/.
+/telegram/*  /site/telegram/:splat  200

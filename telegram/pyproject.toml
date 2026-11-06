@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telegram-book-index"
+version = "0.3.0"
+description = "Standalone index of books shared in public Telegram channels and groups. No API credentials, no server."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "beautifulsoup4>=4.11",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+tbi = "tbi.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tbi*"]

@@ -1,0 +1,31 @@
+# Telegram book index (telegram/) — scoped rules only. The OPDS files
+# at the repo root (index.xml, khazendar/, sahwa/, electronic/,
+# hindawi/, doab/, functions/) are not matched by any rule here.
+
+# SQLite sidecars are never committed (they are rebuilt on open).
+telegram/index.db-wal
+telegram/index.db-shm
+telegram/*.db-wal
+telegram/*.db-shm
+
+# The index DB itself IS committed by design: it is the seed the
+# scheduled GitHub Actions job resumes from (public-channel metadata
+# only — no account, no private chats). Local runs share the same
+# file. Other *.db files stay out.
+telegram/*.db
+!telegram/index.db
+
+# python
+telegram/.venv/
+telegram/__pycache__/
+telegram/**/*.pyc
+telegram/*.egg-info/
+telegram/build/
+telegram/dist/
+
+# exports may contain personal chat data — never commit them
+telegram/exports/
+telegram/result.json
+
+# Staging dir for the atomic publish in the telegram-sync workflow.
+site/telegram.new/
