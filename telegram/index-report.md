@@ -1,61 +1,61 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-07T17:08:21.593476+00:00 — **Status:** failed — **Mode:** api-backfill — **Duration:** 1m 4s
+**Date:** 2026-11-07T17:35:24.199067+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 6m 2s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **111313 posts, 30858 book files** (26814 distinct books)
+- **Channels with data: 51 of 51 walkable** — **140352 posts, 38078 book files** (33734 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
-- **Low-density channels: 3** (fewer than 1 book file per 100 posts — kept active, see below)
+- **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
 - **Not yet indexed: 0 channels**
-- **Failures this run: 43** (see below; a failed channel keeps its last-good data)
+- **Failures this run: 0** (see below; a failed channel keeps its last-good data)
 - **Groups indexed from exports: 0** — 168 more groups are commented out in channels.yaml, each needs a Desktop JSON export
 
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
 | [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 9 | 9 | api-backfill |
 | [daownbook](https://t.me/daownbook) | 0 | 0 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 3 | 3 | api-backfill |
 | [kindlbook](https://t.me/kindlbook) | 0 | 0 | api-backfill |
 | [Kindle2](https://t.me/Kindle2) | 0 | 0 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 0 | 0 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 0 | 0 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 1 | 1 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 1 | 0 | api-backfill |
 | [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | api-backfill |
-| [ekraly](https://t.me/ekraly) | 0 | 0 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 0 | 0 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 0 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 0 | 0 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 3004 | 45 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 3001 | 31 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 2 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 3002 | 1006 | api-backfill |
 | [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | api-backfill |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 3 | 0 | api-backfill |
 | [eatae](https://t.me/eatae) | 0 | 0 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 0 | 0 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 3004 | 179 | api-backfill |
 | [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | api-backfill |
 | [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | api-backfill |
 | [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | api-backfill |
 | [book_juice](https://t.me/book_juice) | 0 | 0 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | api-backfill |
-| [books_p](https://t.me/books_p) | 0 | 0 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 0 | 0 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 3000 | 2551 | api-backfill |
+| [books_p](https://t.me/books_p) | 3004 | 260 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 1582 | 126 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 3000 | 9 | api-backfill |
 | [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | api-backfill |
 | [nourbook](https://t.me/nourbook) | 0 | 0 | api-backfill |
-| [roayati](https://t.me/roayati) | 0 | 0 | api-backfill |
+| [roayati](https://t.me/roayati) | 2 | 0 | api-backfill |
 | [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | api-backfill |
 | [Sumarians](https://t.me/Sumarians) | 0 | 0 | api-backfill |
 | [twinkling4](https://t.me/twinkling4) | 0 | 0 | api-backfill |
 | [your_books](https://t.me/your_books) | 0 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 421 | 0 | api-backfill |
 | [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | api-backfill |
 | [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | api-backfill |
 | [jad32](https://t.me/jad32) | 0 | 0 | api-backfill |
 | [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | api-backfill |
-| [boook1023](https://t.me/boook1023) | 0 | 0 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 0 | 0 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 3000 | 0 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 3000 | 3000 | api-backfill |
 | [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | api-backfill |
 | [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | api-backfill |
 | [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | api-backfill |
@@ -66,52 +66,52 @@
 | Channel | Posts | Book files | Scope |
 |---|---|---|---|
 | [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 3000 | 244 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 3421 | 244 | api-backfill |
 | [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 202 | 38 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 6014 | 675 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 9018 | 854 | api-backfill |
 | [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | api-backfill |
 | [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | api-backfill |
 | [arabicEread](https://t.me/arabicEread) | 3 | 0 | — |
 | [book_juice](https://t.me/book_juice) | 4808 | 226 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 6000 | 5146 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 9000 | 7697 | api-backfill |
 | [Bookkn](https://t.me/Bookkn) | 5 | 0 | — |
-| [books_p](https://t.me/books_p) | 3000 | 541 | api-backfill |
+| [books_p](https://t.me/books_p) | 6004 | 801 | api-backfill |
 | [booksguy](https://t.me/booksguy) | 2 | 0 | — |
-| [boook1023](https://t.me/boook1023) | 3000 | 4 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 6000 | 4 | api-backfill |
 | [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | api-backfill |
 | [daownbook](https://t.me/daownbook) | 3679 | 1794 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 5071 | 1053 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 5072 | 1054 | api-backfill |
 | [eatae](https://t.me/eatae) | 3904 | 386 | api-backfill |
 | [eBookRoom](https://t.me/eBookRoom) | 1670 | 0 | — |
 | [Ebookspdfdownload](https://t.me/Ebookspdfdownload) | 2 | 0 | — |
-| [ekraly](https://t.me/ekraly) | 6001 | 67 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 3000 | 1469 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 3000 | 191 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1182 | 1605 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 9005 | 112 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 6000 | 4469 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4582 | 317 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | api-backfill |
 | [jad32](https://t.me/jad32) | 192 | 109 | api-backfill |
 | [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | api-backfill |
 | [Kindle2](https://t.me/Kindle2) | 534 | 19 | api-backfill |
 | [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | api-backfill |
 | [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | api-backfill |
 | [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 6001 | 292 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 3000 | 36 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 9002 | 323 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 6000 | 45 | api-backfill |
 | [Maktademia](https://t.me/Maktademia) | 1 | 0 | — |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1718 | 1 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | api-backfill |
 | [Merciful111Fate](https://t.me/Merciful111Fate) | 20 | 0 | api-backfill |
 | [Motamayezon7](https://t.me/Motamayezon7) | 65 | 0 | — |
 | [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | api-backfill |
 | [nourbook](https://t.me/nourbook) | 362 | 0 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 4953 | 125 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 4955 | 125 | api-backfill |
 | [Ouloalelm](https://t.me/Ouloalelm) | 278 | 85 | api-backfill |
 | [premium_ebooks](https://t.me/premium_ebooks) | 1172 | 0 | — |
 | [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | api-backfill |
-| [roayati](https://t.me/roayati) | 521 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 6000 | 5162 | api-backfill |
+| [roayati](https://t.me/roayati) | 523 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 9002 | 6168 | api-backfill |
 | [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | api-backfill |
 | [Sumarians](https://t.me/Sumarians) | 52 | 0 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 2009 | 169 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 2010 | 169 | api-backfill |
 | [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | api-backfill |
 | [twinkling4](https://t.me/twinkling4) | 921 | 287 | api-backfill |
 | [your_books](https://t.me/your_books) | 126 | 0 | api-backfill |
@@ -123,7 +123,7 @@
 - [Merciful111Fate](https://t.me/Merciful111Fate) — 20 posts, 0 book files
 - [n_bhs2](https://t.me/n_bhs2) — 2 posts, 0 book files
 - [nourbook](https://t.me/nourbook) — 362 posts, 0 book files
-- [roayati](https://t.me/roayati) — 521 posts, 0 book files
+- [roayati](https://t.me/roayati) — 523 posts, 0 book files
 - [sharkelmoreeg](https://t.me/sharkelmoreeg) — 2 posts, 0 book files
 - [Sumarians](https://t.me/Sumarians) — 52 posts, 0 book files
 - [your_books](https://t.me/your_books) — 126 posts, 0 book files
@@ -141,67 +141,26 @@ Removed from the active config after the full first run (2026-11-06): 0 book fil
 - [eBookRoom](https://t.me/eBookRoom) — 1670 posts, 0 book files
 - [premium_ebooks](https://t.me/premium_ebooks) — 1172 posts, 0 book files
 
-## Low-density channels (3)
+## Low-density channels (4)
 
 Kept active, but they yield fewer than 1 book file per 100 posts — they cost walk time for almost no books. If a channel here stays this sparse, it is the next drop candidate.
 
 - [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) — 1469 posts, 14 book files (0.010 files/post)
-- [boook1023](https://t.me/boook1023) — 3000 posts, 4 book files (0.001 files/post)
-- [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — 1718 posts, 1 book files (0.001 files/post)
+- [boook1023](https://t.me/boook1023) — 6000 posts, 4 book files (0.001 files/post)
+- [maktabahzahra](https://t.me/maktabahzahra) — 6000 posts, 45 book files (0.007 files/post)
+- [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — 1721 posts, 1 book files (0.001 files/post)
 
 ## Giants (uncapped walk is impractical)
 
 - [Sumarians](https://t.me/Sumarians) — newest post id 306117 ≈ ~8.5h for a full walk (indexed 52 posts, oldest reached 1)
-- [roayati](https://t.me/roayati) — newest post id 289090 ≈ ~8.0h for a full walk (indexed 521 posts, oldest reached 1)
-- [ekraly](https://t.me/ekraly) — newest post id 211455 ≈ ~5.9h for a full walk (indexed 6001 posts, oldest reached 136970)
-- [L_alnader8](https://t.me/L_alnader8) — newest post id 80303 ≈ ~2.2h for a full walk (indexed 6001 posts, oldest reached 26613)
-- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54290 ≈ ~1.5h for a full walk (indexed 6000 posts, oldest reached 41071)
+- [roayati](https://t.me/roayati) — newest post id 289101 ≈ ~8.0h for a full walk (indexed 523 posts, oldest reached 1)
+- [ekraly](https://t.me/ekraly) — newest post id 211467 ≈ ~5.9h for a full walk (indexed 9005 posts, oldest reached 133280)
+- [L_alnader8](https://t.me/L_alnader8) — newest post id 80304 ≈ ~2.2h for a full walk (indexed 9002 posts, oldest reached 22218)
+- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 9002 posts, oldest reached 37563)
 
 ## What failed so far
 
-- [KindleBooksRepository](https://t.me/KindleBooksRepository) — '>' not supported between instances of 'int' and 'NoneType'
-- [alnoorlib](https://t.me/alnoorlib) — '>' not supported between instances of 'int' and 'NoneType'
-- [daownbook](https://t.me/daownbook) — '>' not supported between instances of 'int' and 'NoneType'
-- [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) — '>' not supported between instances of 'int' and 'NoneType'
-- [kindlbook](https://t.me/kindlbook) — '>' not supported between instances of 'int' and 'NoneType'
-- [Kindle2](https://t.me/Kindle2) — '>' not supported between instances of 'int' and 'NoneType'
-- [darkromancenovels](https://t.me/darkromancenovels) — '>' not supported between instances of 'int' and 'NoneType'
-- [thedevilshours](https://t.me/thedevilshours) — '>' not supported between instances of 'int' and 'NoneType'
-- [TheEbookStop](https://t.me/TheEbookStop) — '>' not supported between instances of 'int' and 'NoneType'
-- [ekraly](https://t.me/ekraly) — '>' not supported between instances of 'int' and 'NoneType'
-- [L_alnader8](https://t.me/L_alnader8) — '>' not supported between instances of 'int' and 'NoneType'
-- [osratouna1](https://t.me/osratouna1) — '>' not supported between instances of 'int' and 'NoneType'
-- [rwaiaty4](https://t.me/rwaiaty4) — '>' not supported between instances of 'int' and 'NoneType'
-- [AAT2024F](https://t.me/AAT2024F) — '>' not supported between instances of 'int' and 'NoneType'
-- [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — '>' not supported between instances of 'int' and 'NoneType'
-- [eatae](https://t.me/eatae) — '>' not supported between instances of 'int' and 'NoneType'
-- [altfwok](https://t.me/altfwok) — '>' not supported between instances of 'int' and 'NoneType'
-- [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) — '>' not supported between instances of 'int' and 'NoneType'
-- [alm_elmaref](https://t.me/alm_elmaref) — '>' not supported between instances of 'int' and 'NoneType'
-- [arabicbooks](https://t.me/arabicbooks) — '>' not supported between instances of 'int' and 'NoneType'
-- [book_juice](https://t.me/book_juice) — '>' not supported between instances of 'int' and 'NoneType'
-- [book_lovers_s](https://t.me/book_lovers_s) — '>' not supported between instances of 'int' and 'NoneType'
-- [books_p](https://t.me/books_p) — '>' not supported between instances of 'int' and 'NoneType'
-- [HAYA_NAQRA](https://t.me/HAYA_NAQRA) — '>' not supported between instances of 'int' and 'NoneType'
-- [maktabahzahra](https://t.me/maktabahzahra) — '>' not supported between instances of 'int' and 'NoneType'
-- [n_bhs2](https://t.me/n_bhs2) — '>' not supported between instances of 'int' and 'NoneType'
-- [nourbook](https://t.me/nourbook) — '>' not supported between instances of 'int' and 'NoneType'
-- [roayati](https://t.me/roayati) — '>' not supported between instances of 'int' and 'NoneType'
-- [sharkelmoreeg](https://t.me/sharkelmoreeg) — '>' not supported between instances of 'int' and 'NoneType'
-- [Sumarians](https://t.me/Sumarians) — '>' not supported between instances of 'int' and 'NoneType'
-- [twinkling4](https://t.me/twinkling4) — '>' not supported between instances of 'int' and 'NoneType'
-- [your_books](https://t.me/your_books) — '>' not supported between instances of 'int' and 'NoneType'
-- [ahmedsalem81](https://t.me/ahmedsalem81) — '>' not supported between instances of 'int' and 'NoneType'
-- [ktbibnalqaim](https://t.me/ktbibnalqaim) — '>' not supported between instances of 'int' and 'NoneType'
-- [qurany_is_life](https://t.me/qurany_is_life) — '>' not supported between instances of 'int' and 'NoneType'
-- [jad32](https://t.me/jad32) — '>' not supported between instances of 'int' and 'NoneType'
-- [Merciful111Fate](https://t.me/Merciful111Fate) — '>' not supported between instances of 'int' and 'NoneType'
-- [boook1023](https://t.me/boook1023) — '>' not supported between instances of 'int' and 'NoneType'
-- [Goldenshamelaepub](https://t.me/Goldenshamelaepub) — '>' not supported between instances of 'int' and 'NoneType'
-- [kindlearabicbook](https://t.me/kindlearabicbook) — '>' not supported between instances of 'int' and 'NoneType'
-- [Ouloalelm](https://t.me/Ouloalelm) — '>' not supported between instances of 'int' and 'NoneType'
-- [Course_reserve](https://t.me/Course_reserve) — '>' not supported between instances of 'int' and 'NoneType'
-- [zamerican0english](https://t.me/zamerican0english) — '>' not supported between instances of 'int' and 'NoneType'
+Nothing failed on this run.
 
 ## Not yet indexed — remaining 0 channels
 
