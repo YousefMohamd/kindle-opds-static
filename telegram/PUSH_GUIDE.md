@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.2)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.3)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -22,7 +22,7 @@ is compressed" below).
 
 | Path in the repo | What it is |
 |---|---|
-| `telegram/` | The tool v0.4.2 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db.gz` (compressed) |
+| `telegram/` | The tool v0.4.3 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db.gz` (compressed) |
 | `.github/workflows/telegram-sync.yml` | The scheduled sync (daily 03:00 UTC + manual) |
 | `.github/workflows/telegram-api-backfill.yml` | The manual-only API backfill (no schedule; needs the three GitHub secrets) |
 | `site/telegram/index.html` | The Telegram search page |
@@ -78,7 +78,7 @@ On the Mac, in the folder with the finished local run
 
 ```bash
 # 1. Stop the run if it is still going (Ctrl+C — committed channels are safe).
-# 2. Copy the new v0.4.2 tool over it, keeping your index.db:
+# 2. Copy the new v0.4.3 tool over it, keeping your index.db:
 #    (unzip telegram-book-index.zip, copy its kindle-opds-static/telegram/
 #    contents over the folder — do NOT overwrite index.db)
 # 3. Compress the seed (the repo stores only index.db.gz — see above).
@@ -122,7 +122,7 @@ git status        # check: only the delta paths above are new/changed
 git add telegram/ .github/workflows/telegram-sync.yml \
   .github/workflows/telegram-api-backfill.yml site/telegram/ \
   _redirects .gitignore README.md
-git commit -m "Telegram book index v0.4.2 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
+git commit -m "Telegram book index v0.4.3 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
 git push
 ```
 

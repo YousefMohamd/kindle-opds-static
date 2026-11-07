@@ -261,7 +261,14 @@ async def iter_api_posts(
             f"@{handle} resolved to a personal chat — the API backfill "
             "only reads configured channels/groups, never personal chats."
         )
-    offset: Optional[int] = start_before
+    # offset_id must NEVER be None: real Telethon's iterator does
+    # offset_id = max(offset_id, max_id) with max_id defaulting to 0,
+    # so offset_id=None raises TypeError: '>' not supported between
+    # instances of 'int' and 'NoneType' on the first chunk of every
+    # channel (v0.4.2 bug — the first api-backfill run failed on all
+    # 43 channels in ~90s). offset_id=0 is Telethon's "no offset"
+    # (start from the newest message), which is what None meant here.
+    offset: int = start_before if start_before is not None else 0
     yielded = 0
     while True:
         # Fetch one chunk, retrying it after a flood wait.

@@ -76,11 +76,19 @@ class FakeClient:
     async def get_entity(self, handle):
         return self.entity
 
-    async def iter_messages(self, entity, offset_id=None, limit=None):
+    async def iter_messages(self, entity, offset_id=0, limit=None):
         if self._flood_wait_once and not self._flooded:
             self._flooded = True
             raise _FloodWait(seconds=0)
-        msgs = [m for m in self._messages if offset_id is None or m.id < offset_id]
+        # Faithful to real Telethon: _MessagesIter does
+        # offset_id = max(offset_id, max_id) with max_id defaulting to
+        # 0, so offset_id=None raises TypeError: '>' not supported
+        # between instances of 'int' and 'NoneType' (the v0.4.2 bug:
+        # the first api-backfill run failed on all 43 channels because
+        # iter_api_posts passed offset_id=None on the first chunk).
+        # offset_id=0 means "no offset" (start from the newest).
+        offset_id = max(offset_id, 0)
+        msgs = [m for m in self._messages if offset_id == 0 or m.id < offset_id]
         if limit is not None:
             msgs = msgs[:limit]
         for m in msgs:
@@ -241,6 +249,22 @@ def test_iter_api_posts_yields_newest_first():
     assert posts[0].url == "https://t.me/testchan/10"
     assert posts[0].files[0].filename == "New.epub"
     assert posts[1].files == []
+
+
+def test_iter_api_posts_never_passes_offset_id_none_to_telethon():
+    """Regression (v0.4.2): iter_api_posts passed offset_id=None on
+    the first chunk, and real Telethon does max(offset_id, max_id)
+    with max_id defaulting to 0 — so max(None, 0) raised TypeError:
+    '>' not supported between instances of 'int' and 'NoneType',
+    failing every channel of the first api-backfill run. The fake
+    client now mimics Telethon, so this test fails if the bug returns.
+    """
+    msgs = [FakeMessage(i, f"p{i}") for i in (10, 9, 8)]
+    posts = _drain(iter_api_posts(FakeClient(msgs), "testchan"))
+    assert [p.post_id for p in posts] == [10, 9, 8]
+    # And with an explicit start_before (backfill below an oldest post).
+    posts = _drain(iter_api_posts(FakeClient(msgs), "testchan", start_before=9))
+    assert [p.post_id for p in posts] == [8]
 
 
 def test_iter_api_posts_min_id_limit_start_before():

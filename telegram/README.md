@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.2 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.3 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -324,6 +324,18 @@ seed is pushed.
   compressed seed (`index.db.gz`) + report, so the next run resumes
   instead of restarting. The last-good site is never touched on
   failure.
+- **API `offset_id=None` fix (v0.4.3):** the first manual API
+  backfill (2026-11-07) failed on ALL 43 channels in ~90s with
+  `TypeError: '>' not supported between instances of 'int' and
+  'NoneType'` and indexed nothing. Cause: `iter_api_posts` passed
+  `offset_id=None` to Telethon on the first chunk of every channel,
+  and real Telethon does `offset_id = max(offset_id, max_id)` with
+  `max_id` defaulting to 0 — so `max(None, 0)` raises. The fake
+  client in the tests treated `None` as "no offset", so the tests
+  passed and the bug shipped. Fix: `offset_id` is now always an int
+  (`0` = start from the newest, Telethon's default), and the fake
+  client now mimics Telethon's `max(offset_id, 0)` so the regression
+  is caught (reverting the fix fails 6 tests).
 - **The site:** `site/telegram/index.html` is a single static page
   (Arabic-first, RTL) that loads `index.json` and searches client-side
   — no server, no external dependencies. It has the same Arabic
