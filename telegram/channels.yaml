@@ -13,6 +13,10 @@
 #     (see README for the steps). Uncomment a group entry once you
 #     have exported it. 10 dead handles are listed at the bottom
 #     (do NOT add them as export entries — they do not exist).
+#     v0.4.4: EBook_Library is the FIRST group active — via the API
+#     (no export; the owner is a member, so Telethon reads its
+#     history). The other 167 groups stay commented out until each
+#     is verified the same way.
 #     6 private invite links are listed at the bottom (cannot be
 #     indexed without joining). Full tables:
 #     ~/workspace/kindle-quiet-prep/telegram-sources-batch2.md
@@ -122,8 +126,12 @@ groups:
   #   export: ~/exports/booksforarabs/result.json
   # - name: "ddfkindle"
   #   export: ~/exports/ddfkindle/result.json
-  # - name: "EBook_Library"
-  #   export: ~/exports/EBook_Library/result.json
+  # EBook_Library — API-ACTIVE (v0.4.4): the first group indexed via
+  # the API (the owner is a member, so Telethon can read its history).
+  # No Desktop export is configured (none exists): the API does not
+  # need one, and the preview sync skips API-only groups instead of
+  # erroring on the missing export.
+  - name: "EBook_Library"
   # - name: "jazz223k"
   #   export: ~/exports/jazz223k/result.json
   # - name: "kfxarabic"

@@ -48,6 +48,41 @@ def test_index_and_search_offline(tmp_path, capsys):
     assert "5 posts" in out
 
 
+def test_index_skips_api_only_group_without_error(tmp_path, capsys):
+    """v0.4.4: a group with no Desktop export (API-only) is skipped by
+    `tbi index` — exit 0, no error status in the DB, no failure in the
+    report. (Before the fix the preview sync marked it "error" every
+    run, clobbering the API's "ok" status.)"""
+    from tbi.store import Store  # noqa: E402
+
+    cfg = tmp_path / "channels.yaml"
+    cfg.write_text(
+        "channels: []\n"
+        "groups:\n"
+        '  - name: "EBook_Library"\n'
+        "settings:\n"
+        f"  db: {tmp_path / 'index.db'}\n"
+        "  delay_seconds: 0\n"
+        "  limit_per_channel: 0\n"
+    )
+    assert main(["index", "--config", str(cfg)]) == 0
+    out = capsys.readouterr().out
+    assert "[skip] group EBook_Library: no Desktop export (API-only)" in out
+    assert "export not found" not in out
+    # The source row exists (registered) but carries no error status.
+    store = Store(tmp_path / "index.db")
+    try:
+        row = store.get_source("EBook_Library")
+        assert row is not None
+        assert row["status"] != "error"
+        assert "Export file not found" not in (row["note"] or "")
+    finally:
+        store.close()
+    # The report records no failure for the run.
+    report = (tmp_path / "index-report.md").read_text(encoding="utf-8")
+    assert "Failures this run: 0" in report
+
+
 def _channel_cfg(tmp_path):
     cfg = tmp_path / "channels.yaml"
     cfg.write_text(

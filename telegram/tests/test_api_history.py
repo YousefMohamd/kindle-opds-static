@@ -192,6 +192,25 @@ def test_find_config_entry_group_by_name(tmp_path):
     assert entry.name == "EBook_Library"
 
 
+def test_real_config_ebook_library_group_active_v044():
+    """v0.4.4: the real channels.yaml has EBook_Library as the ONLY
+    active group — via the API, with NO export line (no Desktop export
+    exists for it). The other 167 groups stay commented out, and
+    find_config_entry resolves it as a group so `tbi api-backfill
+    --channel EBook_Library` targets it."""
+    real_cfg = Path(__file__).resolve().parent.parent / "channels.yaml"
+    cfg = load_config(real_cfg)
+    names = [g.name for g in cfg.groups]
+    assert names == ["EBook_Library"]
+    entry = cfg.groups[0]
+    assert entry.export == ""
+    kind, found = find_config_entry(cfg, "EBook_Library")
+    assert kind == "group"
+    assert found is entry
+    # The 43 channels are untouched by the group activation.
+    assert len(cfg.channels) == 43
+
+
 # --- message -> post extraction --------------------------------------------
 
 def test_message_files_from_file_accessor():

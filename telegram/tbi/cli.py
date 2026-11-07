@@ -477,6 +477,14 @@ def cmd_index(args: argparse.Namespace) -> int:
         for entry in cfg.groups:
             export_path = Path(entry.export).expanduser()
             sid = store.upsert_source("group", entry.name, entry.label)
+            if not entry.export:
+                # API-only group (no Desktop export configured): the
+                # API backfill indexes it; the preview sync has
+                # nothing to do here and must NOT mark it as an
+                # error (that would clobber the API's "ok" status and
+                # spam the report with a failure every day).
+                print(f"[skip] group {entry.name}: no Desktop export (API-only)")
+                continue
             if not export_path.is_file():
                 store.set_source_status(
                     sid,

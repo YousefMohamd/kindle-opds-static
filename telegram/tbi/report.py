@@ -123,7 +123,7 @@ def _fmt_minutes(minutes: float) -> str:
 def parse_config_inventory(config_path: str | Path) -> dict:
     """Inventory from the config file's own commented sections.
 
-    ``channels.yaml`` lists the 168 pending groups as commented
+    ``channels.yaml`` lists the pending groups as commented
     ``- name: ...`` entries, the 10 dead handles under a ``# Dead``
     header, the 6 private invite links under a
     ``# Private invite links`` header, and the channels dropped for
