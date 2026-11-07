@@ -5,4 +5,4 @@ no server, no background daemon — on-demand CLI only. An optional,
 manual-only API backfill (MTProto / Telethon) reads a channel/group's
 full history; its credentials live only as GitHub Actions secrets."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"

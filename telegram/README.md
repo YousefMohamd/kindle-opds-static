@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.1 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.2 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -310,6 +310,20 @@ seed is pushed.
   low-density channels (fewer than 1 book file per 100 posts), backfill
   status, and giants (newest post id ≥50,000 with a full-walk time
   estimate).
+- **Timeouts + failure save (v0.4.2):** the first manual run
+  (2026-11-07) failed after 1h 40m when the Index step hit its old
+  100-minute limit mid-channel (`@twinkling4`, ~540 posts into its
+  block) — and lost ALL its progress (~33,900 posts / ~9,100 book
+  files) because the DB is only committed at the end and the timeout
+  kill skips the tool's report, so no commit landed at all. The Index
+  step now allows 300 minutes and the job 360 (GitHub's per-job
+  maximum); the block stays 3000. The failure step now saves progress
+  instead of only a report: it checkpoints the Store's WAL into
+  `index.db` (without this the saved file would be near-empty — the
+  WAL holds the committed rows), validates the DB, and commits the
+  compressed seed (`index.db.gz`) + report, so the next run resumes
+  instead of restarting. The last-good site is never touched on
+  failure.
 - **The site:** `site/telegram/index.html` is a single static page
   (Arabic-first, RTL) that loads `index.json` and searches client-side
   — no server, no external dependencies. It has the same Arabic

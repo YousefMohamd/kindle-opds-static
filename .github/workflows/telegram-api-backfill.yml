@@ -1,4 +1,4 @@
-# Telegram book index — MANUAL-ONLY API backfill (merged into kindle-opds-static).
+# Telegram book index — MANUAL-ONLY API backfill, v0.4.2 (merged into kindle-opds-static).
 #
 # Runs the Telegram indexer (telegram/) through the MTProto API (Telethon)
 # and publishes its section to Cloudflare Pages at /telegram/
@@ -29,6 +29,15 @@
 # and every run writes a report (index-report.md) that is published even
 # when the run fails. Flood waits are honoured by the reader (backoff +
 # resume from the same offset).
+#
+# Timeouts (v0.4.2 — same fix as the daily job): the API backfill
+# walks the same 43 channels in 3000-post blocks, and the first manual
+# preview run (2026-11-07) proved a full backfill needs ~200 minutes,
+# past the old 100-minute Index-step limit. The Index step now allows
+# 300 minutes and the job 360 (GitHub's per-job maximum). The failure
+# step also saves the run's progress now (WAL checkpoint + validate +
+# compressed seed) instead of only trying to commit a report that a
+# timeout kill never wrote — see the "Save progress + report" step.
 name: telegram-api-backfill
 
 on:
@@ -66,7 +75,7 @@ permissions:
 jobs:
   api-backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     defaults:
       run:
         working-directory: telegram
@@ -114,7 +123,7 @@ jobs:
           "
 
       - name: Index (API backfill)
-        timeout-minutes: 100
+        timeout-minutes: 300
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -157,11 +166,61 @@ jobs:
           git commit -m "[telegram-api-backfill] manual API backfill" || echo "nothing to commit"
           git push
 
-      - name: Report the failure (keeps the last-good site live)
+      - name: Save progress + report on failure (keeps the last-good site live)
         if: failure()
         run: |
+          # A step timeout kills indexing before the report and publish
+          # steps run, so without this step the whole run's progress
+          # would be lost (that is what happened to the daily job on
+          # 2026-11-07: the 100-minute Index timeout left no new commit
+          # at all). The tool commits to SQLite after every completed
+          # channel (and every 20 posts inside a channel — tbi/cli.py
+          # _consume_walk, tbi/store.py set_progress), so the DB on disk
+          # already holds everything except the last <20 posts of the
+          # interrupted channel. Two gotchas handled here:
+          #   1. The Store runs in WAL mode (tbi/store.py): committed
+          #      rows may still sit in index.db-wal, so the WAL MUST be
+          #      checkpointed into index.db BEFORE gzipping — gzipping
+          #      the raw .db alone saves an (almost) empty database
+          #      (verified on a kill-simulated DB: 0 posts without a
+          #      checkpoint, all 25 with one). The Index process is dead
+          #      by now (GitHub kills the timed-out step first), so
+          #      opening the DB here is safe.
+          #   2. Only a DB that still reads back cleanly is saved — a
+          #      corrupt seed would poison every future run.
+          # The live site is NOT touched: site/telegram/ keeps serving
+          # the last-good publish until a later run succeeds.
+          if [ -f index.db ]; then
+            python3 -c "
+          import sqlite3
+          conn = sqlite3.connect('index.db')
+          try:
+              conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+              posts = conn.execute(
+                  'SELECT COUNT(*) FROM posts').fetchone()[0]
+              print(f'DB holds {posts} posts after WAL checkpoint')
+          finally:
+              conn.close()
+          "
+            if tbi validate --db index.db; then
+              # Re-checkpoint: validate's own open recreates the FTS
+              # triggers and may leave a fresh -wal behind.
+              python3 -c "
+          import sqlite3
+          conn = sqlite3.connect('index.db')
+          try:
+              conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+          finally:
+              conn.close()
+          "
+              gzip -f index.db
+            else
+              echo "::warning::DB failed validation after checkpoint — not saving it; the last-good seed in the repo stays untouched."
+            fi
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index-report.md || true
-          git commit -m "[telegram-api-backfill] run failed — report only" || echo "nothing to commit"
-          git push || echo "could not push the failure report"
+          git add index.db.gz 2>/dev/null || true
+          git add index-report.md 2>/dev/null || true
+          git commit -m "[telegram-api-backfill] run failed — progress + report saved" || echo "nothing to commit"
+          git push || echo "could not push the failure save"

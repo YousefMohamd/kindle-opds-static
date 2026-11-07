@@ -38,7 +38,7 @@
   backfill); 10 dead handles; 6 private invite links; 8 channels
   dropped for having 0 book files (their history stays in the DB).
 - Scheduled sync: .github/workflows/telegram-sync.yml — daily 03:00
-  UTC + manual runs. Each run backfills one block of 3000 posts per
+  UTC + manual runs. Each run backfills one block of 1000 posts per
   not-yet-complete channel (newest first), then switches to new-only
   sync once every channel is complete. Every run writes
   telegram/index-report.md (published at /telegram/index-report.md).

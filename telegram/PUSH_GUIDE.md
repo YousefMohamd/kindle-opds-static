@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.1)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.2)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -22,7 +22,7 @@ is compressed" below).
 
 | Path in the repo | What it is |
 |---|---|
-| `telegram/` | The tool v0.4.1 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db.gz` (compressed) |
+| `telegram/` | The tool v0.4.2 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db.gz` (compressed) |
 | `.github/workflows/telegram-sync.yml` | The scheduled sync (daily 03:00 UTC + manual) |
 | `.github/workflows/telegram-api-backfill.yml` | The manual-only API backfill (no schedule; needs the three GitHub secrets) |
 | `site/telegram/index.html` | The Telegram search page |
@@ -50,6 +50,27 @@ Nothing else in the repo changes. The OPDS files (`index.xml`,
 `khazendar/`, `sahwa/`, `electronic/`, `hindawi/`, `doab/`,
 `functions/`) are **not** in this push.
 
+## Timeout fix (v0.4.2)
+
+The first manual `telegram-sync` run (2026-11-07) failed after
+1h 40m: the Index step hit its old 100-minute limit mid-channel
+(`@twinkling4`, ~540 posts into its block) and **nothing was
+committed** — the ~33,900 posts / ~9,100 book files that run had
+indexed were lost, because the DB is only committed at the end
+(Publish step) and the timeout kill skips the tool's report, so the
+old failure step (report-only) had nothing to commit either. The
+fix, in both workflows:
+- **Index step 100 → 300 minutes, job 120 → 360** (GitHub's per-job
+  maximum). A full 3000-post backfill of all 43 channels needs
+  ~200 minutes at the observed pace. **The block stays 3000.**
+- **Failure step saves progress, not just a report:** it checkpoints
+  the Store's WAL into `index.db` (WAL mode — committed rows may sit
+  in `index.db-wal`, and gzipping the raw `.db` alone would save an
+  almost-empty file), validates the DB with `tbi validate`, and
+  commits the compressed seed (`telegram/index.db.gz`) + report, so
+  the next run resumes instead of restarting. The live site is never
+  touched on failure.
+
 ## Step 1 — finish the local run, then prepare the seed
 
 On the Mac, in the folder with the finished local run
@@ -57,7 +78,7 @@ On the Mac, in the folder with the finished local run
 
 ```bash
 # 1. Stop the run if it is still going (Ctrl+C — committed channels are safe).
-# 2. Copy the new v0.4.1 tool over it, keeping your index.db:
+# 2. Copy the new v0.4.2 tool over it, keeping your index.db:
 #    (unzip telegram-book-index.zip, copy its kindle-opds-static/telegram/
 #    contents over the folder — do NOT overwrite index.db)
 # 3. Compress the seed (the repo stores only index.db.gz — see above).
@@ -101,7 +122,7 @@ git status        # check: only the delta paths above are new/changed
 git add telegram/ .github/workflows/telegram-sync.yml \
   .github/workflows/telegram-api-backfill.yml site/telegram/ \
   _redirects .gitignore README.md
-git commit -m "Telegram book index v0.4.1 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
+git commit -m "Telegram book index v0.4.2 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
 git push
 ```
 
@@ -170,10 +191,12 @@ project references or requires it.
    feed, e.g. `/khazendar/index.xml` — both must load exactly as
    before. The merge does not touch them, but verify anyway.
 4. After that the daily 03:00 UTC run takes over. A failed run keeps
-   the last-good site live and commits only the updated report — check
-   the report for the reason, then re-run manually. Once the report
-   shows every channel complete, the workflow can be switched to
-   `tbi index --new-only` (leaving it on `--backfill` is also fine).
+   the last-good site live and now also saves its progress (the
+   compressed seed + report are committed by the failure step, so the
+   next run resumes) — check the report for the reason, then re-run
+   manually. Once the report shows every channel complete, the workflow
+   can be switched to `tbi index --new-only` (leaving it on
+   `--backfill` is also fine).
 
 ## Notes
 
