@@ -10,13 +10,15 @@
   to each library's index.xml before publishing, or KOReader will not show search.
 - Mac servers 8000/8001/8002 stay ON until: one Cloudflare host test + one download
   per library from Cloudflare + separate user approval to stop Mac servers.
-- Telegram: MERGED (v0.3, 2026-11-07) — the Telegram book index lives in
+- Telegram: MERGED (v0.4, 2026-11-07) — the Telegram book index lives in
   this repo now: tool in telegram/, published section at
   kindle-opds-static.pages.dev/telegram/ (see "Telegram book index"
-  below). No Telegram bot yet (Phase 2), no group reading without a
-  Desktop export. Manual path only: user downloads from Telegram,
-  uploads to Drive, then the Drive-detection script (future, separate
-  approval, Drive OAuth/Secret) picks it up.
+  below). No Telegram bot yet (Phase 2). Groups can now be read in full
+  via the optional, manual-only API backfill (credentials only as
+  GitHub secrets, owner-only) or from a Desktop export. Manual path
+  only: user downloads from Telegram, uploads to Drive, then the
+  Drive-detection script (future, separate approval, Drive OAuth/Secret)
+  picks it up.
 - Drive files: user confirms they cannot be deleted. Download links remain Drive uc?id.
 - Search limit: first 100 matches, substring in title or author, case-insensitive.
 
@@ -29,12 +31,12 @@
   site/telegram/ in this repo; the root `_redirects` file rewrites
   /telegram/* to /site/telegram/* (200), because this repo's Pages
   project serves the repo root.
-- Tool: telegram/ (the `tbi` CLI, Python, no API credentials, no
-  Telegram login, no always-on server). Config:
+- Tool: telegram/ (the `tbi` CLI, Python, no API credentials by
+  default, no Telegram login, no always-on server). Config:
   telegram/channels.yaml — 43 active channels; 168 groups need a
-  Telegram Desktop JSON export each; 10 dead handles; 6 private invite
-  links; 8 channels dropped for having 0 book files (their history
-  stays in the DB).
+  Telegram Desktop JSON export each (or the optional manual-only API
+  backfill); 10 dead handles; 6 private invite links; 8 channels
+  dropped for having 0 book files (their history stays in the DB).
 - Scheduled sync: .github/workflows/telegram-sync.yml — daily 03:00
   UTC + manual runs. Each run backfills one block of 3000 posts per
   not-yet-complete channel (newest first), then switches to new-only
@@ -46,6 +48,14 @@
   found it queues a priority backfill request, and the next scheduled
   run backfills that channel first. The search page shows a "not in
   the index yet" state that points to the Telegram bot (Phase 2).
+- API backfill (optional, manual-only): `tbi api-backfill` reads a
+  channel/group's full history via the MTProto API (Telethon) —
+  including the old posts the preview never serves. Credentials only
+  as GitHub Actions secrets (TELEGRAM_API_ID, TELEGRAM_API_HASH,
+  TELEGRAM_SESSION_STRING), owner-only, never in the repo; the job
+  (.github/workflows/telegram-api-backfill.yml) runs only on manual
+  dispatch. `tbi submit-book` indexes one book individually with its
+  source link recorded. See telegram/README.md for the full setup.
 - Bot (Phase 2, not built): a Telegram bot as the front-end for adding
   libraries and priority requests. It is a separate account (not the
   user's), only sees chats it is added to, cannot act as the user,

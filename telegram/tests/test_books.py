@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tbi.books import (  # noqa: E402
     BOOK_EXTS,
     dedupe_key,
+    format_size,
     normalize_arabic,
     parse_title_author,
 )
@@ -88,3 +89,16 @@ def test_book_exts():
     # KFX is Amazon's current Kindle format (v0.3): the indexer and the
     # bot's channel-validation rule accept the same six formats.
     assert BOOK_EXTS == {"epub", "mobi", "azw3", "kfx", "pdf", "txt"}
+
+
+def test_format_size():
+    # Inverse of scrape.parse_size ("12.3 MB" -> bytes): used when a size
+    # is known as bytes (API messages, submitted books) but no display
+    # text was given (v0.4).
+    assert format_size(None) is None
+    assert format_size(0) == "0 B"
+    assert format_size(1000) == "1000 B"
+    assert format_size(1024) == "1 KB"
+    assert format_size(1536) == "1.5 KB"
+    assert format_size(1200000) == "1.1 MB"
+    assert format_size(2048) == "2 KB"

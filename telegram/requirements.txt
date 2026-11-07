@@ -1,2 +1,6 @@
 beautifulsoup4>=4.11
 pyyaml>=6.0
+# Only for the optional, manual-only API backfill (tbi api-backfill) and
+# the one-time login script — NOT needed by the daily preview job.
+# Install with: pip install -e ".[api]"
+telethon>=1.36

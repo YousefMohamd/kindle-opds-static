@@ -1,19 +1,28 @@
 """Command-line interface: ``tbi index`` / ``tbi search`` / ``tbi sources``
-/ ``tbi search-channel``.
+/ ``tbi search-channel`` / ``tbi api-backfill`` / ``tbi submit-book``.
 
 On-demand only: every command opens the SQLite file, does its work, and
-exits. No server, no background process, no Telegram credentials.
+exits. No server, no background process.
 
 ``tbi index --backfill`` walks each not-yet-complete channel newest ->
 oldest in blocks (default 3000 posts per run per channel), so the deep
 history beyond the local run's cap fills in over successive scheduled
 runs; ``tbi search-channel`` is the targeted server-side search used
 for priority requests (a book asked for before it is indexed).
+
+``tbi api-backfill`` is the OPTIONAL, MANUAL-ONLY Telegram API path
+(MTProto / Telethon): it reads a channel/group's full history,
+including the old posts the web preview never serves. Credentials come
+only from the environment (GitHub Actions secrets — never in the repo),
+it reads only configured channels/groups (never personal chats), and
+it is NOT part of the daily scheduled job. ``tbi submit-book`` indexes
+one book individually, recording its source link.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 import time
@@ -21,6 +30,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
+from .api_history import (
+    ApiCredentialsError,
+    create_client,
+    find_config_entry,
+    iter_api_posts,
+    load_api_credentials,
+)
 from .books import BOOK_EXTS, dedupe_key, parse_title_author
 from .config import load_config
 from .export_static import export_static
@@ -28,6 +44,7 @@ from .exports import is_book_file, parse_export
 from .report import ChannelRun, GroupRun, RunRecord, build_report, write_report
 from .scrape import classify, normalize_link, search_channel, walk
 from .store import Store
+from .submit import submit_book
 
 
 def _now_iso() -> str:
@@ -694,6 +711,372 @@ def cmd_search_channel(args: argparse.Namespace) -> int:
         store.close()
 
 
+def cmd_api_backfill(args: argparse.Namespace) -> int:
+    """API backfill (manual-only): full history via MTProto / Telethon.
+
+    Reads each target's full message history — including the old posts
+    the web preview never serves (and the groups the preview cannot
+    see at all) — and indexes the book files with the same store code
+    as ``tbi index`` (same title/author parsing, same dedup keys).
+
+    Credentials come only from the environment (``TELEGRAM_API_ID``,
+    ``TELEGRAM_API_HASH``, ``TELEGRAM_SESSION_STRING`` — GitHub
+    Actions secrets; never in the repo). The targets are only the
+    configured channels/groups in ``channels.yaml`` — a ``--channel``
+    that is not in the config is refused, and a resolved entity that
+    turns out to be a person is refused too. This command is never
+    run by the daily scheduled job; it runs only when the owner starts
+    it (``tbi api-backfill`` / the ``telegram-api-backfill`` workflow's
+    manual dispatch).
+    """
+    try:
+        cfg = load_config(args.config)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    if args.backfill and (args.full or args.new_only):
+        print(
+            "Error: --backfill cannot be combined with --full or "
+            "--new-only",
+            file=sys.stderr,
+        )
+        return 2
+    if args.channel:
+        found = find_config_entry(cfg, args.channel)
+        if found is None:
+            print(
+                f"Error: @{normalize_link(args.channel)} is not in "
+                f"{args.config} — add it there first. The API job "
+                "only reads configured channels/groups, never "
+                "personal chats.",
+                file=sys.stderr,
+            )
+            return 2
+        kind, entry = found
+        targets = [
+            (
+                kind,
+                entry.username if kind == "channel" else entry.name,
+                entry.label,
+            )
+        ]
+    else:
+        targets = [("channel", e.username, e.label) for e in cfg.channels]
+        targets += [("group", e.name, e.label) for e in cfg.groups]
+    if not targets:
+        print(
+            f"Error: no sources configured in {args.config} — add a "
+            "channel or group first.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        api_id, api_hash, session = load_api_credentials()
+    except ApiCredentialsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        client = create_client(api_id, api_hash, session)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    db_path = args.db or cfg.settings.db
+    limit = cfg.settings.limit_per_channel or None
+    block = args.backfill_block
+    if args.full:
+        mode = "api-full"
+    elif args.new_only:
+        mode = "api-new-only"
+    elif args.backfill:
+        mode = "api-backfill"
+    elif limit is not None:
+        mode = f"api-capped {limit}"
+    else:
+        mode = "api-incremental"
+    run = RunRecord(
+        started_at=_now_iso(),
+        mode=mode,
+        config=str(args.config),
+        db=str(db_path),
+        note=(
+            "API backfill (manual-only): full history via the MTProto "
+            "API (Telethon). Credentials from the environment (GitHub "
+            "Actions secrets); never part of the daily preview job; "
+            "reads only configured channels/groups, never personal "
+            "chats. Metadata only — no book files are downloaded."
+        ),
+    )
+    started_mono = time.monotonic()
+    store = Store(db_path)
+    totals = {"posts": 0, "files": 0}
+
+    async def _consume_api(store_: Store, sid: int, name: str, state: dict,
+                           **kwargs) -> None:
+        """Drain one API iterator into the store in batches of 50.
+
+        Batches keep memory bounded on a giant's full history; the
+        shared ``state`` accumulates across batches (and across the
+        new-posts / backfill phases) exactly like ``_consume_walk``.
+        """
+        batch = []
+        async for post in iter_api_posts(client, name, **kwargs):
+            batch.append(post)
+            if len(batch) >= 50:
+                _consume_walk(store_, sid, name, iter(batch), state)
+                batch.clear()
+        if batch:
+            _consume_walk(store_, sid, name, iter(batch), state)
+
+    async def _target(kind: str, name: str, label: str) -> None:
+        sid = store.upsert_source(kind, name, label)
+        prev = store.get_source(name)
+        prev_oldest = prev["oldest_post_id"] if prev else None
+        prev_newest = prev["newest_post_id"] if prev else None
+        prev_count = prev["post_count"] if prev else 0
+        resumable = (
+            not args.full
+            and limit is None
+            and prev_count
+            and prev_oldest is not None
+            and prev_newest is not None
+        )
+        new_only = bool(args.new_only and prev_count and prev_newest is not None)
+        backfill = bool(args.backfill)
+        if backfill:
+            scope = "api-backfill"
+        elif new_only:
+            scope = "api-new-only"
+        elif resumable:
+            scope = "api-resumed"
+        elif args.full:
+            scope = "api-full"
+        else:
+            scope = f"api-capped {limit}" if limit else "api-full"
+        state = {
+            "count": 0,
+            "files": 0,
+            "oldest": prev_oldest if (resumable or backfill) else None,
+            "newest": prev_newest if (resumable or backfill) else None,
+        }
+        backfill_posts = 0
+        backfill_complete = False
+        print(f"[...] @{name}: API backfill ({scope})", flush=True)
+        try:
+            if backfill:
+                if prev_count and prev_newest is not None:
+                    await _consume_api(
+                        store, sid, name, state, min_id=prev_newest
+                    )
+                before = state["count"]
+                if prev_count and prev_oldest is not None:
+                    await _consume_api(
+                        store, sid, name, state,
+                        start_before=prev_oldest, limit=block,
+                    )
+                else:
+                    await _consume_api(store, sid, name, state, limit=block)
+                backfill_posts = state["count"] - before
+                backfill_complete = (
+                    backfill_posts < block
+                    or (state["oldest"] is not None and state["oldest"] <= 1)
+                )
+            elif new_only:
+                await _consume_api(store, sid, name, state, min_id=prev_newest)
+            elif resumable:
+                await _consume_api(store, sid, name, state, min_id=prev_newest)
+                await _consume_api(
+                    store, sid, name, state, start_before=prev_oldest
+                )
+            else:
+                await _consume_api(store, sid, name, state, limit=limit)
+            oldest, newest = state["oldest"], state["newest"]
+            count, files = state["count"], state["files"]
+            if backfill:
+                note = (
+                    f"API backfill block: {backfill_posts} posts; oldest "
+                    f"reached {oldest}. "
+                    + (
+                        "Complete — reached the first post or the API "
+                        "history is exhausted."
+                        if backfill_complete
+                        else "More remain — the next run continues "
+                        f"below post {oldest}."
+                    )
+                )
+            else:
+                note = (
+                    f"API history walked to post {oldest} (oldest "
+                    "reached)."
+                    if oldest and oldest > 1
+                    else "API history walked to the first post."
+                )
+            store.set_source_status(
+                sid, "ok", note=note, oldest=oldest, newest=newest,
+                last_indexed=_now_iso(),
+            )
+            print(f"[ok] @{name}: {count} posts, {files} book files (API)")
+            record = (
+                ChannelRun(
+                    username=name, status="ok", posts_new=count,
+                    files_new=files, scope=scope, note=note,
+                    backfill_posts=backfill_posts,
+                    backfill_complete=backfill_complete,
+                )
+                if kind == "channel"
+                else GroupRun(
+                    name=name, status="ok", posts_new=count,
+                    files_new=files, note=note,
+                )
+            )
+            if kind == "channel":
+                run.channels.append(record)
+            else:
+                run.groups.append(record)
+            if backfill:
+                resolved = store.resolve_matching_priority(name)
+                if resolved:
+                    store.commit()
+                    print(
+                        f"[priority] @{name}: priority request(s) "
+                        f"resolved: {', '.join(resolved)}"
+                    )
+        except KeyboardInterrupt:
+            store.set_progress(sid, state["oldest"], state["newest"])
+            run.status = "interrupted"
+            note = (
+                "Interrupted — kept "
+                f"{state['count']} posts indexed so far."
+            )
+            if kind == "channel":
+                run.channels.append(
+                    ChannelRun(
+                        username=name, status="interrupted",
+                        posts_new=state["count"], files_new=state["files"],
+                        scope=scope, note=note,
+                    )
+                )
+            else:
+                run.groups.append(
+                    GroupRun(
+                        name=name, status="interrupted",
+                        posts_new=state["count"], files_new=state["files"],
+                        note=note,
+                    )
+                )
+            print(
+                f"[interrupted] @{name}: kept {state['count']} posts "
+                "indexed so far — re-run `tbi api-backfill` to resume.",
+                file=sys.stderr,
+            )
+            raise
+        except Exception as exc:  # keep the other sources going
+            store.set_source_status(
+                sid, "error", note=str(exc),
+                oldest=state["oldest"], newest=state["newest"],
+                last_indexed=_now_iso(),
+            )
+            print(f"[error] @{name}: {exc}", file=sys.stderr)
+            if kind == "channel":
+                run.channels.append(
+                    ChannelRun(
+                        username=name, status="error",
+                        posts_new=state["count"], files_new=state["files"],
+                        scope=scope, error=str(exc),
+                    )
+                )
+            else:
+                run.groups.append(
+                    GroupRun(
+                        name=name, status="error",
+                        posts_new=state["count"], files_new=state["files"],
+                        error=str(exc),
+                    )
+                )
+        totals["posts"] += state["count"]
+        totals["files"] += state["files"]
+
+    async def _run_all() -> None:
+        await client.start()
+        try:
+            for kind, name, label in targets:
+                await _target(kind, name, label)
+        finally:
+            await client.disconnect()
+
+    try:
+        asyncio.run(_run_all())
+    except KeyboardInterrupt:
+        run.status = "interrupted"
+        print("[interrupted] API backfill stopped.", file=sys.stderr)
+    finally:
+        run.finished_at = _now_iso()
+        run.duration_s = time.monotonic() - started_mono
+        if run.status != "interrupted":
+            processed = run.channels + run.groups
+            errored = [r for r in processed if r.status == "error"]
+            if processed and len(errored) == len(processed):
+                run.status = "failed"
+            elif errored:
+                run.status = "partial"
+            else:
+                run.status = "ok"
+        counts = store.counts()
+        try:
+            report_text = build_report(store, run, cfg)
+            report_path = (
+                Path(args.report)
+                if args.report
+                else Path(db_path).parent / "index-report.md"
+            )
+            write_report(report_path, report_text)
+            print(f"Report: {report_path}")
+        except Exception as exc:  # never fail the run over the report
+            print(f"Warning: could not write index report: {exc}", file=sys.stderr)
+        store.close()
+    print(
+        f"\nDone. Index now holds {counts['posts']} posts, "
+        f"{counts['files']} files ({counts['books']} distinct books) "
+        f"from {counts['sources']} sources. DB: {db_path}"
+    )
+    return 1 if run.status == "failed" else 0
+
+
+def cmd_submit_book(args: argparse.Namespace) -> int:
+    """Index one book individually, recording its source link."""
+    store = Store(args.db)
+    try:
+        record = submit_book(
+            store,
+            args.source,
+            args.title,
+            author=args.author or "",
+            format=args.format,
+            size_bytes=args.size,
+            size_text=args.size_text,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        store.close()
+    print(f"Indexed: {record['title']}")
+    if record["author"]:
+        print(f"  author: {record['author']}")
+    print(
+        f"  file: {record['filename']}  |  source: {record['kind']}: "
+        f"{record['source']}"
+    )
+    print(f"  get it: {record['obtain_url']}")
+    if record["already_indexed_from"]:
+        print(
+            f"  note: this book was already in the index from "
+            f"{record['already_indexed_from']} other source(s) — it now "
+            "has one more."
+        )
+    return 0
+
+
 def cmd_sources(args: argparse.Namespace) -> int:
     store = Store(args.db)
     try:
@@ -885,6 +1268,61 @@ def build_parser() -> argparse.ArgumentParser:
     psc.add_argument("--limit", type=int, default=20,
                      help="Max results (default: 20, about one screen)")
     psc.set_defaults(func=cmd_search_channel)
+
+    pa = sub.add_parser(
+        "api-backfill",
+        help="Manual-only API backfill: full history via MTProto/Telethon "
+        "(credentials from the environment — GitHub Actions secrets). "
+        "Never part of the daily scheduled job.",
+    )
+    pa.add_argument("--config", default="channels.yaml")
+    pa.add_argument("--db", default=None, help="SQLite file (default: from config)")
+    pa.add_argument(
+        "--channel", default=None,
+        help="One configured channel/group only (default: all configured)",
+    )
+    pa.add_argument(
+        "--full", action="store_true",
+        help="Force a full history walk, ignoring stored progress",
+    )
+    pa.add_argument(
+        "--new-only", action="store_true",
+        help="Only fetch posts newer than the stored newest",
+    )
+    pa.add_argument(
+        "--backfill", action="store_true",
+        help="New posts first, then one block (see --backfill-block) "
+        "below the oldest indexed post per channel",
+    )
+    pa.add_argument(
+        "--backfill-block", type=int, default=3000, metavar="N",
+        help="Posts per backfill block per channel (default: 3000)",
+    )
+    pa.add_argument(
+        "--report", default=None,
+        help="Where to write index-report.md (default: next to the DB)",
+    )
+    pa.set_defaults(func=cmd_api_backfill)
+
+    pb = sub.add_parser(
+        "submit-book",
+        help="Index one book individually, recording its source link "
+        "(a t.me post link or an external URL). Metadata only.",
+    )
+    pb.add_argument("--source", required=True,
+                    help="Book's source: a t.me channel/group post link "
+                    "or an external http(s) URL")
+    pb.add_argument("--title", required=True, help="Book title")
+    pb.add_argument("--author", default="", help="Author (optional)")
+    pb.add_argument("--format", default="epub",
+                    help="Format: epub, mobi, azw3, kfx, pdf, txt "
+                    "(default: epub)")
+    pb.add_argument("--size", type=int, default=None,
+                    help="File size in bytes (optional)")
+    pb.add_argument("--size-text", default=None,
+                    help="Display size, e.g. '1.2 MB' (optional)")
+    pb.add_argument("--db", default="index.db")
+    pb.set_defaults(func=cmd_submit_book)
 
     pv = sub.add_parser("sources", help="List indexed sources and coverage")
     pv.add_argument("--db", default="index.db")

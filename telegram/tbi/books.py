@@ -150,3 +150,21 @@ def dedupe_key(title: str, author: str, size_bytes: int | None) -> str:
     a title; when size is unknown the key is title+author only."""
     base = f"{_norm_key(title)}|{_norm_key(author)}"
     return f"{base}|{size_bytes}" if size_bytes else base
+
+
+def format_size(size_bytes: int | None) -> str | None:
+    """Bytes -> the display text the preview uses ("12.3 MB", "985.7 KB").
+
+    The inverse of :func:`tbi.scrape.parse_size`: used when a size is
+    known as bytes (API messages, submitted books) but no display text
+    was given. Returns None for an unknown size.
+    """
+    if size_bytes is None:
+        return None
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            text = f"{size:.1f}".rstrip("0").rstrip(".")
+            return f"{text} {unit}"
+        size /= 1024
+    return None

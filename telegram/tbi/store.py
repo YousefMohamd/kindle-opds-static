@@ -352,6 +352,17 @@ class Store:
     def commit(self) -> None:
         self.conn.commit()
 
+    def count_sources_with_key(self, dedupe_key: str) -> int:
+        """How many distinct sources already hold a book with this
+        dedup key. Used by ``tbi submit-book`` to report whether the
+        submitted book is already in the index from elsewhere."""
+        row = self.conn.execute(
+            "SELECT COUNT(DISTINCT p.source_id) AS n FROM files f "
+            "JOIN posts p ON p.id = f.post_id WHERE f.dedupe_key = ?",
+            (dedupe_key,),
+        ).fetchone()
+        return int(row[0])
+
     def counts(self) -> dict:
         # Empty dedupe keys ('', '|') are one file each, not one
         # book — the same rule list_books() uses, so the counts and
