@@ -1,5 +1,6 @@
 """Command-line interface: ``tbi index`` / ``tbi search`` / ``tbi sources``
-/ ``tbi search-channel`` / ``tbi api-backfill`` / ``tbi submit-book``.
+/ ``tbi search-channel`` / ``tbi api-backfill`` / ``tbi join-groups`` /
+``tbi submit-book``.
 
 On-demand only: every command opens the SQLite file, does its work, and
 exits. No server, no background process.
@@ -29,7 +30,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__
+from . import __version__, join_groups
 from .api_history import (
     ApiCredentialsError,
     create_client,
@@ -1050,6 +1051,115 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
     return 1 if run.status == "failed" else 0
 
 
+def cmd_join_groups(args: argparse.Namespace) -> int:
+    """Slow, safe group joining (v0.4.6): join a few configured groups
+    per run, add them to the owner's chat folder, and record the
+    outcome in join-state.json. Scheduled (telegram-join-groups.yml),
+    never part of the daily preview job. Credentials only from the
+    environment (GitHub Actions secrets); reads only configured
+    groups (channels.yaml) — never personal chats. Joining only: the
+    indexing of a newly joined group is a separate step (the workflow
+    runs ``tbi api-backfill --channel <name>`` for each name this
+    command writes to newly-joined.txt).
+
+    Exit 0 when the run completed — even when nothing was joined, or
+    when a flood wait stopped it (both are expected states the
+    workflow handles, not failures). Exit 2 for config/credential
+    problems, 1 when interrupted.
+    """
+    try:
+        cfg = load_config(args.config)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    state_path = Path(args.state)
+    try:
+        state = join_groups.load_state(state_path, cfg)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    batch = (
+        args.batch
+        if args.batch is not None
+        else int(state.get("batch_size", join_groups.DEFAULT_BATCH_SIZE))
+    )
+    folder = args.folder or state.get(
+        "folder_title", join_groups.DEFAULT_FOLDER_TITLE
+    )
+    delay = state.get("delay_seconds") or [
+        join_groups.DEFAULT_DELAY_MIN_S,
+        join_groups.DEFAULT_DELAY_MAX_S,
+    ]
+    delay_min = (
+        args.delay_min
+        if args.delay_min is not None
+        else float(delay[0])
+    )
+    delay_max = (
+        args.delay_max
+        if args.delay_max is not None
+        else float(delay[1])
+    )
+    if delay_min < 0 or delay_max < delay_min:
+        print(
+            "Error: --delay-min/--delay-max must satisfy "
+            "0 <= min <= max.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        api_id, api_hash, session = load_api_credentials()
+    except ApiCredentialsError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        client = create_client(api_id, api_hash, session)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    def _save(_state=None) -> None:
+        join_groups.save_state(state_path, state)
+
+    async def _run() -> join_groups.JoinResult:
+        await client.start()
+        try:
+            return await join_groups.join_pending(
+                client, cfg, state, batch=batch, delay_min=delay_min,
+                delay_max=delay_max, folder_title=folder, on_update=_save,
+            )
+        finally:
+            await client.disconnect()
+
+    try:
+        result = asyncio.run(_run())
+    except KeyboardInterrupt:
+        print("[interrupted] join-groups stopped.", file=sys.stderr)
+        _save()
+        return 1
+    # Files the workflow reads: the names to index (one per line; the
+    # file exists even when nothing was joined, so the workflow can
+    # tell "nothing new" from "the step never ran").
+    Path(args.newly_joined).write_text(
+        "".join(f"{name}\n" for name in result.joined), encoding="utf-8"
+    )
+    report_text = join_groups.build_join_report(result, state)
+    report_path = Path(args.report)
+    report_path.write_text(report_text, encoding="utf-8")
+    _save()
+    print(
+        f"\nDone. Joined {len(result.joined)}, already a member of "
+        f"{len(result.already_member)}, failed {len(result.failed)}"
+        + (
+            " — stopped by a flood wait; the next scheduled run retries"
+            if result.stopped_by_flood_wait
+            else ""
+        )
+        + f". Report: {report_path}  State: {state_path}"
+    )
+    return 0
+
+
 def cmd_submit_book(args: argparse.Namespace) -> int:
     """Index one book individually, recording its source link."""
     store = Store(args.db)
@@ -1311,6 +1421,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to write index-report.md (default: next to the DB)",
     )
     pa.set_defaults(func=cmd_api_backfill)
+
+    pj = sub.add_parser(
+        "join-groups",
+        help="Scheduled-only slow group joining: join a few configured "
+        "groups per run and add them to the owner's chat folder "
+        "(credentials from the environment — GitHub Actions secrets). "
+        "Never part of the daily preview job.",
+    )
+    pj.add_argument("--config", default="channels.yaml")
+    pj.add_argument(
+        "--state", default="join-state.json",
+        help="Join-state file (default: join-state.json)",
+    )
+    pj.add_argument(
+        "--batch", type=int, default=None,
+        help="Groups to attempt per run (default: from the state file, 3)",
+    )
+    pj.add_argument(
+        "--delay-min", type=float, default=None,
+        help="Minimum pause between joins in seconds (default: from the "
+        "state file, 60)",
+    )
+    pj.add_argument(
+        "--delay-max", type=float, default=None,
+        help="Maximum pause between joins in seconds (default: from the "
+        "state file, 120)",
+    )
+    pj.add_argument(
+        "--folder", default=None,
+        help="Chat-folder title to add joined groups to (default: from "
+        "the state file, 📚كتب)",
+    )
+    pj.add_argument(
+        "--newly-joined", default="newly-joined.txt",
+        help="File for the newly joined group names, one per line "
+        "(default: newly-joined.txt)",
+    )
+    pj.add_argument(
+        "--report", default="join-report.md",
+        help="Where to write join-report.md (default: join-report.md)",
+    )
+    pj.set_defaults(func=cmd_join_groups)
 
     pb = sub.add_parser(
         "submit-book",

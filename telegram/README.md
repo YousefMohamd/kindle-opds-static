@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.5 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.6 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -10,6 +10,7 @@ tbi search "Hemingway" --format pdf
 tbi sources                    # show sources and how far each was indexed
 tbi search-channel --channel ekraly --query "Dune"   # targeted search + priority queue
 tbi api-backfill --channel ekraly   # OPTIONAL, manual-only: full history via the API
+tbi join-groups                      # SCHEDULED-ONLY, slow: join a few groups per run + add them to the 📚كتب folder
 tbi submit-book --source https://t.me/testchan/42 --title "Dune"   # index one book
 ```
 
@@ -262,6 +263,61 @@ metadata + source link only. Submitting the same book twice does not
 duplicate it, and a book already in the index from another source is
 reported as such. An external source is stored under a `submitted`
 source named after its domain.
+
+## Slow group joining (scheduled, v0.4.6)
+
+The API can only read a group's history once the owner is a member of
+it — and the owner is a member of only ~5% of the 168 configured
+groups. `tbi join-groups` closes that gap, slowly and safely, with no
+terminal work from the owner: the scheduled workflow
+(`.github/workflows/telegram-join-groups.yml`, every 12 hours) joins
+up to **3 pending groups per run**, waits **60–120 s between joins**,
+adds each joined group to the owner's Telegram chat folder **📚كتب**,
+then indexes each newly joined group with the API backfill and
+publishes. That is ~6 groups a day, so the full sweep takes ~4 weeks
+— the owner only checks `join-state.json` / `join-report.md` in the
+repo every few days.
+
+**Why so slow:** joining is the most rate-limited thing a Telegram
+account can do. Joining ~160 groups in one go would trigger a flood
+wait and could restrict the owner's account, so this job never
+hurries. A **flood wait stops the run immediately** — no more groups
+are attempted, the wait (group + seconds + until-when) is recorded in
+`join-state.json`, and the next scheduled run attempts nothing until
+the wait has expired.
+
+**How it works:**
+- `join-state.json` (committed to the repo, so it survives the
+  ephemeral GitHub runners) holds one entry per group: `status`
+  (`pending` / `joined` / `already_member` / `failed` / `flood_wait`),
+  `joined_at`, `fail_reason`, `flood_wait_seconds`, `attempts`, and the
+  folder-step outcome — plus the run settings (folder title, batch
+  size, delay range) and any active flood wait.
+- Membership is checked **first** (never a redundant join request);
+  a group he is already in is marked `already_member` and still added
+  to the folder. A handle that resolves to a person is refused.
+- One group's failure (not found, private, needs admin approval, …)
+  is recorded with its reason and the run moves on. A `failed` group
+  is never retried automatically — to retry one, set its `status`
+  back to `pending` in `join-state.json`.
+- The folder step is best-effort: when the folder is missing it is
+  logged and skipped (never created automatically — the owner made it,
+  the tool only adds to it).
+- A run that joins nothing (all failed, a flood wait, or the sweep is
+  done) still commits the updated `join-state.json` + `join-report.md`
+  and does not fail — the live site is untouched in that case.
+- A group whose backfill fails after joining stays `joined` in the
+  state; the manual `telegram-api-backfill` (all sources) picks it up
+  on a later run.
+
+**Checking progress:** open `telegram/join-state.json` in the repo
+(count the statuses) or `telegram/join-report.md` (the last run's
+record). **Manual trigger:** GitHub → repo → Actions →
+`telegram-join-groups` → Run workflow (optional `batch` input,
+default 3). Locally, with the API secrets exported:
+```bash
+tbi join-groups --batch 3   # batch / delay / folder default to the state file
+```
 
 ## Cloud publish (static site, daily sync)
 

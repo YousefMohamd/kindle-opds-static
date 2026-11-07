@@ -1,0 +1,1358 @@
+{
+  "version": 1,
+  "folder_title": "📚كتب",
+  "batch_size": 3,
+  "delay_seconds": [
+    60.0,
+    120.0
+  ],
+  "flood_wait_until": null,
+  "flood_wait_seconds": null,
+  "flood_wait_group": null,
+  "groups": {
+    "All_kinds_Books_Lib": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Arabickindle1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "BOOKCLUB_AR": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookclubarabic": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "booksforarabs": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ddfkindle": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "EBook_Library": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "jazz223k": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kfxarabic": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kindel4": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kindle4kurd": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "KindleArabicLibrary": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "KindleKotob": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kotobkhana": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "pdfiat": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "xepub": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "BOOK_HOUSE_INTERNATIONAL": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookjunkieb": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookpdfepub": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookspsychology101": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "CoolBooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "e_books_eng": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ebookstoread": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "englishbooks99": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "FreeEbookDownloadEnglish": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Legacy_1945": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "muscatnonfiction": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "OnePageAway": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "oxford_bookworms_lm": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Oxford_Bookwormss": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "OxfordBookwormers": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "OxfordBookwormsDominoes1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "OxfordReadingTree": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "storybookspdf": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "the_romance_hub": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "trunkietrunk": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "adventurers5": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Ahlahadota": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "almoghmiroonal5msa": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Arabic_PDF": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookcheldren": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Mahmoud_Salem_5": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "maktph": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "noorlibrarykids": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "pokidz": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "samaheltaweelkidsstories": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Comics_gate": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "comics_link": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "donaldduckcomics": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Mohanime": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "BabyEnglishBooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "book4kid": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "stories_kids": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "storybooksforkids": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "audiobooks_kid": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "easymath121": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "G5_Y5": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kidsbookden": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "plussheets": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "sciencecamp1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "scincematerialsMH": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ArabicMagazine": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "arabJournalism": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "magazineguy": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "megalatnawader": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "aa2tyuq": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "abo_abdu": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ahn1972": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ahn2323": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "alanbyawardmsr": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "almaktbhh": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Almootnbe100": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "art_of_book": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ArwaCoffeeBook": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "asseralkotob": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "book100100": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "book350": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Book_cr2": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Bookes2023": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookforbooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "BoOkJuiCe": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "books2023": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "BROKAREEMANDME": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "cozmoBooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "debsibooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "DrKhaledFahmy": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ekraly3": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "freebooksf": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "fun_to_read": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "HadiAriyanLibrary": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "HindawiFoundationBooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "HoSo0oN": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "julietyoya": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "katabataa": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "khatabg": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "KotobkhanaPDF": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kotokhatab": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kottobgededa1977": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "L_alnader1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "L_alnader14": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "l_alnader2": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "lastStopbooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "lenaqra": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "lenaqra3": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "llllTTTWW": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "lovekotob": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "M3RFAHALKOTOB": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "MaktabaBook": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "maktbahnet": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "maktbapdf": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "mybook22": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ni3mehalzoubi": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "novels2n": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Numidia_Library": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "pdf_novels": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "pdfkotab19": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "read00": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Sa7eralkutub": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "soramnqraa": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "tea_sugar": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "To_The_Book": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "wadistreambooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "wessam_pdf": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "yasmeenbook": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "abntaymia3": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "almeshkat2023": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "baz_book": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Drnonaphrmacy": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "dvjhtj": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Free_IslamicBooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "IslamicLibrary1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "islamicMoral": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "kj7_oi": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "KOTOB_ISLAMIC": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "KotobEslamiah": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ktbmB_othaimen": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ktbmfid": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "mergebooks": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "NewBooksAndEditions": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "palkotob": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "PDFnew": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "qra_at": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "quwaa": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "safi_book": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "tahmilkutubwarosaililmiyah": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "jame3_masahif": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "shamarly": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "abjjad_free": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "julietbookstoregroup": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "K3tabi": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "K3tabiCo": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Motamayz00n": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "READ4OR": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Rff404": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "SARIQriwayat": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "GoldenshamelaGroup": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "isalmickindl": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "shamela4kindle": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "shamela_epub": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "shamela_kindle": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ShamelaMakhtota": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "cambridge_library": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "englishcafe_1": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "langcours": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "MyEnglishChannel": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "Tleeq": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "ZAmericanEnglishCourse": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "zamericangroup": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    }
+  }
+}

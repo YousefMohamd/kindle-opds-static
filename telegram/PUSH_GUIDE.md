@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.5)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.6)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -197,6 +197,22 @@ project references or requires it.
    manually. Once the report shows every channel complete, the workflow
    can be switched to `tbi index --new-only` (leaving it on
    `--backfill` is also fine).
+
+## v0.4.6 — slow group joining (no Mac step needed)
+
+v0.4.6 adds `telegram-join-groups.yml` (every 12 h, 3 groups per run)
+plus `telegram/join-state.json` (all 168 groups, `pending`) and
+`tbi join-groups`. It is deployed with the same delta push as above
+(the new files are in the zip) — **no terminal work from the owner,
+no `git push` from the Mac**: the deploy goes through the GitHub API
+and the workflow runs on GitHub's runners. After the push, check
+Actions → `telegram-join-groups` → run it once manually (batch 3) and
+watch it go green; then check `telegram/join-state.json` in the repo
+— the first groups should be `joined` (or `already_member`) and the
+folder step recorded. The sweep takes ~4 weeks at ~6 groups/day; a
+run that joins nothing still commits the state + report and does not
+fail. To retry a `failed` group, set its `status` back to `pending`
+in `join-state.json` (see README "Slow group joining").
 
 ## Notes
 

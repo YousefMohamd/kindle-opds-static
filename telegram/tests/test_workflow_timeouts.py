@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SYNC = REPO_ROOT / ".github" / "workflows" / "telegram-sync.yml"
 API = REPO_ROOT / ".github" / "workflows" / "telegram-api-backfill.yml"
+JOIN = REPO_ROOT / ".github" / "workflows" / "telegram-join-groups.yml"
 
 
 def _load(path: Path):
@@ -80,21 +81,65 @@ def test_api_backfill_failure_step_saves_progress():
     assert "progress + report saved" in run
 
 
-def test_version_is_0_4_5():
-    """pyproject, package __init__, and both docs agree on v0.4.5."""
+def test_join_groups_workflow():
+    """v0.4.6: the slow-join job runs every 12 h (3 groups/run), shares
+    the telegram concurrency group, indexes only the newly joined
+    groups, publishes the join state with the site, and commits the
+    state alone when nothing was joined (a zero-joined run is not a
+    failure)."""
+    doc = _load(JOIN)
+    # NOTE: PyYAML (YAML 1.1) parses the `on:` key as boolean True.
+    on = doc[True]
+    crons = [s["cron"] for s in on["schedule"]]
+    assert crons == ["0 */12 * * *"]
+    assert on["workflow_dispatch"]["inputs"]["batch"]["default"] == "3"
+    assert doc["concurrency"]["group"] == "kindle-opds-static-telegram-sync"
+    assert doc["concurrency"]["cancel-in-progress"] is False
+    assert doc["permissions"]["contents"] == "write"
+    job = doc["jobs"]["join-groups"]
+    assert job["timeout-minutes"] == 120
+    join = _step(doc, "join-groups", "Join groups")
+    assert "tbi join-groups" in join["run"]
+    check = _step(doc, "join-groups", "Check what was joined")
+    assert check["id"] == "check"
+    assert "GITHUB_OUTPUT" in check["run"]
+    index = _step(doc, "join-groups", "Index newly joined groups")
+    assert index["timeout-minutes"] == 60
+    assert "tbi api-backfill" in index["run"]
+    assert "--backfill-block 3000" in index["run"]
+    assert "steps.check.outputs.joined == 'true'" in index["if"]
+    publish = _step(doc, "join-groups", "Publish atomically")
+    assert "telegram/join-state.json" in publish["run"]
+    assert "telegram/join-report.md" in publish["run"]
+    assert "index.db.gz" in publish["run"]
+    state_only = _step(doc, "join-groups", "Commit join state only")
+    assert "steps.check.outputs.joined != 'true'" in state_only["if"]
+    assert "join-state.json" in state_only["run"]
+    failure = _step(doc, "join-groups", "Save progress")
+    assert failure.get("if") == "failure()"
+    run = failure["run"]
+    assert "wal_checkpoint" in run
+    assert "tbi validate" in run
+    assert "index.db.gz" in run
+    assert "join-state.json" in run
+    assert "progress + report saved" in run
+
+
+def test_version_is_0_4_6():
+    """pyproject, package __init__, and both docs agree on v0.4.6."""
     pyproject = (
         REPO_ROOT / "telegram" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert re.search(r'^version = "0\.4\.5"$', pyproject, re.M)
+    assert re.search(r'^version = "0\.4\.6"$', pyproject, re.M)
     init = (
         REPO_ROOT / "telegram" / "tbi" / "__init__.py"
     ).read_text(encoding="utf-8")
-    assert '__version__ = "0.4.5"' in init
+    assert '__version__ = "0.4.6"' in init
     readme = (REPO_ROOT / "telegram" / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# telegram-book-index (v0.4.5")
+    assert readme.startswith("# telegram-book-index (v0.4.6")
     guide = (
         REPO_ROOT / "telegram" / "PUSH_GUIDE.md"
     ).read_text(encoding="utf-8")
     assert guide.startswith(
-        "# Publishing the Telegram merge into kindle-opds-static (v0.4.5)"
+        "# Publishing the Telegram merge into kindle-opds-static (v0.4.6)"
     )
