@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.6 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.7 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -407,6 +407,19 @@ seed is pushed.
   run (recorded in the report; the run continues) and needs joining
   first, or a Desktop export. The 10 dead handles and 6 private
   invite links stay inactive (not group entries).
+- **Rebase before push (v0.4.7):** the full api-backfill run
+  42406045618 (2026-11-07) ran 1h22m and failed at the final push —
+  the owner had pushed v0.4.6 mid-run, so the workflow's plain `git
+  push` was rejected (non-fast-forward) and the run's commit was lost
+  (the runner is ephemeral). All three workflows now run `git pull
+  --rebase --autostash origin main` before every push (Publish,
+  join-state, and failure-save), so a code push during a run no
+  longer fails the publish; the failure-save push is retried once
+  after a rebase. A rebase conflict fails loudly instead of pushing
+  or skipping, and force-push is never used. `--autostash` is
+  required in the failure-save: the progress files are uncommitted
+  there, and a plain rebase refuses with unstaged changes (verified
+  in a shallow clone).
 - **The site:** `site/telegram/index.html` is a single static page
   (Arabic-first, RTL) that loads `index.json` and searches client-side
   — no server, no external dependencies. It has the same Arabic

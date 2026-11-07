@@ -202,6 +202,17 @@ jobs:
           # transition commit); harmless once it is gone.
           git rm --cached telegram/index.db 2>/dev/null || true
           git commit -m "[telegram-join-groups] slow join run — new groups indexed" || echo "nothing to commit"
+          # Rebase before pushing (v0.4.7): a code push during a long
+          # run used to reject this push (non-fast-forward) and lose
+          # the run's work (run 42406045618, 2026-11-07: 1h22m of
+          # indexing, commit 5848518, lost). The rebase replays this
+          # commit on top of the current remote head (a code push
+          # never touches these index/site files, so it applies
+          # cleanly). --autostash is a no-op here (the tree is clean
+          # after the commit) but keeps the command identical across
+          # steps. Never force-push. If the rebase conflicts, fail
+          # loudly instead of pushing or skipping.
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the publish cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
           git push
 
       - name: Commit join state only (nothing newly joined)
@@ -214,6 +225,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add join-state.json join-report.md 2>/dev/null || true
           git commit -m "[telegram-join-groups] slow join run — no new groups joined" || echo "nothing to commit"
+          # Rebase before pushing (v0.4.7): same fix as the Publish
+          # step — a code push during the run used to reject this push
+          # and lose the recorded join state. Fail loudly on a rebase
+          # conflict instead of pushing or skipping.
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the join state cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
           git push || echo "could not push the join state"
 
       - name: Save progress + report on failure (keeps the last-good site live)
@@ -257,8 +273,23 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Rebase before saving (v0.4.7): a code push during a long
+          # run used to reject the failure-save push too, losing the
+          # run's progress (run 42406045618, 2026-11-07). --autostash
+          # is required here: the progress files are uncommitted at
+          # this point, and a plain rebase refuses with unstaged
+          # changes (verified in a shallow clone). The commit below is
+          # then built on the current remote head. If the rebase
+          # conflicts, fail loudly instead of pushing.
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before failure-save failed — the progress cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
           git add index.db.gz 2>/dev/null || true
           git add index-report.md 2>/dev/null || true
           git add join-state.json join-report.md 2>/dev/null || true
           git commit -m "[telegram-join-groups] run failed — progress + report saved" || echo "nothing to commit"
-          git push || echo "could not push the failure save"
+          # One retry: the remote can move again between the rebase
+          # and the push. Rebase once more and push once more; if that
+          # still fails, give up (single retry, not a loop).
+          if ! git push; then
+            echo "::warning::Push failed — rebasing once and retrying the push."
+            git pull --rebase --autostash origin main && git push || echo "could not push the failure save"
+          fi

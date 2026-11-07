@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.6)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.7)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -213,6 +213,18 @@ folder step recorded. The sweep takes ~4 weeks at ~6 groups/day; a
 run that joins nothing still commits the state + report and does not
 fail. To retry a `failed` group, set its `status` back to `pending`
 in `join-state.json` (see README "Slow group joining").
+
+## v0.4.7 — rebase before push
+
+v0.4.7 fixes a real production failure: the full api-backfill run
+42406045618 (2026-11-07) ran 1h22m and failed at the final push
+because v0.4.6 was pushed mid-run — the workflow's plain `git push`
+was rejected (non-fast-forward) and the run's commit, which existed
+only on the ephemeral runner, was lost. All three workflows now run
+`git pull --rebase --autostash origin main` before every push, so a
+code push during a run no longer fails the publish (the failure-save
+push is retried once after a rebase). Deployed with the same delta
+push as above. No behaviour change otherwise.
 
 ## Notes
 

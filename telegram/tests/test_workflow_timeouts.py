@@ -125,21 +125,111 @@ def test_join_groups_workflow():
     assert "progress + report saved" in run
 
 
-def test_version_is_0_4_6():
-    """pyproject, package __init__, and both docs agree on v0.4.6."""
+def test_version_is_0_4_7():
+    """pyproject, package __init__, and both docs agree on v0.4.7."""
     pyproject = (
         REPO_ROOT / "telegram" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert re.search(r'^version = "0\.4\.6"$', pyproject, re.M)
+    assert re.search(r'^version = "0\.4\.7"$', pyproject, re.M)
     init = (
         REPO_ROOT / "telegram" / "tbi" / "__init__.py"
     ).read_text(encoding="utf-8")
-    assert '__version__ = "0.4.6"' in init
+    assert '__version__ = "0.4.7"' in init
     readme = (REPO_ROOT / "telegram" / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# telegram-book-index (v0.4.6")
+    assert readme.startswith("# telegram-book-index (v0.4.7")
     guide = (
         REPO_ROOT / "telegram" / "PUSH_GUIDE.md"
     ).read_text(encoding="utf-8")
     assert guide.startswith(
-        "# Publishing the Telegram merge into kindle-opds-static (v0.4.6)"
+        "# Publishing the Telegram merge into kindle-opds-static (v0.4.7)"
     )
+
+
+# --- v0.4.7: rebase before push -------------------------------------------
+# Run 42406045618 (2026-11-07) ran 1h22m and failed at the final push:
+# v0.4.6 was pushed mid-run, so the plain `git push` was rejected
+# (non-fast-forward) and the run's commit — which existed only on the
+# ephemeral runner — was lost. Every push in every telegram workflow
+# must now be preceded by a rebase, and force-push is never used.
+
+WORKFLOWS = [SYNC, API, JOIN]
+REBASE = "git pull --rebase --autostash origin main"
+
+
+def _push_steps(doc, job: str):
+    """Steps that push (Publish, join-state, failure-save) — every
+    `git push` in them must be preceded by a rebase in the same step."""
+    for step in doc["jobs"][job]["steps"]:
+        run = step.get("run", "")
+        if "git push" in run:
+            yield step.get("name", "?"), run
+
+
+def test_rebase_before_every_push():
+    """Every `git push` in every telegram workflow is preceded by a
+    `git pull --rebase` in the same step — Publish, join-state, and
+    failure-save alike. The rebase must be the autostash form: the
+    failure-save rebases with uncommitted progress files, and a plain
+    rebase refuses with unstaged changes."""
+    for path in WORKFLOWS:
+        doc = _load(path)
+        for job in doc["jobs"]:
+            for name, run in _push_steps(doc, job):
+                pushes = [m.start() for m in re.finditer(r"git push\b", run)]
+                rebases = [
+                    m.start() for m in re.finditer(r"git pull --rebase\b", run)
+                ]
+                assert pushes, f"{path.name} step {name!r}: expected a git push"
+                assert rebases, (
+                    f"{path.name} step {name!r}: git push without a "
+                    "preceding rebase"
+                )
+                for p in pushes:
+                    assert any(r < p for r in rebases), (
+                        f"{path.name} step {name!r}: a git push has no "
+                        "git pull --rebase before it"
+                    )
+                assert REBASE in run, (
+                    f"{path.name} step {name!r}: rebase must be "
+                    f"`{REBASE}`"
+                )
+
+
+def test_no_force_push_anywhere():
+    """No workflow may ever force-push: it would discard the other
+    writer's commits — the exact data loss the rebase fix prevents."""
+    for path in WORKFLOWS:
+        text = path.read_text(encoding="utf-8")
+        assert "git push --force" not in text, f"{path.name} has a force-push"
+        assert "push -f" not in text, f"{path.name} has a force-push"
+        assert "force-with-lease" not in text, f"{path.name} has a force-push"
+
+
+def test_failure_save_rebases_before_add_and_retries_push():
+    """The failure-save rebase must come BEFORE the add/commit (so the
+    progress commit is built on the current remote head), and its push
+    must be retried once after a rebase (single retry, not a loop)."""
+    for path in WORKFLOWS:
+        doc = _load(path)
+        for job in doc["jobs"]:
+            failure = _step(doc, job, "Save progress")
+            run = failure["run"]
+            rebase = run.index("git pull --rebase")
+            first_add = run.index("git add")
+            assert rebase < first_add, (
+                f"{path.name}: failure-save rebase must precede the "
+                "first git add"
+            )
+            assert "if ! git push; then" in run, (
+                f"{path.name}: failure-save push needs a single-retry block"
+            )
+            retry = run[run.index("if ! git push") :]
+            assert "git pull --rebase" in retry, (
+                f"{path.name}: push retry must rebase before pushing again"
+            )
+            assert retry.count("git push") == 2, (
+                f"{path.name}: push retry must push exactly once more"
+            )
+            assert not re.search(r"\b(for|while)\b", retry), (
+                f"{path.name}: push retry must not be a loop"
+            )
