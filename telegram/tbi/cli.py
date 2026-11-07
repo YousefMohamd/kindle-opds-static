@@ -27,7 +27,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import __version__, join_groups
@@ -38,6 +38,7 @@ from .api_history import (
     iter_api_posts,
     load_api_credentials,
 )
+from .entity_cache import DEFAULT_ENTITY_CACHE, EntityCache, ResolveFloodWait
 from .books import BOOK_EXTS, dedupe_key, parse_title_author
 from .config import load_config
 from .export_static import export_static
@@ -819,6 +820,15 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
     started_mono = time.monotonic()
     store = Store(db_path)
     totals = {"posts": 0, "files": 0}
+    # The persistent entity cache (v0.4.8): a cached handle is used
+    # WITHOUT any ResolveUsernameRequest. Without it, every run
+    # resolved all 211 handles and tripped a ~20-hour flood wait
+    # (2026-11-07). A missing/corrupt file loads as empty — the run
+    # re-resolves and rebuilds it, it never blocks the backfill.
+    cache = EntityCache.load(args.entity_cache)
+    # Set by _target when a resolve flood-wait stops the run: no
+    # further source is attempted (the wait is account-wide).
+    stop_after_target = {"resolve_flood_wait": None}
 
     async def _consume_api(store_: Store, sid: int, name: str, state: dict,
                            **kwargs) -> None:
@@ -829,7 +839,7 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
         new-posts / backfill phases) exactly like ``_consume_walk``.
         """
         batch = []
-        async for post in iter_api_posts(client, name, **kwargs):
+        async for post in iter_api_posts(client, name, cache=cache, **kwargs):
             batch.append(post)
             if len(batch) >= 50:
                 _consume_walk(store_, sid, name, iter(batch), state)
@@ -837,7 +847,9 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
         if batch:
             _consume_walk(store_, sid, name, iter(batch), state)
 
-    async def _target(kind: str, name: str, label: str) -> None:
+    async def _target(kind: str, name: str, label: str) -> bool:
+        """Index one source. Returns True when the run must stop
+        immediately (a resolve flood-wait) — False otherwise."""
         sid = store.upsert_source(kind, name, label)
         prev = store.get_source(name)
         prev_oldest = prev["oldest_post_id"] if prev else None
@@ -979,6 +991,50 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             raise
+        except ResolveFloodWait as exc:
+            # A resolve flood-wait is account-wide and long: STOP the
+            # whole run now (the next source would hit the same wait
+            # and could extend it). Recorded per-source AND in the run
+            # note, so the report says plainly what happened and when
+            # to retry.
+            until = datetime.now(timezone.utc) + timedelta(
+                seconds=exc.seconds
+            )
+            message = (
+                f"STOPPED by a Telegram flood-wait on username "
+                f"resolution: @{exc.handle} needs a {exc.seconds:g} "
+                f"second wait (until {until.isoformat()}). No further "
+                "sources were attempted — re-run after the wait "
+                "expires. The entity cache means the next run "
+                "resolves each handle only once."
+            )
+            store.set_source_status(
+                sid, "error", note=str(exc),
+                oldest=state["oldest"], newest=state["newest"],
+                last_indexed=_now_iso(),
+            )
+            print(f"[error] @{name}: {exc}", file=sys.stderr)
+            print(f"[flood-wait] {message}", file=sys.stderr)
+            if kind == "channel":
+                run.channels.append(
+                    ChannelRun(
+                        username=name, status="error",
+                        posts_new=state["count"], files_new=state["files"],
+                        scope=scope, error=str(exc),
+                    )
+                )
+            else:
+                run.groups.append(
+                    GroupRun(
+                        name=name, status="error",
+                        posts_new=state["count"], files_new=state["files"],
+                        error=str(exc),
+                    )
+                )
+            run.note = message
+            stop_after_target["resolve_flood_wait"] = (
+                exc.handle, exc.seconds
+            )
         except Exception as exc:  # keep the other sources going
             store.set_source_status(
                 sid, "error", note=str(exc),
@@ -1004,12 +1060,14 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
                 )
         totals["posts"] += state["count"]
         totals["files"] += state["files"]
+        return stop_after_target["resolve_flood_wait"] is not None
 
     async def _run_all() -> None:
         await client.start()
         try:
             for kind, name, label in targets:
-                await _target(kind, name, label)
+                if await _target(kind, name, label):
+                    break
         finally:
             await client.disconnect()
 
@@ -1078,6 +1136,10 @@ def cmd_join_groups(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
+    # The persistent entity cache (v0.4.8): a cached group is used
+    # WITHOUT any ResolveUsernameRequest. A missing/corrupt file
+    # loads as empty — the run re-resolves and rebuilds it.
+    cache = EntityCache.load(args.entity_cache)
     batch = (
         args.batch
         if args.batch is not None
@@ -1127,6 +1189,7 @@ def cmd_join_groups(args: argparse.Namespace) -> int:
             return await join_groups.join_pending(
                 client, cfg, state, batch=batch, delay_min=delay_min,
                 delay_max=delay_max, folder_title=folder, on_update=_save,
+                entity_cache=cache,
             )
         finally:
             await client.disconnect()
@@ -1420,6 +1483,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--report", default=None,
         help="Where to write index-report.md (default: next to the DB)",
     )
+    pa.add_argument(
+        "--entity-cache", default=DEFAULT_ENTITY_CACHE,
+        help="Persistent entity cache (default: entity-cache.json) — "
+        "a cached handle is used without any ResolveUsernameRequest; "
+        "a missing/corrupt file loads as empty and is rebuilt.",
+    )
     pa.set_defaults(func=cmd_api_backfill)
 
     pj = sub.add_parser(
@@ -1461,6 +1530,12 @@ def build_parser() -> argparse.ArgumentParser:
     pj.add_argument(
         "--report", default="join-report.md",
         help="Where to write join-report.md (default: join-report.md)",
+    )
+    pj.add_argument(
+        "--entity-cache", default=DEFAULT_ENTITY_CACHE,
+        help="Persistent entity cache (default: entity-cache.json) — "
+        "a cached group is used without any ResolveUsernameRequest; "
+        "a missing/corrupt file loads as empty and is rebuilt.",
     )
     pj.set_defaults(func=cmd_join_groups)
 

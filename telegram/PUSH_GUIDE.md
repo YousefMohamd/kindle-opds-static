@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.7)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.8)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -225,6 +225,26 @@ only on the ephemeral runner, was lost. All three workflows now run
 code push during a run no longer fails the publish (the failure-save
 push is retried once after a rebase). Deployed with the same delta
 push as above. No behaviour change otherwise.
+
+## v0.4.8 — entity cache
+
+v0.4.8 fixes a real production failure: the api-backfill run of
+2026-11-07 ~23:08 (head v0.4.7) failed in 24 seconds — EVERY one of
+the 211 sources failed with `A wait of 71998 seconds is required
+(caused by ResolveUsernameRequest)`, a ~20-hour flood wait on username
+resolution, and the run indexed nothing. Root cause: every API run
+resolved all 211 handles, because each GitHub Actions run starts with
+an empty Telethon entity cache (the session string carries the auth
+key, not the cached entities). `telegram/entity-cache.json` (committed
+to the repo, starts empty) now persists each handle's resolved id +
+access hash + type, so each handle is resolved once and later runs
+reuse the cached peer; both API workflows `git add` the cache in
+their Publish and failure-save steps (and the join-groups join-state
+step), and the code stops the run immediately if a resolve hits a
+flood wait. Deploy with the same delta push as above. **Do NOT run
+the api-backfill or join-groups workflows until the flood wait
+expires (~2026-11-08 ~19:08 Cairo)** — the cache only helps future
+runs, it cannot lift the current wait. No behaviour change otherwise.
 
 ## Notes
 

@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.7 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.8 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -217,6 +217,28 @@ when the owner starts it.
   and the walk is resumable (new posts first, then one backfill block
   below the oldest, like `tbi index --backfill`).
 
+**Entity cache (v0.4.8):** the API paths resolve each handle's
+username to a Telegram entity (id + access hash) through
+`ResolveUsernameRequest`. Every GitHub Actions run starts with an
+empty Telethon entity cache, so before v0.4.8 every run re-resolved
+ALL 211 handles — and on 2026-11-07 the account hit a ~20-hour
+flood wait on username resolution (`A wait of 71998 seconds is
+required (caused by ResolveUsernameRequest)`), which failed the whole
+run in 24 seconds. `telegram/entity-cache.json` (committed to the
+repo) now persists the resolved id + access hash + type for each
+handle: a later run uses the cached peer and never calls
+`ResolveUsernameRequest` for a handle that is already cached, and a
+new handle is resolved once and saved immediately. A stale cached
+entry (Telegram answers that the entity is invalid) is dropped and
+re-resolved once; a flood wait on resolve stops the run immediately
+and is recorded in the report. **Do NOT run the api-backfill or
+join-groups workflows until the 2026-11-07 flood wait expires
+(~2026-11-08 ~19:08 Cairo)** — the cache only helps future runs, it
+cannot lift the current wait. The daily preview sync does not use the
+API and needs no cache. The cache holds only public handles, numeric
+ids, access hashes, and timestamps — no secrets (an access hash is
+useless without the session).
+
 **Setup (once, by the owner):**
 1. Create `api_id` / `api_hash` at https://my.telegram.org — log in,
    "API development tools", create an app, copy the two values.
@@ -420,6 +442,20 @@ seed is pushed.
   required in the failure-save: the progress files are uncommitted
   there, and a plain rebase refuses with unstaged changes (verified
   in a shallow clone).
+- **Entity cache (v0.4.8):** every API run used to resolve ALL 211
+  handles via `ResolveUsernameRequest` (the Telethon entity cache is
+  empty on every ephemeral runner) — on 2026-11-07 that tripped a
+  ~20-hour flood wait and failed the api-backfill run in 24 seconds,
+  indexing nothing. `telegram/entity-cache.json` now persists each
+  handle's resolved id + access hash + type, so each handle is
+  resolved once and later runs reuse the cached peer; both API
+  workflows commit the cache in their Publish and failure-save steps
+  (and the join-groups join-state step). The cache file is committed
+  empty with v0.4.8 and populates on the first run. **Do NOT run the
+  api-backfill or join-groups workflows until the 2026-11-07 flood
+  wait expires (~2026-11-08 ~19:08 Cairo)** — the cache only helps
+  future runs, it cannot lift the current wait. No behaviour change
+  otherwise.
 - **The site:** `site/telegram/index.html` is a single static page
   (Arabic-first, RTL) that loads `index.json` and searches client-side
   — no server, no external dependencies. It has the same Arabic

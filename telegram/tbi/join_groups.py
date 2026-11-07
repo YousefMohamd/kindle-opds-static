@@ -55,6 +55,15 @@ active flood wait, if any. A ``failed`` group is never retried
 automatically; to retry one, set its ``status`` back to ``pending``
 in ``join-state.json`` (see README "Slow group joining").
 
+**Entity cache (v0.4.8):** the joiner resolves each group through
+:mod:`tbi.entity_cache` (``entity-cache.json``, committed to the
+repo). A cached group is used WITHOUT any ``ResolveUsernameRequest``
+— on 2026-11-07 the repeated resolution of all 211 handles tripped
+a ~20-hour flood wait that failed the whole API backfill in 24 s,
+so each handle is now resolved once, ever. A stale cached entry
+(``ChannelInvalidError`` on use) is dropped, re-resolved once, and
+the membership + join retried once with the fresh entity.
+
 **Telethon is an optional dependency.** This module imports cleanly
 without it installed; Telethon's TL request objects are built by the
 small ``_join_request`` / ``_get_participant_request`` /
@@ -77,6 +86,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config
+from .entity_cache import EntityCache, _is_channel_invalid, resolve_entity
 
 # The owner's chat folder (Telegram chat folder / "section") that the
 # joined groups are organised into. Created by the owner in Telegram;
@@ -298,15 +308,8 @@ def _rebuild_filter(old, include_peers):
 
 
 # --- small duck-typed helpers (same style as tbi/api_history.py) -----------
-
-def _is_user_entity(entity) -> bool:
-    """True when the resolved entity is a person (a user account).
-
-    Duck-typed on the class name so no Telethon import is needed: the
-    joiner must never touch a personal chat, even if its handle
-    somehow ended up in the config.
-    """
-    return type(entity).__name__ == "User"
+# (The personal-chat refusal lives in tbi.entity_cache.resolve_entity,
+# which every resolve goes through; there is no direct entity check here.)
 
 
 def _flood_wait_seconds(exc) -> Optional[float]:
@@ -354,13 +357,18 @@ async def _is_member(client, entity) -> Optional[bool]:
 
     True = member, False = definitely not, None = the check itself
     failed (the join is then attempted anyway — an already-member
-    join is a no-op success, see ``join_pending``).
+    join is a no-op success, see ``join_pending``). One exception
+    is re-raised, not swallowed: ``ChannelInvalidError`` means the
+    cached entity is stale, and the caller drops the cache entry
+    and re-resolves once.
     """
     try:
         await client(_get_participant_request(entity))
     except Exception as exc:  # noqa: BLE001 - duck-typed error kinds
         if _is_not_participant(exc):
             return False
+        if _is_channel_invalid(exc):
+            raise
         return None
     return True
 
@@ -433,14 +441,56 @@ class JoinResult:
     attempted: list[str] = field(default_factory=list)
 
 
+async def _membership_and_join(client, entity, name: str):
+    """Membership check + join for one entity.
+
+    Returns ``(kind, detail)``: kind is ``"joined"``,
+    ``"already_member"`` or ``"failed"``; detail is the failure
+    reason (for ``"failed"``) or a short note (for
+    ``"already_member"``: ``"no join sent"`` / ``"join was a no-op"``).
+
+    Raises an exception with a ``.seconds`` attribute (flood wait)
+    and ``ChannelInvalidError`` (stale cached entity) — the caller
+    handles both (stop the run / drop + re-resolve once).
+    """
+    member = await _is_member(client, entity)
+    if member is None:
+        print(
+            f"[note] @{name}: membership check failed — trying "
+            "the join; an already-member join is a no-op.",
+            flush=True,
+        )
+    if member is True:
+        return ("already_member", "no join sent")
+    try:
+        await client(_join_request(entity))
+    except Exception as exc:  # noqa: BLE001 - duck-typed error kinds
+        if _flood_wait_seconds(exc) is not None:
+            raise
+        if _is_channel_invalid(exc):
+            raise
+        if _is_already_participant(exc):
+            return ("already_member", "join was a no-op")
+        return ("failed", f"join failed: {exc}")
+    return ("joined", None)
+
+
 async def _attempt_one(client, state: dict, name: str, folder_title: str,
-                     result: JoinResult, moment: datetime) -> bool:
+                     result: JoinResult, moment: datetime,
+                     entity_cache: Optional[EntityCache] = None) -> bool:
     """Attempt one group: resolve, membership check, join, folder.
 
     Returns True when the run must stop immediately (a flood wait) —
     False otherwise (success, already a member, or a per-group
     failure that is recorded and moved past). Never raises: every
     failure is recorded on the group's state entry.
+
+    The resolve goes through the entity cache (a cached group is
+    used WITHOUT any ``ResolveUsernameRequest``). If an operation on
+    a cached entity raises ``ChannelInvalidError``, the cached entry
+    is stale: it is dropped, the handle is re-resolved once, and the
+    membership + join are retried once with the fresh entity. Never
+    a loop.
     """
     entry = state["groups"][name]
 
@@ -460,68 +510,69 @@ async def _attempt_one(client, state: dict, name: str, folder_title: str,
             flush=True,
         )
 
-    try:
-        entity = await client.get_entity(name)
-    except Exception as exc:  # noqa: BLE001 - per-group isolation
-        seconds = _flood_wait_seconds(exc)
-        if seconds is not None:
-            _record_flood_wait(seconds)
-            return True
-        entry["status"] = STATUS_FAILED
-        entry["fail_reason"] = f"could not resolve the group: {exc}"
-        result.failed.append((name, entry["fail_reason"]))
-        print(f"[failed] @{name}: {entry['fail_reason']}", flush=True)
-        return False
-    if _is_user_entity(entity):
-        entry["status"] = STATUS_FAILED
-        entry["fail_reason"] = (
-            "resolved to a personal chat — refused (the joiner "
-            "only reads configured groups)"
-        )
-        result.failed.append((name, entry["fail_reason"]))
-        print(f"[failed] @{name}: {entry['fail_reason']}", flush=True)
-        return False
-    member = await _is_member(client, entity)
-    if member is None:
-        print(
-            f"[note] @{name}: membership check failed — trying "
-            "the join; an already-member join is a no-op.",
-            flush=True,
-        )
-    if member is True:
-        entry["status"] = STATUS_ALREADY_MEMBER
-        result.already_member.append(name)
-        print(f"[already] @{name}: already a member — no join sent",
-              flush=True)
-    else:
+    # Resolve + membership + join, with ONE staleness retry.
+    entity = None
+    from_cache = False
+    re_resolved = False
+    kind = None
+    detail = None
+    while True:
         try:
-            await client(_join_request(entity))
+            entity, from_cache = await resolve_entity(
+                client, name, entity_cache
+            )
         except Exception as exc:  # noqa: BLE001 - per-group isolation
             seconds = _flood_wait_seconds(exc)
             if seconds is not None:
                 _record_flood_wait(seconds)
                 return True
-            if _is_already_participant(exc):
-                entry["status"] = STATUS_ALREADY_MEMBER
-                result.already_member.append(name)
+            entry["status"] = STATUS_FAILED
+            entry["fail_reason"] = f"could not resolve the group: {exc}"
+            result.failed.append((name, entry["fail_reason"]))
+            print(f"[failed] @{name}: {entry['fail_reason']}", flush=True)
+            return False
+        try:
+            kind, detail = await _membership_and_join(client, entity, name)
+        except Exception as exc:  # noqa: BLE001 - flood wait / stale entry
+            seconds = _flood_wait_seconds(exc)
+            if seconds is not None:
+                _record_flood_wait(seconds)
+                return True
+            if (
+                _is_channel_invalid(exc)
+                and from_cache
+                and not re_resolved
+            ):
+                if entity_cache is not None:
+                    entity_cache.drop(name)
+                re_resolved = True
                 print(
-                    f"[already] @{name}: already a member (join "
-                    "was a no-op)",
+                    f"[stale] @{name}: cached entity is stale — "
+                    "re-resolving once.",
                     flush=True,
                 )
-            else:
-                entry["status"] = STATUS_FAILED
-                entry["fail_reason"] = f"join failed: {exc}"
-                result.failed.append((name, entry["fail_reason"]))
-                print(f"[failed] @{name}: {entry['fail_reason']}",
-                      flush=True)
-                return False
-        else:
-            entry["status"] = STATUS_JOINED
-            entry["joined_at"] = _now_iso()
-            entry["fail_reason"] = None
-            result.joined.append(name)
-            print(f"[joined] @{name}", flush=True)
+                continue
+            raise
+        break
+    if kind == "already_member":
+        entry["status"] = STATUS_ALREADY_MEMBER
+        result.already_member.append(name)
+        print(
+            f"[already] @{name}: already a member ({detail})",
+            flush=True,
+        )
+    elif kind == "joined":
+        entry["status"] = STATUS_JOINED
+        entry["joined_at"] = _now_iso()
+        entry["fail_reason"] = None
+        result.joined.append(name)
+        print(f"[joined] @{name}", flush=True)
+    else:  # failed
+        entry["status"] = STATUS_FAILED
+        entry["fail_reason"] = detail
+        result.failed.append((name, detail))
+        print(f"[failed] @{name}: {detail}", flush=True)
+        return False
     # Folder step (best-effort): for a newly joined group and for a
     # group he was already a member of — both belong in the owner's
     # folder.
@@ -559,6 +610,7 @@ async def join_pending(
     sleep=asyncio.sleep,
     on_update=None,
     now: Optional[datetime] = None,
+    entity_cache: Optional[EntityCache] = None,
 ) -> JoinResult:
     """Join up to ``batch`` pending groups, slowly and safely.
 
@@ -566,6 +618,10 @@ async def join_pending(
     caller persists progress incrementally — the workflow's CLI passes
     a saver, so a timeout kill never loses a join. ``sleep`` is
     injectable for tests (defaults to ``asyncio.sleep``).
+    ``entity_cache`` is the persistent entity cache
+    (:mod:`tbi.entity_cache`): a cached group is used WITHOUT any
+    ``ResolveUsernameRequest``; without one every group is resolved
+    fresh (the pre-v0.4.8 behaviour).
     """
     result = JoinResult()
     moment = now or datetime.now(timezone.utc)
@@ -608,7 +664,8 @@ async def join_pending(
         result.attempted.append(name)
         try:
             stopped = await _attempt_one(
-                client, state, name, folder_title, result, moment
+                client, state, name, folder_title, result, moment,
+                entity_cache=entity_cache,
             )
         finally:
             if on_update is not None:

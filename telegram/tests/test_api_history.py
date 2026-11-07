@@ -350,6 +350,7 @@ def test_api_backfill_cli_indexes_books(tmp_path, monkeypatch, capsys):
     assert main([
         "api-backfill", "--config", str(cfg), "--db", str(db),
         "--channel", "testchan",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 0
     out = capsys.readouterr().out
     assert "[ok] @testchan: 2 posts, 1 book files (API)" in out
@@ -375,6 +376,7 @@ def test_api_backfill_cli_channel_not_in_config(tmp_path, monkeypatch, capsys):
     assert main([
         "api-backfill", "--config", str(cfg), "--db", str(db),
         "--channel", "notconfigured",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 2
     assert "not in" in capsys.readouterr().err
     assert called == []  # the client is never built for an unconfigured handle
@@ -388,6 +390,7 @@ def test_api_backfill_cli_missing_credentials(tmp_path, monkeypatch, capsys):
     assert main([
         "api-backfill", "--config", str(cfg), "--db", str(db),
         "--channel", "testchan",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 2
     assert "missing" in capsys.readouterr().err.lower()
 
@@ -415,6 +418,7 @@ def test_api_backfill_cli_backfill_block(tmp_path, monkeypatch, capsys):
     assert main([
         "api-backfill", "--config", str(cfg), "--db", str(db),
         "--channel", "testchan", "--backfill", "--backfill-block", "2",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 0
     out = capsys.readouterr().out
     # Phase 1 picked up post 11; phase 2 walked one block of 2 below 8 (7, 6).

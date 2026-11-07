@@ -562,6 +562,7 @@ def test_join_groups_cli_writes_files(tmp_path, monkeypatch, fake_requests):
         "--state", str(state_path),
         "--newly-joined", str(newly), "--report", str(report),
         "--batch", "2", "--delay-min", "0", "--delay-max", "0",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 0
     assert fake.started and fake.disconnected
     # Batch 2: alpha (joined) + beta (already a member). Gamma untouched.
@@ -597,6 +598,7 @@ def test_join_groups_cli_zero_joined_still_writes_files(
         "--state", str(state_path),
         "--newly-joined", str(newly), "--report", str(report),
         "--batch", "2", "--delay-min", "0", "--delay-max", "0",
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 0
     assert newly.read_text(encoding="utf-8") == ""
     assert "Flood wait" in report.read_text(encoding="utf-8")
@@ -612,5 +614,6 @@ def test_join_groups_cli_missing_credentials(tmp_path, monkeypatch, capsys):
     assert main([
         "join-groups", "--config", str(cfg_path),
         "--state", str(tmp_path / "join-state.json"),
+        "--entity-cache", str(tmp_path / "entity-cache.json"),
     ]) == 2
     assert "missing" in capsys.readouterr().err.lower()

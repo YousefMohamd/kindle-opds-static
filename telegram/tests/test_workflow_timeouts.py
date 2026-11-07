@@ -125,23 +125,23 @@ def test_join_groups_workflow():
     assert "progress + report saved" in run
 
 
-def test_version_is_0_4_7():
-    """pyproject, package __init__, and both docs agree on v0.4.7."""
+def test_version_is_0_4_8():
+    """pyproject, package __init__, and both docs agree on v0.4.8."""
     pyproject = (
         REPO_ROOT / "telegram" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert re.search(r'^version = "0\.4\.7"$', pyproject, re.M)
+    assert re.search(r'^version = "0\.4\.8"$', pyproject, re.M)
     init = (
         REPO_ROOT / "telegram" / "tbi" / "__init__.py"
     ).read_text(encoding="utf-8")
-    assert '__version__ = "0.4.7"' in init
+    assert '__version__ = "0.4.8"' in init
     readme = (REPO_ROOT / "telegram" / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# telegram-book-index (v0.4.7")
+    assert readme.startswith("# telegram-book-index (v0.4.8")
     guide = (
         REPO_ROOT / "telegram" / "PUSH_GUIDE.md"
     ).read_text(encoding="utf-8")
     assert guide.startswith(
-        "# Publishing the Telegram merge into kindle-opds-static (v0.4.7)"
+        "# Publishing the Telegram merge into kindle-opds-static (v0.4.8)"
     )
 
 
@@ -233,3 +233,41 @@ def test_failure_save_rebases_before_add_and_retries_push():
             assert not re.search(r"\b(for|while)\b", retry), (
                 f"{path.name}: push retry must not be a loop"
             )
+
+
+# --- v0.4.8: the entity cache is committed by the API workflows ------------
+# The 2026-11-07 api-backfill run failed in 24 s: every source hit a
+# ~20-hour ResolveUsernameRequest flood wait, because every run
+# resolved all 211 handles (the Telethon entity cache is empty on
+# every ephemeral runner). The persistent entity cache
+# (entity-cache.json) fixes that — but only if the workflows actually
+# commit it, in the Publish step AND the failure-save (and the
+# join-groups "commit join state only" step). The daily preview sync
+# never uses the API, so it must not touch the cache.
+
+API_WORKFLOWS = [API, JOIN]
+
+
+def test_api_workflows_commit_entity_cache():
+    """Both API workflows `git add` entity-cache.json in every step
+    that commits (Publish, join-state-only, failure-save) — otherwise
+    the resolved handles are lost with the runner and the next run
+    re-resolves everything (the 2026-11-07 flood wait, again)."""
+    for path in API_WORKFLOWS:
+        doc = _load(path)
+        for job in doc["jobs"]:
+            for step in doc["jobs"][job]["steps"]:
+                run = step.get("run", "")
+                if "git add" not in run:
+                    continue
+                assert "entity-cache.json" in run, (
+                    f"{path.name} step {step.get('name', '?')!r}: "
+                    "a committing step that does not add entity-cache.json"
+                )
+
+
+def test_preview_sync_does_not_touch_entity_cache():
+    """The daily preview sync never uses the API (no Telethon, no
+    resolve calls), so it must not commit the entity cache."""
+    text = SYNC.read_text(encoding="utf-8")
+    assert "entity-cache" not in text

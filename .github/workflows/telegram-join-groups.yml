@@ -198,6 +198,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add telegram/index.db.gz telegram/index-report.md site/telegram/
           git add telegram/join-state.json telegram/join-report.md
+          # The entity cache (v0.4.8): the resolved handles must persist
+          # across runs, or every run re-resolves all 211 handles and
+          # trips the ResolveUsernameRequest flood wait again. Tolerant
+          # add (|| true): the cache file is committed empty with
+          # v0.4.8, but a missing file must never break a publish.
+          git add telegram/entity-cache.json 2>/dev/null || true
           # Drop the raw seed from the repo if it is still tracked (the
           # transition commit); harmless once it is gone.
           git rm --cached telegram/index.db 2>/dev/null || true
@@ -224,6 +230,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add join-state.json join-report.md 2>/dev/null || true
+          # The entity cache (v0.4.8): a zero-joined run may still
+          # have resolved new handles — persist them. Tolerant add.
+          git add entity-cache.json 2>/dev/null || true
           git commit -m "[telegram-join-groups] slow join run — no new groups joined" || echo "nothing to commit"
           # Rebase before pushing (v0.4.7): same fix as the Publish
           # step — a code push during the run used to reject this push
@@ -285,6 +294,10 @@ jobs:
           git add index.db.gz 2>/dev/null || true
           git add index-report.md 2>/dev/null || true
           git add join-state.json join-report.md 2>/dev/null || true
+          # The entity cache (v0.4.8): the failure-save must persist
+          # the newly resolved handles too, or the next run resolves
+          # them again. Tolerant add, like the files above.
+          git add entity-cache.json 2>/dev/null || true
           git commit -m "[telegram-join-groups] run failed — progress + report saved" || echo "nothing to commit"
           # One retry: the remote can move again between the rebase
           # and the push. Rebase once more and push once more; if that

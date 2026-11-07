@@ -30,6 +30,16 @@ rule as the preview scraper. Each message is turned into a
 API path and the preview path produce identical rows (same title/author
 parsing, same dedup keys, same FTS).
 
+**Entity cache (v0.4.8):** every API run used to resolve ALL 211
+handles via ``ResolveUsernameRequest`` (each GitHub Actions run
+starts with an empty Telethon entity cache), and on 2026-11-07 that
+tripped a ~20-hour flood wait that failed the whole run in 24 s.
+``iter_api_posts`` now resolves through :mod:`tbi.entity_cache`:
+a cached handle is used WITHOUT any resolve call (an InputChannel
+built from the stored id + access hash), and only a cache miss
+resolves — once — and stores the result. A stale cached entry
+(``ChannelInvalidError`` on use) is dropped and re-resolved once.
+
 **Telethon is an optional dependency.** This module imports cleanly
 without it installed; Telethon is imported lazily, only inside
 :func:`create_client`, which is the single place a real client is
@@ -47,6 +57,7 @@ from typing import AsyncIterator, Optional
 
 from .books import format_size
 from .config import Config
+from .entity_cache import EntityCache, _is_channel_invalid, resolve_entity
 from .scrape import FileMeta, Post, normalize_link
 
 API_ID_ENV = "TELEGRAM_API_ID"
@@ -131,16 +142,6 @@ def create_client(api_id: int, api_hash: str, session_string: str):
             "pip install -e \".[api]\" (or pip install telethon)."
         )
     return TelegramClient(StringSession(session_string), api_id, api_hash)
-
-
-def _is_user_entity(entity) -> bool:
-    """True when the resolved entity is a person (a user account).
-
-    Duck-typed on the class name so no Telethon import is needed: the
-    API backfill must never read a personal chat, even if its username
-    somehow ended up in the config.
-    """
-    return type(entity).__name__ == "User"
 
 
 def find_config_entry(cfg: Config, handle: str):
@@ -233,6 +234,7 @@ async def iter_api_posts(
     client,
     handle: str,
     *,
+    cache: Optional[EntityCache] = None,
     limit: Optional[int] = None,
     min_id: Optional[int] = None,
     start_before: Optional[int] = None,
@@ -248,19 +250,32 @@ async def iter_api_posts(
     :func:`tbi.scrape.walk`'s parameters, so the API command can offer
     the same modes (new-only / backfill / full).
 
+    ``cache`` is the persistent entity cache
+    (:mod:`tbi.entity_cache`): a cached handle is used WITHOUT any
+    resolve call (an InputChannel built from the stored id + access
+    hash); only a cache miss calls ``ResolveUsernameRequest`` — once —
+    and stores the result. Without a cache the behaviour is exactly
+    as before (resolve every time).
+
     Flood waits (Telegram's rate limit) are honoured: an exception
     with a ``seconds`` attribute (Telethon's ``FloodWaitError``) pauses
     the chunk — capped at ``_MAX_FLOOD_WAIT_S`` — and the chunk is
     retried from the same offset (idempotent: the store upserts by
     (source, post id)). After ``_CHUNK_RETRIES`` failed retries the
     error is re-raised and the run records it per-channel.
+
+    A flood wait on the RESOLVE itself raises
+    :class:`tbi.entity_cache.ResolveFloodWait` — it is NOT retried
+    here: a resolve flood-wait is account-wide and long, so the
+    caller (``tbi api-backfill``) stops the whole run instead of
+    trying the next source.
+
+    A stale cached entry (``ChannelInvalidError`` on use — the stored
+    id + access hash no longer resolves) is dropped, the handle is
+    re-resolved ONCE, the cache is updated, and the chunk is retried
+    once with the fresh entity. Never a loop.
     """
-    entity = await client.get_entity(handle)
-    if _is_user_entity(entity):
-        raise ValueError(
-            f"@{handle} resolved to a personal chat — the API backfill "
-            "only reads configured channels/groups, never personal chats."
-        )
+    entity, from_cache = await resolve_entity(client, handle, cache)
     # offset_id must NEVER be None: real Telethon's iterator does
     # offset_id = max(offset_id, max_id) with max_id defaulting to 0,
     # so offset_id=None raises TypeError: '>' not supported between
@@ -270,6 +285,7 @@ async def iter_api_posts(
     # (start from the newest message), which is what None meant here.
     offset: int = start_before if start_before is not None else 0
     yielded = 0
+    re_resolved = False
     while True:
         # Fetch one chunk, retrying it after a flood wait.
         msgs: list = []
@@ -281,7 +297,27 @@ async def iter_api_posts(
                 ):
                     msgs.append(m)
                 break
-            except Exception as exc:  # flood wait (or a real failure)
+            except Exception as exc:  # flood wait, stale entry, or a real failure
+                if (
+                    _is_channel_invalid(exc)
+                    and from_cache
+                    and not re_resolved
+                ):
+                    # Stale cached entry: the stored id + access hash
+                    # no longer resolves. Drop it, re-resolve once,
+                    # and retry this chunk with the fresh entity.
+                    if cache is not None:
+                        cache.drop(handle)
+                    print(
+                        f"[stale] @{handle}: cached entity is stale — "
+                        "re-resolving once.",
+                        flush=True,
+                    )
+                    entity, from_cache = await resolve_entity(
+                        client, handle, cache
+                    )
+                    re_resolved = True
+                    continue
                 seconds = getattr(exc, "seconds", None)
                 if seconds is None or attempt == _CHUNK_RETRIES:
                     raise

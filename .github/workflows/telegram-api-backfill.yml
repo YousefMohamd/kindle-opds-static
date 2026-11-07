@@ -160,6 +160,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add telegram/index.db.gz telegram/index-report.md site/telegram/
+          # The entity cache (v0.4.8): the resolved handles must persist
+          # across runs, or every run re-resolves all 211 handles and
+          # trips the ResolveUsernameRequest flood wait again. Tolerant
+          # add (|| true): the cache file is committed empty with
+          # v0.4.8, but a missing file must never break a publish.
+          git add telegram/entity-cache.json 2>/dev/null || true
           # Drop the raw seed from the repo if it is still tracked (the
           # transition commit); harmless once it is gone.
           git rm --cached telegram/index.db 2>/dev/null || true
@@ -242,6 +248,10 @@ jobs:
           git pull --rebase --autostash origin main || { echo "::error::Rebase before failure-save failed — the progress cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
           git add index.db.gz 2>/dev/null || true
           git add index-report.md 2>/dev/null || true
+          # The entity cache (v0.4.8): the failure-save must persist
+          # the newly resolved handles too, or the next run resolves
+          # them again. Tolerant add, like the seed + report above.
+          git add entity-cache.json 2>/dev/null || true
           git commit -m "[telegram-api-backfill] run failed — progress + report saved" || echo "nothing to commit"
           # One retry: the remote can move again between the rebase
           # and the push. Rebase once more and push once more; if that
