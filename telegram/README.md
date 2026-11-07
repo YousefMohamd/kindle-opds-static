@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.4 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.5 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -343,6 +343,14 @@ seed is pushed.
   API-only groups (no export) instead of marking them "error" on the
   missing export. The other 167 groups stay commented out until each
   is verified the same way.
+- **All groups via the API (v0.4.5):** the remaining 167 groups are
+  now active too — all 168 groups in `channels.yaml`, none with a
+  Desktop export. EBook_Library proved the API reads group history
+  in production (v0.4.4 run: 3000 posts / 2000 book files). A group
+  the owner is not a member of fails per-group in the api-backfill
+  run (recorded in the report; the run continues) and needs joining
+  first, or a Desktop export. The 10 dead handles and 6 private
+  invite links stay inactive (not group entries).
 - **The site:** `site/telegram/index.html` is a single static page
   (Arabic-first, RTL) that loads `index.json` and searches client-side
   — no server, no external dependencies. It has the same Arabic
@@ -459,9 +467,13 @@ title / author / filename / caption:
   dead. So for most book sources the export path is the one that
   matters — live scraping alone covers only the channels.
   `channels.yaml` ships with all of them: the 43 active channels (8
-  dropped, see above), and the groups — 167 still commented out until
-  each one is exported (uncomment + add the `result.json` path) or
-  verified for the API. **EBook_Library is the first group active
+  dropped, see above), and the groups — all 168 API-active since
+  v0.4.5 (EBook_Library first in v0.4.4, the remaining 167 in
+  v0.4.5), none with a Desktop export. The API reads a group's
+  history when the owner is a member; a group he is not a member of
+  fails per-group in the api-backfill run (recorded in the report;
+  the run continues) and needs joining first, or a Desktop export.
+  **EBook_Library is the first group active
   (v0.4.4), via the API** (the owner is a member, so Telethon reads
   its history; no export file is needed for the API path, and the
   preview sync skips API-only groups instead of erroring on the

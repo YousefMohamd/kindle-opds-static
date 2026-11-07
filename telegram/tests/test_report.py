@@ -186,10 +186,9 @@ def test_parse_config_inventory(tmp_path):
 def test_parse_config_inventory_real_file():
     repo = Path(__file__).resolve().parent.parent
     inv = parse_config_inventory(repo / "channels.yaml")
-    # v0.4.4: EBook_Library is the first group ACTIVE (via the API), so
-    # it is no longer in the pending (commented-out) inventory — 167
-    # groups remain pending, not 168.
-    assert len(inv["groups"]) == 167
+    # v0.4.5: ALL 168 groups are active (via the API), so the pending
+    # (commented-out) inventory is empty — 0 groups remain pending.
+    assert len(inv["groups"]) == 0
     assert len(inv["dead"]) == 10
     assert len(inv["invites"]) == 6
     assert "EBook_Library" not in inv["groups"]
@@ -197,12 +196,12 @@ def test_parse_config_inventory_real_file():
     # v0.3: the 8 zero-book channels moved out of the active list.
     assert len(inv["dropped"]) == 8
     assert "arabicEread" in [n for n, _ in inv["dropped"]]
-    assert len(load_config(repo / "channels.yaml").channels) == 43
-    # And EBook_Library is the one active group (see also
-    # test_real_config_ebook_library_group_active_v044).
-    assert [g.name for g in load_config(repo / "channels.yaml").groups] == [
-        "EBook_Library"
-    ]
+    cfg = load_config(repo / "channels.yaml")
+    assert len(cfg.channels) == 43
+    # v0.4.5: all 168 groups are active (see also
+    # test_real_config_all_groups_active_v045).
+    assert len(cfg.groups) == 168
+    assert "EBook_Library" in [g.name for g in cfg.groups]
 
 
 def test_format_duration_and_walk_estimate():

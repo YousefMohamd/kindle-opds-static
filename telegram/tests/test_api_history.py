@@ -192,21 +192,35 @@ def test_find_config_entry_group_by_name(tmp_path):
     assert entry.name == "EBook_Library"
 
 
-def test_real_config_ebook_library_group_active_v044():
-    """v0.4.4: the real channels.yaml has EBook_Library as the ONLY
-    active group — via the API, with NO export line (no Desktop export
-    exists for it). The other 167 groups stay commented out, and
-    find_config_entry resolves it as a group so `tbi api-backfill
-    --channel EBook_Library` targets it."""
+def test_real_config_all_groups_active_v045():
+    """v0.4.5: the real channels.yaml has ALL 168 groups active — via
+    the API, with NO export line on any of them (no Desktop export
+    exists for them; the API does not need one). EBook_Library was
+    first (v0.4.4, proven in production); the remaining 167 were
+    activated in v0.4.5. No group entry stays commented out (the dead
+    handles and private invite lists at the bottom are not group
+    entries and stay as-is). find_config_entry resolves groups by
+    name so `tbi api-backfill --channel <name>` targets them."""
     real_cfg = Path(__file__).resolve().parent.parent / "channels.yaml"
     cfg = load_config(real_cfg)
     names = [g.name for g in cfg.groups]
-    assert names == ["EBook_Library"]
-    entry = cfg.groups[0]
-    assert entry.export == ""
+    assert len(names) == 168
+    assert len(set(names)) == 168  # no duplicates
+    assert "EBook_Library" in names
+    assert all(g.export == "" for g in cfg.groups)
     kind, found = find_config_entry(cfg, "EBook_Library")
     assert kind == "group"
-    assert found is entry
+    assert found.name == "EBook_Library"
+    kind, found = find_config_entry(cfg, "jazz223k")
+    assert kind == "group"
+    assert found.name == "jazz223k"
+    # A dead handle is still not a configured source.
+    assert find_config_entry(cfg, "KOTOBPDFFF") is None
+    # No commented-out group entry remains in the file (dead handles
+    # and invite links use a different line form, so they do not
+    # match this count).
+    text = real_cfg.read_text(encoding="utf-8")
+    assert text.count("  # - name: ") == 0
     # The 43 channels are untouched by the group activation.
     assert len(cfg.channels) == 43
 

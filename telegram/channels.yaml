@@ -9,14 +9,14 @@
 #     v0.3 (2026-11-07): 8 of them dropped from the ACTIVE list
 #     (0 book files in the full first run) — see '# Dropped'
 #     below. 43 channels are active now.
-#     168 groups, each indexed from a Telegram Desktop JSON export
-#     (see README for the steps). Uncomment a group entry once you
-#     have exported it. 10 dead handles are listed at the bottom
-#     (do NOT add them as export entries — they do not exist).
-#     v0.4.4: EBook_Library is the FIRST group active — via the API
-#     (no export; the owner is a member, so Telethon reads its
-#     history). The other 167 groups stay commented out until each
-#     is verified the same way.
+#     168 groups, all now API-active — no Desktop export is
+#     configured for any of them (the API reads a group's history
+#     when the owner is a member; a group he is not a member of
+#     fails per-group in the api-backfill run and needs joining
+#     first, or a Desktop export). v0.4.4 activated EBook_Library
+#     first (proven in production: 3000 posts / 2000 book files);
+#     v0.4.5 activated the remaining 167. 10 dead handles are
+#     listed at the bottom (do NOT add them — they do not exist).
 #     6 private invite links are listed at the bottom (cannot be
 #     indexed without joining). Full tables:
 #     ~/workspace/kindle-quiet-prep/telegram-sources-batch2.md
@@ -109,364 +109,200 @@ channels:
 # - Motamayezon7  (65 posts, 0 book files)
 # - premium_ebooks  (1172 posts, 0 book files)
 
-# Groups: Telegram Desktop export per group. In Telegram Desktop: open the
-# group > three dots > Export chat history > format JSON, include media
-# files > export, then uncomment the entry and put the result.json path.
+# Groups: all 168 are API-active (v0.4.4 EBook_Library first, v0.4.5
+# the rest). No export is configured: the API reads each group's
+# history when the owner is a member. A Desktop export remains an
+# option for a group the API cannot read (open the group > three
+# dots > Export chat history > format JSON, include media files >
+# export, then add the result.json path to the entry).
 groups:
   # Batch 1 — 16 remaining groups (8 moved to channels above, 3 dead).
-  # - name: "All_kinds_Books_Lib"
-  #   export: ~/exports/All_kinds_Books_Lib/result.json
-  # - name: "Arabickindle1"
-  #   export: ~/exports/Arabickindle1/result.json
-  # - name: "BOOKCLUB_AR"
-  #   export: ~/exports/BOOKCLUB_AR/result.json
-  # - name: "bookclubarabic"
-  #   export: ~/exports/bookclubarabic/result.json
-  # - name: "booksforarabs"
-  #   export: ~/exports/booksforarabs/result.json
-  # - name: "ddfkindle"
-  #   export: ~/exports/ddfkindle/result.json
+  - name: "All_kinds_Books_Lib"
+  - name: "Arabickindle1"
+  - name: "BOOKCLUB_AR"
+  - name: "bookclubarabic"
+  - name: "booksforarabs"
+  - name: "ddfkindle"
   # EBook_Library — API-ACTIVE (v0.4.4): the first group indexed via
   # the API (the owner is a member, so Telethon can read its history).
   # No Desktop export is configured (none exists): the API does not
   # need one, and the preview sync skips API-only groups instead of
   # erroring on the missing export.
   - name: "EBook_Library"
-  # - name: "jazz223k"
-  #   export: ~/exports/jazz223k/result.json
-  # - name: "kfxarabic"
-  #   export: ~/exports/kfxarabic/result.json
-  # - name: "kindel4"
-  #   export: ~/exports/kindel4/result.json
-  # - name: "kindle4kurd"
-  #   export: ~/exports/kindle4kurd/result.json
-  # - name: "KindleArabicLibrary"
-  #   export: ~/exports/KindleArabicLibrary/result.json
-  # - name: "KindleKotob"
-  #   export: ~/exports/KindleKotob/result.json
-  # - name: "kotobkhana"
-  #   export: ~/exports/kotobkhana/result.json
-  # - name: "pdfiat"
-  #   export: ~/exports/pdfiat/result.json
-  # - name: "xepub"
-  #   export: ~/exports/xepub/result.json
+  - name: "jazz223k"
+  - name: "kfxarabic"
+  - name: "kindel4"
+  - name: "kindle4kurd"
+  - name: "KindleArabicLibrary"
+  - name: "KindleKotob"
+  - name: "kotobkhana"
+  - name: "pdfiat"
+  - name: "xepub"
   # Batch 2 — English book channels (20).
-  # - name: "BOOK_HOUSE_INTERNATIONAL"
-  #   export: ~/exports/BOOK_HOUSE_INTERNATIONAL/result.json
-  # - name: "bookjunkieb"
-  #   export: ~/exports/bookjunkieb/result.json
-  # - name: "bookpdfepub"
-  #   export: ~/exports/bookpdfepub/result.json
-  # - name: "bookspsychology101"
-  #   export: ~/exports/bookspsychology101/result.json
-  # - name: "CoolBooks"
-  #   export: ~/exports/CoolBooks/result.json
-  # - name: "e_books_eng"
-  #   export: ~/exports/e_books_eng/result.json
-  # - name: "ebookstoread"
-  #   export: ~/exports/ebookstoread/result.json
-  # - name: "englishbooks99"
-  #   export: ~/exports/englishbooks99/result.json
-  # - name: "FreeEbookDownloadEnglish"
-  #   export: ~/exports/FreeEbookDownloadEnglish/result.json
-  # - name: "Legacy_1945"
-  #   export: ~/exports/Legacy_1945/result.json
-  # - name: "muscatnonfiction"
-  #   export: ~/exports/muscatnonfiction/result.json
-  # - name: "OnePageAway"
-  #   export: ~/exports/OnePageAway/result.json
-  # - name: "oxford_bookworms_lm"
-  #   export: ~/exports/oxford_bookworms_lm/result.json
-  # - name: "Oxford_Bookwormss"
-  #   export: ~/exports/Oxford_Bookwormss/result.json
-  # - name: "OxfordBookwormers"
-  #   export: ~/exports/OxfordBookwormers/result.json
-  # - name: "OxfordBookwormsDominoes1"
-  #   export: ~/exports/OxfordBookwormsDominoes1/result.json
-  # - name: "OxfordReadingTree"
-  #   export: ~/exports/OxfordReadingTree/result.json
-  # - name: "storybookspdf"
-  #   export: ~/exports/storybookspdf/result.json
-  # - name: "the_romance_hub"
-  #   export: ~/exports/the_romance_hub/result.json
-  # - name: "trunkietrunk"
-  #   export: ~/exports/trunkietrunk/result.json
+  - name: "BOOK_HOUSE_INTERNATIONAL"
+  - name: "bookjunkieb"
+  - name: "bookpdfepub"
+  - name: "bookspsychology101"
+  - name: "CoolBooks"
+  - name: "e_books_eng"
+  - name: "ebookstoread"
+  - name: "englishbooks99"
+  - name: "FreeEbookDownloadEnglish"
+  - name: "Legacy_1945"
+  - name: "muscatnonfiction"
+  - name: "OnePageAway"
+  - name: "oxford_bookworms_lm"
+  - name: "Oxford_Bookwormss"
+  - name: "OxfordBookwormers"
+  - name: "OxfordBookwormsDominoes1"
+  - name: "OxfordReadingTree"
+  - name: "storybookspdf"
+  - name: "the_romance_hub"
+  - name: "trunkietrunk"
   # Batch 2 — Arabic kids channels (10).
-  # - name: "adventurers5"
-  #   export: ~/exports/adventurers5/result.json
-  # - name: "Ahlahadota"
-  #   export: ~/exports/Ahlahadota/result.json
-  # - name: "almoghmiroonal5msa"
-  #   export: ~/exports/almoghmiroonal5msa/result.json
-  # - name: "Arabic_PDF"
-  #   export: ~/exports/Arabic_PDF/result.json
-  # - name: "bookcheldren"
-  #   export: ~/exports/bookcheldren/result.json
-  # - name: "Mahmoud_Salem_5"
-  #   export: ~/exports/Mahmoud_Salem_5/result.json
-  # - name: "maktph"
-  #   export: ~/exports/maktph/result.json
-  # - name: "noorlibrarykids"
-  #   export: ~/exports/noorlibrarykids/result.json
-  # - name: "pokidz"
-  #   export: ~/exports/pokidz/result.json
-  # - name: "samaheltaweelkidsstories"
-  #   export: ~/exports/samaheltaweelkidsstories/result.json
+  - name: "adventurers5"
+  - name: "Ahlahadota"
+  - name: "almoghmiroonal5msa"
+  - name: "Arabic_PDF"
+  - name: "bookcheldren"
+  - name: "Mahmoud_Salem_5"
+  - name: "maktph"
+  - name: "noorlibrarykids"
+  - name: "pokidz"
+  - name: "samaheltaweelkidsstories"
   # Batch 2 — Comics / illustrated books (4).
-  # - name: "Comics_gate"
-  #   export: ~/exports/Comics_gate/result.json
-  # - name: "comics_link"
-  #   export: ~/exports/comics_link/result.json
-  # - name: "donaldduckcomics"
-  #   export: ~/exports/donaldduckcomics/result.json
-  # - name: "Mohanime"
-  #   export: ~/exports/Mohanime/result.json
+  - name: "Comics_gate"
+  - name: "comics_link"
+  - name: "donaldduckcomics"
+  - name: "Mohanime"
   # Batch 2 — English kids channels (4).
-  # - name: "BabyEnglishBooks"
-  #   export: ~/exports/BabyEnglishBooks/result.json
-  # - name: "book4kid"
-  #   export: ~/exports/book4kid/result.json
-  # - name: "stories_kids"
-  #   export: ~/exports/stories_kids/result.json
-  # - name: "storybooksforkids"
-  #   export: ~/exports/storybooksforkids/result.json
+  - name: "BabyEnglishBooks"
+  - name: "book4kid"
+  - name: "stories_kids"
+  - name: "storybooksforkids"
   # Batch 2 — Audiobooks (1).
-  # - name: "audiobooks_kid"
-  #   export: ~/exports/audiobooks_kid/result.json
+  - name: "audiobooks_kid"
   # Batch 2 — School books (6).
-  # - name: "easymath121"
-  #   export: ~/exports/easymath121/result.json
-  # - name: "G5_Y5"
-  #   export: ~/exports/G5_Y5/result.json
-  # - name: "kidsbookden"
-  #   export: ~/exports/kidsbookden/result.json
-  # - name: "plussheets"
-  #   export: ~/exports/plussheets/result.json
-  # - name: "sciencecamp1"
-  #   export: ~/exports/sciencecamp1/result.json
-  # - name: "scincematerialsMH"
-  #   export: ~/exports/scincematerialsMH/result.json
+  - name: "easymath121"
+  - name: "G5_Y5"
+  - name: "kidsbookden"
+  - name: "plussheets"
+  - name: "sciencecamp1"
+  - name: "scincematerialsMH"
   # Batch 2 — Newspapers & magazines (4).
-  # - name: "ArabicMagazine"
-  #   export: ~/exports/ArabicMagazine/result.json
-  # - name: "arabJournalism"
-  #   export: ~/exports/arabJournalism/result.json
-  # - name: "magazineguy"
-  #   export: ~/exports/magazineguy/result.json
-  # - name: "megalatnawader"
-  #   export: ~/exports/megalatnawader/result.json
+  - name: "ArabicMagazine"
+  - name: "arabJournalism"
+  - name: "magazineguy"
+  - name: "megalatnawader"
   # Batch 2 — Arabic novels & general PDF books (59).
-  # - name: "aa2tyuq"
-  #   export: ~/exports/aa2tyuq/result.json
-  # - name: "abo_abdu"
-  #   export: ~/exports/abo_abdu/result.json
-  # - name: "ahn1972"
-  #   export: ~/exports/ahn1972/result.json
-  # - name: "ahn2323"
-  #   export: ~/exports/ahn2323/result.json
-  # - name: "alanbyawardmsr"
-  #   export: ~/exports/alanbyawardmsr/result.json
-  # - name: "almaktbhh"
-  #   export: ~/exports/almaktbhh/result.json
-  # - name: "Almootnbe100"
-  #   export: ~/exports/Almootnbe100/result.json
-  # - name: "art_of_book"
-  #   export: ~/exports/art_of_book/result.json
-  # - name: "ArwaCoffeeBook"
-  #   export: ~/exports/ArwaCoffeeBook/result.json
-  # - name: "asseralkotob"
-  #   export: ~/exports/asseralkotob/result.json
-  # - name: "book100100"
-  #   export: ~/exports/book100100/result.json
-  # - name: "book350"
-  #   export: ~/exports/book350/result.json
-  # - name: "Book_cr2"
-  #   export: ~/exports/Book_cr2/result.json
-  # - name: "Bookes2023"
-  #   export: ~/exports/Bookes2023/result.json
-  # - name: "bookforbooks"
-  #   export: ~/exports/bookforbooks/result.json
-  # - name: "BoOkJuiCe"
-  #   export: ~/exports/BoOkJuiCe/result.json
-  # - name: "books2023"
-  #   export: ~/exports/books2023/result.json
-  # - name: "BROKAREEMANDME"
-  #   export: ~/exports/BROKAREEMANDME/result.json
-  # - name: "cozmoBooks"
-  #   export: ~/exports/cozmoBooks/result.json
-  # - name: "debsibooks"
-  #   export: ~/exports/debsibooks/result.json
-  # - name: "DrKhaledFahmy"
-  #   export: ~/exports/DrKhaledFahmy/result.json
-  # - name: "ekraly3"
-  #   export: ~/exports/ekraly3/result.json
-  # - name: "freebooksf"
-  #   export: ~/exports/freebooksf/result.json
-  # - name: "fun_to_read"
-  #   export: ~/exports/fun_to_read/result.json
-  # - name: "HadiAriyanLibrary"
-  #   export: ~/exports/HadiAriyanLibrary/result.json
-  # - name: "HindawiFoundationBooks"
-  #   export: ~/exports/HindawiFoundationBooks/result.json
-  # - name: "HoSo0oN"
-  #   export: ~/exports/HoSo0oN/result.json
-  # - name: "julietyoya"
-  #   export: ~/exports/julietyoya/result.json
-  # - name: "katabataa"
-  #   export: ~/exports/katabataa/result.json
-  # - name: "khatabg"
-  #   export: ~/exports/khatabg/result.json
-  # - name: "KotobkhanaPDF"
-  #   export: ~/exports/KotobkhanaPDF/result.json
-  # - name: "kotokhatab"
-  #   export: ~/exports/kotokhatab/result.json
-  # - name: "kottobgededa1977"
-  #   export: ~/exports/kottobgededa1977/result.json
-  # - name: "L_alnader1"
-  #   export: ~/exports/L_alnader1/result.json
-  # - name: "L_alnader14"
-  #   export: ~/exports/L_alnader14/result.json
-  # - name: "l_alnader2"
-  #   export: ~/exports/l_alnader2/result.json
-  # - name: "lastStopbooks"
-  #   export: ~/exports/lastStopbooks/result.json
-  # - name: "lenaqra"
-  #   export: ~/exports/lenaqra/result.json
-  # - name: "lenaqra3"
-  #   export: ~/exports/lenaqra3/result.json
-  # - name: "llllTTTWW"
-  #   export: ~/exports/llllTTTWW/result.json
-  # - name: "lovekotob"
-  #   export: ~/exports/lovekotob/result.json
-  # - name: "M3RFAHALKOTOB"
-  #   export: ~/exports/M3RFAHALKOTOB/result.json
-  # - name: "MaktabaBook"
-  #   export: ~/exports/MaktabaBook/result.json
-  # - name: "maktbahnet"
-  #   export: ~/exports/maktbahnet/result.json
-  # - name: "maktbapdf"
-  #   export: ~/exports/maktbapdf/result.json
-  # - name: "mybook22"
-  #   export: ~/exports/mybook22/result.json
-  # - name: "ni3mehalzoubi"
-  #   export: ~/exports/ni3mehalzoubi/result.json
-  # - name: "novels2n"
-  #   export: ~/exports/novels2n/result.json
-  # - name: "Numidia_Library"
-  #   export: ~/exports/Numidia_Library/result.json
-  # - name: "pdf_novels"
-  #   export: ~/exports/pdf_novels/result.json
-  # - name: "pdfkotab19"
-  #   export: ~/exports/pdfkotab19/result.json
-  # - name: "read00"
-  #   export: ~/exports/read00/result.json
-  # - name: "Sa7eralkutub"
-  #   export: ~/exports/Sa7eralkutub/result.json
-  # - name: "soramnqraa"
-  #   export: ~/exports/soramnqraa/result.json
-  # - name: "tea_sugar"
-  #   export: ~/exports/tea_sugar/result.json
-  # - name: "To_The_Book"
-  #   export: ~/exports/To_The_Book/result.json
-  # - name: "wadistreambooks"
-  #   export: ~/exports/wadistreambooks/result.json
-  # - name: "wessam_pdf"
-  #   export: ~/exports/wessam_pdf/result.json
-  # - name: "yasmeenbook"
-  #   export: ~/exports/yasmeenbook/result.json
+  - name: "aa2tyuq"
+  - name: "abo_abdu"
+  - name: "ahn1972"
+  - name: "ahn2323"
+  - name: "alanbyawardmsr"
+  - name: "almaktbhh"
+  - name: "Almootnbe100"
+  - name: "art_of_book"
+  - name: "ArwaCoffeeBook"
+  - name: "asseralkotob"
+  - name: "book100100"
+  - name: "book350"
+  - name: "Book_cr2"
+  - name: "Bookes2023"
+  - name: "bookforbooks"
+  - name: "BoOkJuiCe"
+  - name: "books2023"
+  - name: "BROKAREEMANDME"
+  - name: "cozmoBooks"
+  - name: "debsibooks"
+  - name: "DrKhaledFahmy"
+  - name: "ekraly3"
+  - name: "freebooksf"
+  - name: "fun_to_read"
+  - name: "HadiAriyanLibrary"
+  - name: "HindawiFoundationBooks"
+  - name: "HoSo0oN"
+  - name: "julietyoya"
+  - name: "katabataa"
+  - name: "khatabg"
+  - name: "KotobkhanaPDF"
+  - name: "kotokhatab"
+  - name: "kottobgededa1977"
+  - name: "L_alnader1"
+  - name: "L_alnader14"
+  - name: "l_alnader2"
+  - name: "lastStopbooks"
+  - name: "lenaqra"
+  - name: "lenaqra3"
+  - name: "llllTTTWW"
+  - name: "lovekotob"
+  - name: "M3RFAHALKOTOB"
+  - name: "MaktabaBook"
+  - name: "maktbahnet"
+  - name: "maktbapdf"
+  - name: "mybook22"
+  - name: "ni3mehalzoubi"
+  - name: "novels2n"
+  - name: "Numidia_Library"
+  - name: "pdf_novels"
+  - name: "pdfkotab19"
+  - name: "read00"
+  - name: "Sa7eralkutub"
+  - name: "soramnqraa"
+  - name: "tea_sugar"
+  - name: "To_The_Book"
+  - name: "wadistreambooks"
+  - name: "wessam_pdf"
+  - name: "yasmeenbook"
   # Batch 2 — Islamic books (21).
-  # - name: "abntaymia3"
-  #   export: ~/exports/abntaymia3/result.json
-  # - name: "almeshkat2023"
-  #   export: ~/exports/almeshkat2023/result.json
-  # - name: "baz_book"
-  #   export: ~/exports/baz_book/result.json
-  # - name: "Drnonaphrmacy"
-  #   export: ~/exports/Drnonaphrmacy/result.json
-  # - name: "dvjhtj"
-  #   export: ~/exports/dvjhtj/result.json
-  # - name: "Free_IslamicBooks"
-  #   export: ~/exports/Free_IslamicBooks/result.json
-  # - name: "IslamicLibrary1"
-  #   export: ~/exports/IslamicLibrary1/result.json
-  # - name: "islamicMoral"
-  #   export: ~/exports/islamicMoral/result.json
-  # - name: "kj7_oi"
-  #   export: ~/exports/kj7_oi/result.json
-  # - name: "KOTOB_ISLAMIC"
-  #   export: ~/exports/KOTOB_ISLAMIC/result.json
-  # - name: "KotobEslamiah"
-  #   export: ~/exports/KotobEslamiah/result.json
-  # - name: "ktbmB_othaimen"
-  #   export: ~/exports/ktbmB_othaimen/result.json
-  # - name: "ktbmfid"
-  #   export: ~/exports/ktbmfid/result.json
-  # - name: "mergebooks"
-  #   export: ~/exports/mergebooks/result.json
-  # - name: "NewBooksAndEditions"
-  #   export: ~/exports/NewBooksAndEditions/result.json
-  # - name: "palkotob"
-  #   export: ~/exports/palkotob/result.json
-  # - name: "PDFnew"
-  #   export: ~/exports/PDFnew/result.json
-  # - name: "qra_at"
-  #   export: ~/exports/qra_at/result.json
-  # - name: "quwaa"
-  #   export: ~/exports/quwaa/result.json
-  # - name: "safi_book"
-  #   export: ~/exports/safi_book/result.json
-  # - name: "tahmilkutubwarosaililmiyah"
-  #   export: ~/exports/tahmilkutubwarosaililmiyah/result.json
+  - name: "abntaymia3"
+  - name: "almeshkat2023"
+  - name: "baz_book"
+  - name: "Drnonaphrmacy"
+  - name: "dvjhtj"
+  - name: "Free_IslamicBooks"
+  - name: "IslamicLibrary1"
+  - name: "islamicMoral"
+  - name: "kj7_oi"
+  - name: "KOTOB_ISLAMIC"
+  - name: "KotobEslamiah"
+  - name: "ktbmB_othaimen"
+  - name: "ktbmfid"
+  - name: "mergebooks"
+  - name: "NewBooksAndEditions"
+  - name: "palkotob"
+  - name: "PDFnew"
+  - name: "qra_at"
+  - name: "quwaa"
+  - name: "safi_book"
+  - name: "tahmilkutubwarosaililmiyah"
   # Batch 2 — Quran mushaf (PDF) (2).
-  # - name: "jame3_masahif"
-  #   export: ~/exports/jame3_masahif/result.json
-  # - name: "shamarly"
-  #   export: ~/exports/shamarly/result.json
+  - name: "jame3_masahif"
+  - name: "shamarly"
   # Batch 2 — Kindle / general Arabic books (8).
-  # - name: "abjjad_free"
-  #   export: ~/exports/abjjad_free/result.json
-  # - name: "julietbookstoregroup"
-  #   export: ~/exports/julietbookstoregroup/result.json
-  # - name: "K3tabi"
-  #   export: ~/exports/K3tabi/result.json
-  # - name: "K3tabiCo"
-  #   export: ~/exports/K3tabiCo/result.json
-  # - name: "Motamayz00n"
-  #   export: ~/exports/Motamayz00n/result.json
-  # - name: "READ4OR"
-  #   export: ~/exports/READ4OR/result.json
-  # - name: "Rff404"
-  #   export: ~/exports/Rff404/result.json
-  # - name: "SARIQriwayat"
-  #   export: ~/exports/SARIQriwayat/result.json
+  - name: "abjjad_free"
+  - name: "julietbookstoregroup"
+  - name: "K3tabi"
+  - name: "K3tabiCo"
+  - name: "Motamayz00n"
+  - name: "READ4OR"
+  - name: "Rff404"
+  - name: "SARIQriwayat"
   # Batch 2 — Religious text books (shamela etc.) (6).
-  # - name: "GoldenshamelaGroup"
-  #   export: ~/exports/GoldenshamelaGroup/result.json
-  # - name: "isalmickindl"
-  #   export: ~/exports/isalmickindl/result.json
-  # - name: "shamela4kindle"
-  #   export: ~/exports/shamela4kindle/result.json
-  # - name: "shamela_epub"
-  #   export: ~/exports/shamela_epub/result.json
-  # - name: "shamela_kindle"
-  #   export: ~/exports/shamela_kindle/result.json
-  # - name: "ShamelaMakhtota"
-  #   export: ~/exports/ShamelaMakhtota/result.json
+  - name: "GoldenshamelaGroup"
+  - name: "isalmickindl"
+  - name: "shamela4kindle"
+  - name: "shamela_epub"
+  - name: "shamela_kindle"
+  - name: "ShamelaMakhtota"
   # Batch 2 — English learning (7).
-  # - name: "cambridge_library"
-  #   export: ~/exports/cambridge_library/result.json
-  # - name: "englishcafe_1"
-  #   export: ~/exports/englishcafe_1/result.json
-  # - name: "langcours"
-  #   export: ~/exports/langcours/result.json
-  # - name: "MyEnglishChannel"
-  #   export: ~/exports/MyEnglishChannel/result.json
-  # - name: "Tleeq"
-  #   export: ~/exports/Tleeq/result.json
-  # - name: "ZAmericanEnglishCourse"
-  #   export: ~/exports/ZAmericanEnglishCourse/result.json
-  # - name: "zamericangroup"
-  #   export: ~/exports/zamericangroup/result.json
+  - name: "cambridge_library"
+  - name: "englishcafe_1"
+  - name: "langcours"
+  - name: "MyEnglishChannel"
+  - name: "Tleeq"
+  - name: "ZAmericanEnglishCourse"
+  - name: "zamericangroup"
 
 # Dead — 10 handles that do not exist (info page empty on TWO probes).
 # Do NOT add them as export entries; there is nothing to export.

@@ -1,4 +1,4 @@
-# Telegram book index — scheduled sync, v0.4.4 (merged into kindle-opds-static).
+# Telegram book index — scheduled sync, v0.4.5 (merged into kindle-opds-static).
 #
 # Runs the Telegram indexer (telegram/) and publishes its section to
 # Cloudflare Pages at /telegram/ (site/telegram/ in this repo, reached
