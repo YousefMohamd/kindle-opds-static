@@ -8,12 +8,15 @@ telegram/index.db-shm
 telegram/*.db-wal
 telegram/*.db-shm
 
-# The index DB itself IS committed by design: it is the seed the
-# scheduled GitHub Actions job resumes from (public-channel metadata
-# only — no account, no private chats). Local runs share the same
-# file. Other *.db files stay out.
+# The seed DB is committed by design, but ONLY COMPRESSED as
+# telegram/index.db.gz: it is the seed the scheduled GitHub Actions
+# job resumes from (public-channel metadata only — no account, no
+# private chats). The raw telegram/index.db is NEVER committed: at
+# ~26 MB it exceeds Cloudflare Pages' 25 MB per-file limit, which
+# breaks the deployment and leaves /telegram/ on a 404 (2026-11-07).
+# Local runs share the same file. Other *.db files stay out.
 telegram/*.db
-!telegram/index.db
+!telegram/index.db.gz
 
 # python
 telegram/.venv/

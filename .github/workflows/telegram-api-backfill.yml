@@ -1,0 +1,167 @@
+# Telegram book index — MANUAL-ONLY API backfill (merged into kindle-opds-static).
+#
+# Runs the Telegram indexer (telegram/) through the MTProto API (Telethon)
+# and publishes its section to Cloudflare Pages at /telegram/
+# (site/telegram/ in this repo, reached through the _redirects rewrite at
+# the repo root). The API reads a channel/group's FULL message history —
+# including the old posts the web preview never serves, and the groups
+# the preview cannot see at all.
+#
+# MANUAL ONLY (workflow_dispatch, no schedule): the API job runs only
+# when the owner starts it, with an optional channel input. The daily
+# preview job (.github/workflows/telegram-sync.yml) stays the default
+# and never uses the API.
+#
+# SECRETS (hard condition, set by the owner): the API credentials
+# (api_id, api_hash, session string) live ONLY as GitHub Actions
+# secrets — TELEGRAM_API_ID, TELEGRAM_API_HASH,
+# TELEGRAM_SESSION_STRING — encrypted by GitHub, managed only by the
+# repo owner. They are never in the repo, never in any file that gets
+# pushed, and never printed in any log (this workflow only checks that
+# they are *present*, never their values). The API job reads only
+# configured channels/groups (channels.yaml) — never personal chats.
+# Metadata only, legal sources only, no book files are downloaded.
+#
+# Protection layer (same as the preview job): per-channel isolation (one
+# channel failing never stops the others), the DB is validated before
+# publishing, the site is built in a staging directory and swapped in
+# atomically (only if valid), the last-good site stays live on failure,
+# and every run writes a report (index-report.md) that is published even
+# when the run fails. Flood waits are honoured by the reader (backoff +
+# resume from the same offset).
+name: telegram-api-backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "One configured channel/group only (empty = all configured)"
+        required: false
+        default: ""
+        type: string
+      mode:
+        description: "Backfill (new posts + one block below oldest) or new-only"
+        required: false
+        default: "backfill"
+        type: choice
+        options:
+          - backfill
+          - new-only
+      backfill_block:
+        description: "Posts per backfill block per channel"
+        required: false
+        default: "3000"
+        type: string
+
+# The API job and the daily preview job share index.db — they must never
+# overlap. Same concurrency group as telegram-sync.yml, so a run waits
+# for the other to finish instead of racing it.
+concurrency:
+  group: kindle-opds-static-telegram-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  api-backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decompress the seed DB
+        run: |
+          if [ -f index.db.gz ]; then
+            gunzip -f index.db.gz
+          elif [ -f index.db ]; then
+            echo "No index.db.gz — using the raw index.db (transition; it will be compressed on publish)."
+          else
+            echo "::error::telegram/index.db.gz is missing — the API backfill cannot start without the seed index (push it first, see telegram/PUSH_GUIDE.md)."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the indexer (with the API extra)
+        run: pip install -e ".[api]"
+
+      - name: Seed check
+        run: |
+          if [ ! -f index.db ]; then
+            echo "::error::telegram/index.db is missing (expected telegram/index.db.gz in the repo, decompressed above) — the API backfill cannot start without the seed index (push it first, see telegram/PUSH_GUIDE.md)."
+            exit 1
+          fi
+
+      - name: Secrets check (presence only — values are never printed)
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+        run: |
+          python -c "
+          import os, sys
+          missing = [k for k in ('TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SESSION_STRING') if not os.environ.get(k)]
+          if missing:
+              print('::error::Missing GitHub secret(s): ' + ', '.join(missing) + '. Add them in repo Settings -> Secrets and variables -> Actions (see telegram/README.md \"Telegram API history backfill\").')
+              sys.exit(1)
+          print('API secrets present (values not shown).')
+          "
+
+      - name: Index (API backfill)
+        timeout-minutes: 100
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+        run: |
+          ARGS="--backfill --backfill-block ${{ inputs.backfill_block }}"
+          if [ "${{ inputs.mode }}" = "new-only" ]; then
+            ARGS="--new-only"
+          fi
+          if [ -n "${{ inputs.channel }}" ]; then
+            ARGS="$ARGS --channel ${{ inputs.channel }}"
+          fi
+          tbi api-backfill $ARGS
+
+      - name: Build the static site (staging)
+        run: |
+          tbi export-static --db index.db --out ../site/telegram.new --report index-report.md
+          cp ../site/telegram/index.html ../site/telegram.new/index.html
+          ls -la ../site/telegram.new
+
+      - name: Validate before publish
+        run: tbi validate --db index.db --json ../site/telegram.new/index.json
+
+      - name: Publish atomically
+        working-directory: .
+        run: |
+          rm -rf site/telegram
+          mv site/telegram.new site/telegram
+          # Compress the seed before committing: the repo stores ONLY
+          # index.db.gz. A raw index.db over 25 MB breaks the Cloudflare
+          # Pages deployment (25 MB per-file limit) and leaves /telegram/
+          # on a 404. gzip -f replaces index.db with index.db.gz.
+          gzip -f telegram/index.db
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telegram/index.db.gz telegram/index-report.md site/telegram/
+          # Drop the raw seed from the repo if it is still tracked (the
+          # transition commit); harmless once it is gone.
+          git rm --cached telegram/index.db 2>/dev/null || true
+          git commit -m "[telegram-api-backfill] manual API backfill" || echo "nothing to commit"
+          git push
+
+      - name: Report the failure (keeps the last-good site live)
+        if: failure()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index-report.md || true
+          git commit -m "[telegram-api-backfill] run failed — report only" || echo "nothing to commit"
+          git push || echo "could not push the failure report"

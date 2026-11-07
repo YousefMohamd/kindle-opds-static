@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.3)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.1)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -14,18 +14,37 @@ is untouched by this push — the only root files that change are
 **Do this only AFTER the local run on the Mac has finished** (or been
 stopped with Ctrl+C — the channels it committed are safe). The local
 `index.db` is the seed the scheduled job resumes from; do not push
-before it exists.
+before it exists. The seed is stored in the repo **compressed** as
+`telegram/index.db.gz` — never the raw `index.db` (see "Why the seed
+is compressed" below).
 
 ## What gets pushed (the delta)
 
 | Path in the repo | What it is |
 |---|---|
-| `telegram/` | The tool v0.3.0 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db` |
+| `telegram/` | The tool v0.4.1 (code, `channels.yaml`, tests, README, this guide) + the seed `index.db.gz` (compressed) |
 | `.github/workflows/telegram-sync.yml` | The scheduled sync (daily 03:00 UTC + manual) |
+| `.github/workflows/telegram-api-backfill.yml` | The manual-only API backfill (no schedule; needs the three GitHub secrets) |
 | `site/telegram/index.html` | The Telegram search page |
 | `_redirects` | `/telegram/*` → `/site/telegram/*` (200 rewrite) |
 | `.gitignore` | Telegram-only ignore rules (scoped to `telegram/` + `site/telegram.new/`) |
 | `README.md` | OPDS content unchanged + Telegram section appended |
+
+## Why the seed is compressed (v0.4.1)
+
+The first push (v0.3, commit `1efc245`) put the raw `index.db`
+(26,918,912 bytes, ~25.7 MiB) in the repo. Cloudflare Pages refuses
+files over **25 MB**, so the Pages deployment for that commit failed
+and `/telegram/` stayed on a 404 while the OPDS (`/index.xml`) kept
+working. The fix: the repo stores only `telegram/index.db.gz`
+(~6.2 MB at the measured ~23% gzip ratio — a 26.9 MB seed compresses
+to ~6 MB, well under the limit). Both workflows decompress it at the
+start (`gunzip`) and re-compress it before committing (`gzip -f`), so
+the tool still uses the raw `index.db` locally and in the runner; only
+the stored form is compressed. **Never commit the raw `index.db`
+again** — it breaks the deployment the same way. If you already
+pushed the raw file, this push removes it from the repo (see the
+swap steps in Step 2).
 
 Nothing else in the repo changes. The OPDS files (`index.xml`,
 `khazendar/`, `sahwa/`, `electronic/`, `hindawi/`, `doab/`,
@@ -38,19 +57,23 @@ On the Mac, in the folder with the finished local run
 
 ```bash
 # 1. Stop the run if it is still going (Ctrl+C — committed channels are safe).
-# 2. Copy the new v0.3.0 tool over it, keeping your index.db:
+# 2. Copy the new v0.4.1 tool over it, keeping your index.db:
 #    (unzip telegram-book-index.zip, copy its kindle-opds-static/telegram/
 #    contents over the folder — do NOT overwrite index.db)
-# 3. Optional, so the site works immediately instead of after the first
-#    sync: build the static data once, locally:
+# 3. Compress the seed (the repo stores only index.db.gz — see above).
+#    -k keeps the raw index.db for local use; the .gz is what gets pushed.
 cd ~/Downloads/telegram-book-index
+gzip -k index.db
+ls -la index.db.gz   # expect ~6 MB for the ~27 MB seed
+# 4. Optional, so the site works immediately instead of after the first
+#    sync: build the static data once, locally:
 .venv/bin/python -m tbi.cli export-static --db index.db --out site
 #    (writes site/index.json + copies index-report.md into site/)
 ```
 
 `index.db` is the seed: the scheduled job never does a full walk, it
-refuses to run without `telegram/index.db` in the repo and only fetches
-new posts + backfill blocks from it.
+refuses to run without `telegram/index.db.gz` in the repo and only
+fetches new posts + backfill blocks from it (after decompressing it).
 
 ## Step 2 — push the delta (pick ONE path)
 
@@ -66,15 +89,19 @@ cd kindle-opds-static
 #   kindle-opds-static/_redirects       -> _redirects
 #   kindle-opds-static/.gitignore       -> .gitignore
 #   kindle-opds-static/README.md        -> README.md
-# then the seed + the locally built static data:
-cp ~/Downloads/telegram-book-index/index.db telegram/index.db
+# then the seed (COMPRESSED) + the locally built static data:
+cp ~/Downloads/telegram-book-index/index.db.gz telegram/index.db.gz
 cp ~/Downloads/telegram-book-index/index-report.md telegram/index-report.md
 cp ~/Downloads/telegram-book-index/site/index.json site/telegram/index.json
 cp ~/Downloads/telegram-book-index/site/index-report.md site/telegram/index-report.md
+# if the raw index.db is in the repo from an earlier push, remove it
+# (it breaks the Pages deployment — see "Why the seed is compressed"):
+git rm telegram/index.db 2>/dev/null || true
 git status        # check: only the delta paths above are new/changed
-git add telegram/ .github/workflows/telegram-sync.yml site/telegram/ \
+git add telegram/ .github/workflows/telegram-sync.yml \
+  .github/workflows/telegram-api-backfill.yml site/telegram/ \
   _redirects .gitignore README.md
-git commit -m "Telegram book index v0.3.0 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
+git commit -m "Telegram book index v0.4.1 — merged into kindle-opds-static (tool in telegram/, section at /telegram/, backfill in blocks, priority search)"
 git push
 ```
 
@@ -94,17 +121,19 @@ NUL-delimited, written outside the source dir):
   --paths-file ~/workspace/kindle-opds-static-telegram-manifest
 ```
 
-Then push the **seed `index.db`** (and the report) separately with
+Then push the **seed `index.db.gz`** (and the report) separately with
 plain git from the Mac (a multi-MB binary is safer that way than
 through the connector):
 
 ```bash
 git clone https://github.com/YousefMohamd/kindle-opds-static.git
 cd kindle-opds-static
-cp ~/Downloads/telegram-book-index/index.db telegram/index.db
+cp ~/Downloads/telegram-book-index/index.db.gz telegram/index.db.gz
 cp ~/Downloads/telegram-book-index/index-report.md telegram/index-report.md
-git add telegram/index.db telegram/index-report.md
-git commit -m "[telegram-seed] local index.db — scheduled sync resumes from here"
+# if the raw index.db is in the repo from an earlier push, remove it:
+git rm telegram/index.db 2>/dev/null || true
+git add telegram/index.db.gz telegram/index-report.md
+git commit -m "[telegram-seed] local index.db.gz (compressed) — scheduled sync resumes from here"
 git push
 ```
 
@@ -119,14 +148,17 @@ the **repo root** — no new project, no build command, no output
 directory change. After the push, the Telegram section is live at
 `kindle-opds-static.pages.dev/telegram/` (the `_redirects` rewrite
 serves `site/telegram/` there). No DNS change, no change to
-`yousefmohamed.studio`, no custom/temporary domain.
+`yousefmohamed.studio`, no custom/temporary domain. The project is
+fully independent of the purchased portfolio domain
+`yousefmohamed.studio` and never depends on it — nothing in the
+project references or requires it.
 
 ## Step 4 — verify
 
 1. GitHub → repo → Actions → run the `telegram-sync` workflow once
    manually (`workflow_dispatch`) and watch it go green. It runs
    `tbi index --backfill --backfill-block 3000`, rebuilds the site,
-   validates it, and commits the updated `telegram/index.db` +
+   validates it, and commits the updated `telegram/index.db.gz` +
    `site/telegram/`.
 2. Open `https://kindle-opds-static.pages.dev/telegram/`: the search
    page loads, a query like `متون` returns results, and the
@@ -147,10 +179,12 @@ serves `site/telegram/` there). No DNS change, no change to
 
 - **This merge DOES push to `kindle-opds-static`** — that is the
   decided merge target. Never push to `BattOpt` (separate project).
-- `telegram/index.db` **is** committed by design (the sync seed:
-  public-channel metadata only — no account, no private chats).
-  `exports/` and `result.json` are gitignored and must never be
-  committed.
+- `telegram/index.db.gz` **is** committed by design (the sync seed,
+  compressed: public-channel metadata only — no account, no private
+  chats). The raw `telegram/index.db` is **never** committed — at
+  ~26 MB it exceeds Cloudflare Pages' 25 MB per-file limit and breaks
+  the deployment (`/telegram/` 404, 2026-11-07). `exports/` and
+  `result.json` are gitignored and must never be committed.
 - `remaining.yaml` (the local run's 3000-post cap config) is **not**
   part of this merge — `--backfill` replaces it: the 3000-post cap is
   now a per-run block in the scheduled job, not a one-off config.

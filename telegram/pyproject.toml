@@ -4,14 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telegram-book-index"
-version = "0.3.0"
-description = "Standalone index of books shared in public Telegram channels and groups. No API credentials, no server."
+version = "0.4.1"
+description = "Standalone index of books shared in public Telegram channels and groups. No API credentials by default; an optional manual-only API backfill uses GitHub secrets. No server."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
     "beautifulsoup4>=4.11",
     "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Only for the manual-only API backfill (tbi api-backfill) and the
+# one-time login script: Telethon (MTProto). The daily preview job
+# never needs it. Install with: pip install -e ".[api]"
+api = [
+    "telethon>=1.36",
 ]
 
 [project.scripts]

@@ -1,4 +1,4 @@
-# telegram-book-index (v0.3 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.1 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -9,10 +9,15 @@ tbi search "ألف ليلة وليلة"    # search across all sources
 tbi search "Hemingway" --format pdf
 tbi sources                    # show sources and how far each was indexed
 tbi search-channel --channel ekraly --query "Dune"   # targeted search + priority queue
+tbi api-backfill --channel ekraly   # OPTIONAL, manual-only: full history via the API
+tbi submit-book --source https://t.me/testchan/42 --title "Dune"   # index one book
 ```
 
-**No Telegram API credentials. No server. No background process.**
+**No Telegram API credentials by default. No server. No background process.**
 On-demand CLI only: it opens a local SQLite file, does its work, exits.
+The API backfill (below) is an **optional, manual-only** path — it needs
+credentials, but only as GitHub Actions secrets, and it never runs on a
+schedule.
 
 This tool lives **inside the main project repo**
 [`YousefMohamd/kindle-opds-static`](https://github.com/YousefMohamd/kindle-opds-static)
@@ -45,9 +50,11 @@ index never downloads books.
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e .
 # or: pip install -r requirements.txt
+# for the optional API backfill only: pip install -e ".[api]"  (adds Telethon)
 ```
 
-Requires Python 3.9+, `beautifulsoup4`, `pyyaml`. No other dependencies.
+Requires Python 3.9+, `beautifulsoup4`, `pyyaml`. Telethon is an
+optional dependency, only for the manual-only API backfill (below).
 
 ## Usage
 
@@ -178,9 +185,87 @@ below. Until then, a priority request is made by running
 `tbi search-channel` (or by the bot once it exists); the queue, the
 ordering, and the resolution are already in the tool.
 
+## Telegram API history backfill (optional, manual-only)
+
+The web preview cannot see groups at all, and it has a coverage ceiling
+on large channels. The MTProto API (Telethon) can read a channel or
+group's **full message history** — including the old posts the preview
+never serves. `tbi api-backfill` is that path. It is **optional and
+manual-only**: the daily scheduled job never uses it, and it runs only
+when the owner starts it.
+
+**Privacy model (hard condition, set by the owner):**
+- Credentials (`api_id`, `api_hash`, session string) live **only as
+  GitHub Actions secrets** — encrypted by GitHub, managed only by the
+  repo owner. They are **never in the repo, never in any file that
+  gets pushed, never in any log, never in the zip**. The code only
+  reads them from environment variables (`TELEGRAM_API_ID`,
+  `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING`) and never prints
+  them.
+- The API job is **manual-only** (workflow_dispatch, no schedule), so
+  nothing runs continuously tied to the owner's account.
+- It reads **only configured channels/groups** (`channels.yaml`) —
+  never the owner's personal chats. A handle that is not in the config
+  is refused, and a resolved entity that turns out to be a person is
+  refused too.
+- **Metadata only, legal sources only, no file downloads** — the same
+  rule as the preview scraper. Each API message becomes the same
+  `Post` row the preview walk writes (same title/author parsing, same
+  dedup keys), so the two paths produce identical index rows.
+- Flood waits are honoured (backoff + resume from the same offset),
+  and the walk is resumable (new posts first, then one backfill block
+  below the oldest, like `tbi index --backfill`).
+
+**Setup (once, by the owner):**
+1. Create `api_id` / `api_hash` at https://my.telegram.org — log in,
+   "API development tools", create an app, copy the two values.
+2. Run the login script **once, on the owner's own Mac** (it needs the
+   owner's phone + the login code Telegram sends — never run it from
+   an agent or CI):
+   ```bash
+   cd telegram
+   pip install -e ".[api]"
+   python3 scripts/create_session.py
+   ```
+   It prints ONE line: the session string. It never writes it to any
+   file. Paste that line into the GitHub secret
+   `TELEGRAM_SESSION_STRING` — and nowhere else.
+3. Add the three secrets in the repo: GitHub → Settings → Secrets and
+   variables → Actions → New repository secret:
+   `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING`.
+4. Run it manually: GitHub → repo → Actions → `telegram-api-backfill`
+   → Run workflow (optional channel input, backfill or new-only mode).
+   Or locally:
+   ```bash
+   export TELEGRAM_API_ID=... TELEGRAM_API_HASH=... TELEGRAM_SESSION_STRING=...
+   tbi api-backfill --channel ekraly            # one configured source
+   tbi api-backfill --backfill --backfill-block 3000   # all configured
+   tbi api-backfill --new-only                   # only new posts
+   tbi api-backfill --full --channel somegroup   # full history, one source
+   ```
+   A `--channel` that is not in `channels.yaml` is refused. To
+   API-index a group, add it under `groups:` in `channels.yaml` with
+   its name (the handle, e.g. `EBook_Library`) — no export file is
+   needed for the API path.
+
+**Submit one book (individual indexing):**
+```bash
+tbi submit-book --source https://t.me/testchan/42 --title "Dune" \
+  --author "Frank Herbert" --format epub --size 1200000
+tbi submit-book --source https://example.com/books/dune.pdf --title "Dune" --format pdf
+```
+The book is indexed with its source recorded (a `t.me` post link or
+an external URL — anything else is rejected), so it is searchable and
+published like any other indexed book. The bot (Phase 2) will call
+this when a user submits a book. No file is downloaded or hosted —
+metadata + source link only. Submitting the same book twice does not
+duplicate it, and a book already in the index from another source is
+reported as such. An external source is stored under a `submitted`
+source named after its domain.
+
 ## Cloud publish (static site, daily sync)
 
-GitHub is **storage only** (config + `index.db` + generated static
+GitHub is **storage only** (config + `index.db.gz` + generated static
 files). Cloudflare Pages (free) serves the **repo root** of
 `kindle-opds-static` on the free `pages.dev` address — the OPDS catalog
 at `/` and the Telegram section at `/telegram/` (via the root
@@ -189,15 +274,30 @@ no new repo, no new Pages project, no server, no Mac involved after the
 seed is pushed.
 
 - **Schedule:** `.github/workflows/telegram-sync.yml` runs daily at
-  03:00 UTC (plus manual `workflow_dispatch`). It checks out, installs
-  the tool from `telegram/`, runs
+  03:00 UTC (plus manual `workflow_dispatch`). It checks out,
+  decompresses the seed (`gunzip telegram/index.db.gz`), installs the
+  tool from `telegram/`, runs
   `tbi index --backfill --backfill-block 3000`, builds the site into
   `site/telegram.new/`, validates it with `tbi validate`, and only then
-  swaps it into `site/telegram/` and commits + pushes
-  `telegram/index.db`, `telegram/index-report.md`, and `site/telegram/`.
-- **Seed:** the scheduled job never does a full walk — it refuses to
-  run without `telegram/index.db` in the repo. Push the local index
-  once (see `PUSH_GUIDE.md`); the job resumes from it.
+  swaps it into `site/telegram/`, re-compresses the seed
+  (`gzip -f telegram/index.db`), and commits + pushes
+  `telegram/index.db.gz`, `telegram/index-report.md`, and `site/telegram/`.
+- **Seed (compressed):** the scheduled job never does a full walk — it
+  refuses to run without `telegram/index.db.gz` in the repo. Push the
+  local index once, compressed (see `PUSH_GUIDE.md`); the job resumes
+  from it. The seed is stored **compressed** because the raw
+  `index.db` is ~26 MB and Cloudflare Pages refuses files over 25 MB —
+  a raw `index.db` in the repo breaks the deployment and leaves
+  `/telegram/` on a 404 (that is what happened on 2026-11-07). The
+  raw `.db` is never committed; locally the tool still uses `index.db`
+  (the workflows decompress/compress it at the edges). A 26.9 MB seed
+  compresses to ~6.2 MB (gzip, ~23% — measured 2026-11-07 on a
+  62,806-post DB of the same schema).
+- **API backfill (manual-only):** `.github/workflows/telegram-api-backfill.yml`
+  runs only on manual dispatch (optional channel input, backfill or
+  new-only mode), uses the three GitHub secrets, and publishes the
+  same way (validate → atomic swap → commit). The daily preview job
+  stays the default and never uses the API.
 - **Protection layer:** per-channel try/except with retries (already
   in the scraper); DB validated before any publish; atomic publish
   (staging `site/telegram.new/` → `site/telegram/` only if validation
@@ -235,7 +335,9 @@ limits it must follow, so the design is fixed before any code exists:
   **not** replace the preview fetcher for the 43 channels; its role is
   the front-end (users add their own libraries, priority requests,
   sync status, notifications). A userbot acting as the user's account
-  is the ruled-out API route (see below).
+  is NOT the bot — the API backfill is a separate, manual-only,
+  owner-controlled path (see "Telegram API history backfill" above);
+  the bot itself never acts as the user.
 - **Only t.me links.** The bot accepts only Telegram links
   (`t.me/<handle>`); anything else is rejected.
 - **Validation before accepting a channel.** The bot checks the channel
@@ -247,7 +349,7 @@ limits it must follow, so the design is fixed before any code exists:
   never in any committed file, and never in the published site. Anyone
   can copy the code but cannot impersonate the bot without its token.
 - **Admin commands are restricted** to the owner's Telegram user ID.
-- **Rate-limit additions** (e.g. one channel per user per day).
+- **Rate-limit additions** (five channels per user per day — the stability-sized cap).
 - **Metadata only, legal sources only.** The bot never forwards or
   redistributes files; it records links and metadata, and only for
   legal sources (public-domain / licensed / the user's own files).
@@ -282,6 +384,10 @@ title / author / filename / caption:
   sources counts once as a book (each share is still listed in search).
 - `priority_requests` — one row per priority request (channel, query,
   status pending/resolved, timestamps). Metadata only — never a file.
+- `submitted` sources — books added one-by-one with
+  `tbi submit-book` (an external URL is stored under a source named
+  after its domain); same `posts`/`files` rows as scraped books, so
+  they are searchable and published identically.
 
 ## Dropped and low-density channels
 
@@ -304,11 +410,13 @@ title / author / filename / caption:
 - **Groups are export-only.** `t.me/s/<group>` redirects to an info card
   with no messages — verified live 2026-11-06 on `@jazz223k` and others.
   A single known group post (`t.me/<group>/<id>`, incl. the embed widget)
-  also returns no content. Only MTProto + `api_id`/`api_hash` + a login
-  can read groups live, and this tool deliberately does not do that —
-  **no user API credentials, ever**: a user API would run continuously
-  tied to the user's account, and publishing the code open-source would
-  expose sensitive API info. **Real-world split (verified 2026-11-06,
+  also returns no content. MTProto + `api_id`/`api_hash` + a login can
+  read groups live — that is the optional, manual-only API backfill
+  (see "Telegram API history backfill" above): credentials only as
+  GitHub Actions secrets, owner-only, never in the repo, and the job
+  runs only when the owner starts it, so nothing runs continuously
+  tied to the account. The default (preview + export) path still uses
+  **no API credentials at all**. **Real-world split (verified 2026-11-06,
   corrected counts — batch 1, 29 sources, plus batch 2, 207 new
   sources): 236 unique sources — 51 walkable channels, 168 groups
   (export-only), 10 dead**, plus 6 private invite links and 1
