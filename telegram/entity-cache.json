@@ -1,4 +1,19 @@
 {
   "version": 1,
-  "entries": {}
+  "entries": {
+    "all_kinds_books_lib": {
+      "handle": "All_kinds_Books_Lib",
+      "id": 1767176877,
+      "access_hash": -2802752050735262026,
+      "type": "channel",
+      "resolved_at": "2026-11-08T17:24:00.288494+00:00"
+    },
+    "arabickindle1": {
+      "handle": "Arabickindle1",
+      "id": 1261425628,
+      "access_hash": -8792559402475516305,
+      "type": "channel",
+      "resolved_at": "2026-11-08T17:26:20.706745+00:00"
+    }
+  }
 }
