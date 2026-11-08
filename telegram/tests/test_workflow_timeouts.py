@@ -82,7 +82,7 @@ def test_api_backfill_failure_step_saves_progress():
 
 
 def test_join_groups_workflow():
-    """v0.4.6: the slow-join job runs every 12 h (3 groups/run), shares
+    """v0.4.6: the slow-join job runs every 12 h (2 groups/run), shares
     the telegram concurrency group, indexes only the newly joined
     groups, publishes the join state with the site, and commits the
     state alone when nothing was joined (a zero-joined run is not a
@@ -92,7 +92,7 @@ def test_join_groups_workflow():
     on = doc[True]
     crons = [s["cron"] for s in on["schedule"]]
     assert crons == ["0 */12 * * *"]
-    assert on["workflow_dispatch"]["inputs"]["batch"]["default"] == "3"
+    assert on["workflow_dispatch"]["inputs"]["batch"]["default"] == "2"
     assert doc["concurrency"]["group"] == "kindle-opds-static-telegram-sync"
     assert doc["concurrency"]["cancel-in-progress"] is False
     assert doc["permissions"]["contents"] == "write"
@@ -125,23 +125,23 @@ def test_join_groups_workflow():
     assert "progress + report saved" in run
 
 
-def test_version_is_0_4_8():
-    """pyproject, package __init__, and both docs agree on v0.4.8."""
+def test_version_is_0_4_9():
+    """pyproject, package __init__, and both docs agree on v0.4.9."""
     pyproject = (
         REPO_ROOT / "telegram" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert re.search(r'^version = "0\.4\.8"$', pyproject, re.M)
+    assert re.search(r'^version = "0\.4\.9"$', pyproject, re.M)
     init = (
         REPO_ROOT / "telegram" / "tbi" / "__init__.py"
     ).read_text(encoding="utf-8")
-    assert '__version__ = "0.4.8"' in init
+    assert '__version__ = "0.4.9"' in init
     readme = (REPO_ROOT / "telegram" / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# telegram-book-index (v0.4.8")
+    assert readme.startswith("# telegram-book-index (v0.4.9")
     guide = (
         REPO_ROOT / "telegram" / "PUSH_GUIDE.md"
     ).read_text(encoding="utf-8")
     assert guide.startswith(
-        "# Publishing the Telegram merge into kindle-opds-static (v0.4.8)"
+        "# Publishing the Telegram merge into kindle-opds-static (v0.4.9)"
     )
 
 

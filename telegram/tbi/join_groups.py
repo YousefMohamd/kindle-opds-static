@@ -6,12 +6,12 @@ history once he is a member. This module closes that gap — slowly and
 safely, on a schedule, with no terminal work from the owner:
 
 * ``tbi join-groups`` picks a few ``pending`` groups per run (default
-  3), checks membership first (never a redundant join request), joins
+  2), checks membership first (never a redundant join request), joins
   them, and adds each joined group to the owner's Telegram chat folder
   (default title ``📚كتب``). The workflow
   (``.github/workflows/telegram-join-groups.yml``, every 12 hours)
   then indexes each newly joined group with the API backfill and
-  publishes, so the catalogue fills in over ~4 weeks with zero
+  publishes, so the catalogue fills in over ~6 weeks with zero
   intervention — the owner only checks ``join-state.json`` /
   ``join-report.md`` in the repo every few days.
 
@@ -25,8 +25,8 @@ safely, on a schedule, with no terminal work from the owner:
     personal chats. A handle that resolves to a person (a user
     account) is refused, and a handle that is not in the config is
     never attempted (the batch is drawn from the config).
-  * **Slow by design:** 3 groups per run, 2 runs a day (~6/day), with
-    a long random pause (60–120 s) between join attempts inside a
+  * **Slow by design:** 2 groups per run, 2 runs a day (~4/day), with
+    a long random pause (120–180 s) between join attempts inside a
     run. Joining is the most rate-limited thing a Telegram account
     can do; a bulk join would trigger a flood wait and could restrict
     the owner's account, so this module never hurries.
@@ -92,14 +92,14 @@ from .entity_cache import EntityCache, _is_channel_invalid, resolve_entity
 # joined groups are organised into. Created by the owner in Telegram;
 # the tool only adds to it, never creates it.
 DEFAULT_FOLDER_TITLE = "📚كتب"
-# Pace: 3 groups per run, 2 runs a day (every 12 h) = ~6 groups/day.
-# ~160 groups to join => ~27 days for the full sweep (failures, which
+# Pace: 2 groups per run, 2 runs a day (every 12 h) = ~4 groups/day.
+# ~160 groups to join => ~40 days for the full sweep (failures, which
 # are marked and never retried, shorten it; flood waits lengthen it).
-DEFAULT_BATCH_SIZE = 3
+DEFAULT_BATCH_SIZE = 2
 # Long pause between join attempts inside a run (a random value in
 # this range each time, so the joins do not look metronomic).
-DEFAULT_DELAY_MIN_S = 60.0
-DEFAULT_DELAY_MAX_S = 120.0
+DEFAULT_DELAY_MIN_S = 120.0
+DEFAULT_DELAY_MAX_S = 180.0
 
 STATUS_PENDING = "pending"
 STATUS_JOINED = "joined"
@@ -693,7 +693,7 @@ def build_join_report(result: JoinResult, state: dict) -> str:
         "",
         f"Run at {_now_iso()} — batch: up to "
         f"{state.get('batch_size', DEFAULT_BATCH_SIZE)} groups per run, "
-        "every 12 h (~6 groups/day).",
+        "every 12 h (~4 groups/day).",
         "",
     ]
     if result.stopped_by_flood_wait and not result.attempted:

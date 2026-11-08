@@ -1505,17 +1505,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pj.add_argument(
         "--batch", type=int, default=None,
-        help="Groups to attempt per run (default: from the state file, 3)",
+        help="Groups to attempt per run (default: from the state file, 2)",
     )
     pj.add_argument(
         "--delay-min", type=float, default=None,
         help="Minimum pause between joins in seconds (default: from the "
-        "state file, 60)",
+        "state file, 120)",
     )
     pj.add_argument(
         "--delay-max", type=float, default=None,
         help="Maximum pause between joins in seconds (default: from the "
-        "state file, 120)",
+        "state file, 180)",
     )
     pj.add_argument(
         "--folder", default=None,

@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.8)
+# Publishing the Telegram merge into kindle-opds-static (v0.4.9)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo
@@ -206,10 +206,10 @@ plus `telegram/join-state.json` (all 168 groups, `pending`) and
 (the new files are in the zip) — **no terminal work from the owner,
 no `git push` from the Mac**: the deploy goes through the GitHub API
 and the workflow runs on GitHub's runners. After the push, check
-Actions → `telegram-join-groups` → run it once manually (batch 3) and
+Actions → `telegram-join-groups` → run it once manually (batch 2) and
 watch it go green; then check `telegram/join-state.json` in the repo
 — the first groups should be `joined` (or `already_member`) and the
-folder step recorded. The sweep takes ~4 weeks at ~6 groups/day; a
+folder step recorded. The sweep takes ~6 weeks at ~4 groups/day; a
 run that joins nothing still commits the state + report and does not
 fail. To retry a `failed` group, set its `status` back to `pending`
 in `join-state.json` (see README "Slow group joining").
@@ -245,6 +245,16 @@ flood wait. Deploy with the same delta push as above. **Do NOT run
 the api-backfill or join-groups workflows until the flood wait
 expires (~2026-11-08 ~19:08 Cairo)** — the cache only helps future
 runs, it cannot lift the current wait. No behaviour change otherwise.
+
+## v0.4.9 — slower join pace (extra safety margin for the account)
+
+v0.4.9 changes only the join pace, as a middle ground the owner chose
+after the 20-hour flood wait of 2026-11-07: **2 groups per run**
+(was 3) and **120–180 s between joins** (was 60–120 s) — 2 runs a day,
+so ~4 groups a day and ~40 days for the ~160 groups. The schedule
+(every 12 h), concurrency group, permissions, and timeouts are
+unchanged, and `join-state.json` keeps its live statuses (1 flood_wait,
+167 pending). Deploy with the same delta push as above.
 
 ## Notes
 

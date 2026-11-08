@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.8 — merged into kindle-opds-static)
+# telegram-book-index (v0.4.9 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -293,10 +293,10 @@ it — and the owner is a member of only ~5% of the 168 configured
 groups. `tbi join-groups` closes that gap, slowly and safely, with no
 terminal work from the owner: the scheduled workflow
 (`.github/workflows/telegram-join-groups.yml`, every 12 hours) joins
-up to **3 pending groups per run**, waits **60–120 s between joins**,
+up to **2 pending groups per run**, waits **120–180 s between joins**,
 adds each joined group to the owner's Telegram chat folder **📚كتب**,
 then indexes each newly joined group with the API backfill and
-publishes. That is ~6 groups a day, so the full sweep takes ~4 weeks
+publishes. That is ~4 groups a day, so the full sweep takes ~6 weeks
 — the owner only checks `join-state.json` / `join-report.md` in the
 repo every few days.
 

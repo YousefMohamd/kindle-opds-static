@@ -4,14 +4,14 @@
 # the API (Telethon, acting as his account) can only read a group's
 # history once he is a member. This workflow closes that gap — slowly
 # and safely, with no terminal work from the owner: every 12 hours it
-# joins up to 3 pending groups (long pauses between joins), adds each
+# joins up to 2 pending groups (long pauses between joins), adds each
 # joined group to his Telegram chat folder "📚كتب", indexes each newly
 # joined group with the API backfill, and publishes — so the catalogue
-# fills in over ~4 weeks (~6 groups/day) and the owner only checks
+# fills in over ~6 weeks (~4 groups/day) and the owner only checks
 # join-state.json / join-report.md in the repo every few days.
 #
 # SCHEDULED (every 12 h) + manual dispatch — but the joins are still
-# slow by design (3 per run, 60–120 s pauses). Joining is the most
+# slow by design (2 per run, 120–180 s pauses). Joining is the most
 # rate-limited thing a Telegram account can do; a bulk join would
 # trigger a flood wait and could restrict the owner's account, so this
 # job never hurries. A flood wait stops the run immediately, is
@@ -44,7 +44,7 @@
 # index/site publish (nothing new to index). It does NOT fail the run
 # just because nothing was joined.
 #
-# Timeouts: the join step is fast (3 groups, 60–120 s pauses) and the
+# Timeouts: the join step is fast (2 groups, 120–180 s pauses) and the
 # per-group backfill is one 3000-post block each, so the job allows
 # 120 minutes and the Index step 60 — generous, bounded, and far
 # below GitHub's per-job maximum.
@@ -56,9 +56,9 @@ on:
   workflow_dispatch:
     inputs:
       batch:
-        description: "Groups to attempt per run (default 3)"
+        description: "Groups to attempt per run (default 2)"
         required: false
-        default: "3"
+        default: "2"
         type: string
 
 # The join job shares index.db and join-state.json with the other
@@ -129,10 +129,10 @@ jobs:
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
         run: |
           # Batch comes from the manual input; on a schedule the input
-          # is empty, so default to 3. tbi join-groups writes
+          # is empty, so default to 2. tbi join-groups writes
           # newly-joined.txt (one name per line, empty when nothing
           # was joined) + join-report.md + the updated join-state.json.
-          tbi join-groups --batch "${{ inputs.batch || '3' }}"
+          tbi join-groups --batch "${{ inputs.batch || '2' }}"
 
       - name: Check what was joined
         id: check

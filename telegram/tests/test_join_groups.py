@@ -225,7 +225,9 @@ def test_never_rejoins_already_member_group(tmp_path, fake_requests):
         ["alpha", "beta", "gamma"], members={"alpha"},
         filters=_folder_with_book(),
     )
-    result = _run(client, cfg, state)
+    # Batch 3 here on purpose: the test is about the join logic (all
+    # three groups must be attempted), not the default batch (2).
+    result = _run(client, cfg, state, batch=3)
     # No join request was sent for the group he is already in.
     assert "alpha" not in client.joins
     assert client.joins == ["beta", "gamma"]
@@ -329,7 +331,9 @@ def test_one_failure_does_not_stop_others(tmp_path, fake_requests):
         join_fails={"alpha": ValueError("not found")},
         filters=_folder_with_book(),
     )
-    result = _run(client, cfg, state)
+    # Batch 3 here on purpose: the test is about the failure logic
+    # (all three groups must be attempted), not the default batch (2).
+    result = _run(client, cfg, state, batch=3)
     assert result.failed == [("alpha", "join failed: not found")]
     assert result.joined == ["beta", "gamma"]
     assert state["groups"]["alpha"]["status"] == "failed"
@@ -469,7 +473,8 @@ def test_state_missing_file_builds_fresh_and_backfills_new_groups(tmp_path):
     state = jg.load_state(path, cfg)  # missing file -> fresh
     assert list(state["groups"]) == ["alpha", "beta"]
     assert state["folder_title"] == FOLDER
-    assert state["batch_size"] == 3
+    assert state["batch_size"] == 2
+    assert state["delay_seconds"] == [120.0, 180.0]
     jg.save_state(path, state)
     # A group added to the config later appears as pending on load.
     cfg2 = load_config(_cfg(tmp_path, groups=("alpha", "beta", "gamma")))
@@ -486,18 +491,23 @@ def test_state_corrupt_file_is_refused(tmp_path):
         jg.load_state(path, cfg)
 
 
-def test_real_join_state_file_v046():
-    """The committed join-state.json: all 168 groups, pending, with the
-    owner's folder title and the batch size — and no dead handle."""
+def test_real_join_state_file_v049():
+    """The committed join-state.json: all 168 groups, with the owner's
+    folder title and the batch size — and no dead handle. One group
+    (All_kinds_Books_Lib) is flood_wait from the first scheduled run
+    (2026-11-08), the other 167 are pending."""
     root = Path(__file__).resolve().parent.parent
     state = json.loads((root / "join-state.json").read_text(encoding="utf-8"))
     cfg = load_config(root / "channels.yaml")
     assert list(state["groups"]) == [g.name for g in cfg.groups]
     assert len(state["groups"]) == 168
-    assert all(v["status"] == "pending" for v in state["groups"].values())
+    assert state["groups"]["All_kinds_Books_Lib"]["status"] == "flood_wait"
+    assert sum(
+        1 for v in state["groups"].values() if v["status"] == "pending"
+    ) == 167
     assert state["folder_title"] == FOLDER
-    assert state["batch_size"] == 3
-    assert state["delay_seconds"] == [60.0, 120.0]
+    assert state["batch_size"] == 2
+    assert state["delay_seconds"] == [120.0, 180.0]
     assert "KOTOBPDFFF" not in state["groups"]
     assert "mystery_books_ar" not in state["groups"]
 
