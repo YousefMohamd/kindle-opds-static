@@ -1,79 +1,278 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-08T17:26:55.264319+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 34s
+**Date:** 2026-11-08T22:39:29.860583+00:00 — **Status:** partial — **Mode:** api-backfill — **Duration:** 2h 4m
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
-**Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
+**Note:** STOPPED by a Telegram flood-wait on username resolution: @isalmickindl needs a 67472 second wait (until 2026-11-09T17:24:01.859447+00:00). No further sources were attempted — re-run after the wait expires. The entity cache means the next run resolves each handle only once.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **206270 posts, 57723 book files** (51930 distinct books)
+- **Channels with data: 51 of 51 walkable** — **566089 posts, 251667 book files** (197304 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
 - **Not yet indexed: 0 channels**
-- **Failures this run: 0** (see below; a failed channel keeps its last-good data)
+- **Failures this run: 1** (see below; a failed channel keeps its last-good data)
 - **Groups indexed from exports: 168** — 0 more groups are commented out in channels.yaml, each needs a Desktop JSON export
 
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| All_kinds_Books_Lib (group) | 3000 | 2173 | export |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | api-backfill |
+| [daownbook](https://t.me/daownbook) | 0 | 0 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | api-backfill |
+| [kindlbook](https://t.me/kindlbook) | 0 | 0 | api-backfill |
+| [Kindle2](https://t.me/Kindle2) | 0 | 0 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 8 | 3 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 3 | 0 | api-backfill |
+| [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 3001 | 789 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 3001 | 891 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 4 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 3000 | 490 | api-backfill |
+| [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | api-backfill |
+| [eatae](https://t.me/eatae) | 0 | 0 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 0 | 0 | api-backfill |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | api-backfill |
+| [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | api-backfill |
+| [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | api-backfill |
+| [book_juice](https://t.me/book_juice) | 0 | 0 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | api-backfill |
+| [books_p](https://t.me/books_p) | 3 | 0 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 0 | 0 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | api-backfill |
+| [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | api-backfill |
+| [nourbook](https://t.me/nourbook) | 0 | 0 | api-backfill |
+| [roayati](https://t.me/roayati) | 1 | 0 | api-backfill |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | api-backfill |
+| [Sumarians](https://t.me/Sumarians) | 0 | 0 | api-backfill |
+| [twinkling4](https://t.me/twinkling4) | 0 | 0 | api-backfill |
+| [your_books](https://t.me/your_books) | 0 | 0 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | api-backfill |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | api-backfill |
+| [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | api-backfill |
+| [jad32](https://t.me/jad32) | 0 | 0 | api-backfill |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 3000 | 0 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 3001 | 3000 | api-backfill |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | api-backfill |
+| [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | api-backfill |
+| [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | api-backfill |
+| [zamerican0english](https://t.me/zamerican0english) | 0 | 0 | api-backfill |
+| All_kinds_Books_Lib (group) | 3004 | 2578 | export |
+| Arabickindle1 (group) | 3000 | 2718 | export |
+| BOOKCLUB_AR (group) | 278 | 153 | export |
+| bookclubarabic (group) | 341 | 257 | export |
+| booksforarabs (group) | 3000 | 1896 | export |
+| ddfkindle (group) | 1376 | 834 | export |
+| EBook_Library (group) | 3020 | 2208 | export |
+| jazz223k (group) | 3000 | 1377 | export |
+| kfxarabic (group) | 3000 | 2985 | export |
+| kindel4 (group) | 3000 | 1826 | export |
+| kindle4kurd (group) | 3000 | 1886 | export |
+| KindleArabicLibrary (group) | 3000 | 2994 | export |
+| KindleKotob (group) | 3000 | 2428 | export |
+| kotobkhana (group) | 0 | 0 | export |
+| pdfiat (group) | 203 | 106 | export |
+| xepub (group) | 204 | 84 | export |
+| BOOK_HOUSE_INTERNATIONAL (group) | 2495 | 1023 | export |
+| bookjunkieb (group) | 3000 | 2185 | export |
+| bookpdfepub (group) | 807 | 152 | export |
+| bookspsychology101 (group) | 2551 | 1512 | export |
+| CoolBooks (group) | 2763 | 1467 | export |
+| e_books_eng (group) | 219 | 107 | export |
+| ebookstoread (group) | 3000 | 1254 | export |
+| englishbooks99 (group) | 1231 | 915 | export |
+| FreeEbookDownloadEnglish (group) | 3000 | 2975 | export |
+| Legacy_1945 (group) | 3000 | 1792 | export |
+| muscatnonfiction (group) | 3000 | 1433 | export |
+| OnePageAway (group) | 3000 | 1 | export |
+| oxford_bookworms_lm (group) | 1868 | 326 | export |
+| Oxford_Bookwormss (group) | 576 | 104 | export |
+| OxfordBookwormers (group) | 1773 | 191 | export |
+| OxfordBookwormsDominoes1 (group) | 1631 | 205 | export |
+| OxfordReadingTree (group) | 3000 | 512 | export |
+| storybookspdf (group) | 378 | 157 | export |
+| the_romance_hub (group) | 2166 | 1973 | export |
+| trunkietrunk (group) | 3000 | 2928 | export |
+| adventurers5 (group) | 220 | 144 | export |
+| Ahlahadota (group) | 1385 | 9 | export |
+| almoghmiroonal5msa (group) | 641 | 241 | export |
+| Arabic_PDF (group) | 560 | 260 | export |
+| bookcheldren (group) | 3000 | 1803 | export |
+| Mahmoud_Salem_5 (group) | 184 | 183 | export |
+| maktph (group) | 3000 | 2239 | export |
+| noorlibrarykids (group) | 3000 | 2705 | export |
+| pokidz (group) | 2946 | 470 | export |
+| samaheltaweelkidsstories (group) | 268 | 208 | export |
+| Comics_gate (group) | 3000 | 2635 | export |
+| comics_link (group) | 3000 | 1564 | export |
+| donaldduckcomics (group) | 3000 | 2347 | export |
+| Mohanime (group) | 525 | 0 | export |
+| BabyEnglishBooks (group) | 3000 | 2669 | export |
+| book4kid (group) | 801 | 528 | export |
+| stories_kids (group) | 149 | 31 | export |
+| storybooksforkids (group) | 634 | 395 | export |
+| audiobooks_kid (group) | 126 | 0 | export |
+| easymath121 (group) | 3000 | 6 | export |
+| G5_Y5 (group) | 3000 | 2879 | export |
+| kidsbookden (group) | 3000 | 2301 | export |
+| plussheets (group) | 1650 | 901 | export |
+| sciencecamp1 (group) | 3000 | 1305 | export |
+| scincematerialsMH (group) | 787 | 524 | export |
+| ArabicMagazine (group) | 475 | 22 | export |
+| arabJournalism (group) | 3000 | 2554 | export |
+| magazineguy (group) | 80 | 77 | export |
+| megalatnawader (group) | 917 | 21 | export |
+| aa2tyuq (group) | 3000 | 2881 | export |
+| abo_abdu (group) | 3000 | 1266 | export |
+| ahn1972 (group) | 3000 | 1547 | export |
+| ahn2323 (group) | 3000 | 1534 | export |
+| alanbyawardmsr (group) | 3000 | 1002 | export |
+| almaktbhh (group) | 3000 | 1423 | export |
+| Almootnbe100 (group) | 3000 | 2273 | export |
+| art_of_book (group) | 1120 | 452 | export |
+| ArwaCoffeeBook (group) | 3000 | 102 | export |
+| asseralkotob (group) | 1143 | 750 | export |
+| book100100 (group) | 17 | 8 | export |
+| book350 (group) | 3000 | 1668 | export |
+| Book_cr2 (group) | 3000 | 1388 | export |
+| Bookes2023 (group) | 3000 | 1551 | export |
+| bookforbooks (group) | 1136 | 148 | export |
+| BoOkJuiCe (group) | 3000 | 1261 | export |
+| books2023 (group) | 3000 | 2966 | export |
+| BROKAREEMANDME (group) | 3000 | 1261 | export |
+| cozmoBooks (group) | 3000 | 2169 | export |
+| debsibooks (group) | 3000 | 885 | export |
+| DrKhaledFahmy (group) | 394 | 169 | export |
+| ekraly3 (group) | 3000 | 901 | export |
+| freebooksf (group) | 3000 | 1719 | export |
+| fun_to_read (group) | 3000 | 2776 | export |
+| HadiAriyanLibrary (group) | 3000 | 1270 | export |
+| HindawiFoundationBooks (group) | 534 | 266 | export |
+| HoSo0oN (group) | 466 | 332 | export |
+| julietyoya (group) | 3000 | 1242 | export |
+| katabataa (group) | 3000 | 1171 | export |
+| khatabg (group) | 3000 | 1696 | export |
+| KotobkhanaPDF (group) | 169 | 82 | export |
+| kotokhatab (group) | 3000 | 1921 | export |
+| kottobgededa1977 (group) | 2499 | 1949 | export |
+| L_alnader1 (group) | 3000 | 2124 | export |
+| L_alnader14 (group) | 3000 | 2376 | export |
+| l_alnader2 (group) | 3000 | 2244 | export |
+| lastStopbooks (group) | 3000 | 2973 | export |
+| lenaqra (group) | 3000 | 1416 | export |
+| lenaqra3 (group) | 3000 | 910 | export |
+| llllTTTWW (group) | 3000 | 538 | export |
+| lovekotob (group) | 3000 | 2745 | export |
+| M3RFAHALKOTOB (group) | 3000 | 1668 | export |
+| MaktabaBook (group) | 3000 | 1695 | export |
+| maktbahnet (group) | 3000 | 17 | export |
+| maktbapdf (group) | 3000 | 2 | export |
+| mybook22 (group) | 3000 | 2949 | export |
+| ni3mehalzoubi (group) | 2217 | 1217 | export |
+| novels2n (group) | 3000 | 2251 | export |
+| Numidia_Library (group) | 3000 | 1373 | export |
+| pdf_novels (group) | 3000 | 1182 | export |
+| pdfkotab19 (group) | 905 | 874 | export |
+| read00 (group) | 3000 | 2985 | export |
+| Sa7eralkutub (group) | 3000 | 665 | export |
+| soramnqraa (group) | 3000 | 2663 | export |
+| tea_sugar (group) | 3000 | 1906 | export |
+| To_The_Book (group) | 3000 | 1752 | export |
+| wadistreambooks (group) | 419 | 218 | export |
+| wessam_pdf (group) | 3000 | 2776 | export |
+| yasmeenbook (group) | 1046 | 633 | export |
+| abntaymia3 (group) | 2931 | 594 | export |
+| almeshkat2023 (group) | 3000 | 1443 | export |
+| baz_book (group) | 3000 | 1557 | export |
+| Drnonaphrmacy (group) | 3000 | 9 | export |
+| dvjhtj (group) | 2787 | 0 | export |
+| Free_IslamicBooks (group) | 2451 | 1442 | export |
+| IslamicLibrary1 (group) | 3000 | 2021 | export |
+| islamicMoral (group) | 3000 | 673 | export |
+| kj7_oi (group) | 3000 | 1331 | export |
+| KOTOB_ISLAMIC (group) | 3000 | 1559 | export |
+| KotobEslamiah (group) | 3000 | 1520 | export |
+| ktbmB_othaimen (group) | 1451 | 514 | export |
+| ktbmfid (group) | 3000 | 1543 | export |
+| mergebooks (group) | 3000 | 1118 | export |
+| NewBooksAndEditions (group) | 3000 | 1336 | export |
+| palkotob (group) | 3000 | 1675 | export |
+| PDFnew (group) | 3000 | 1582 | export |
+| qra_at (group) | 3000 | 1181 | export |
+| quwaa (group) | 2790 | 1319 | export |
+| safi_book (group) | 3000 | 1446 | export |
+| tahmilkutubwarosaililmiyah (group) | 3000 | 2686 | export |
+| jame3_masahif (group) | 219 | 105 | export |
+| shamarly (group) | 1100 | 375 | export |
+| abjjad_free (group) | 2589 | 1294 | export |
+| julietbookstoregroup (group) | 3000 | 966 | export |
+| K3tabi (group) | 8 | 0 | export |
+| K3tabiCo (group) | 724 | 465 | export |
+| Motamayz00n (group) | 193 | 128 | export |
+| READ4OR (group) | 202 | 93 | export |
+| Rff404 (group) | 14 | 4 | export |
+| SARIQriwayat (group) | 41 | 19 | export |
+| GoldenshamelaGroup (group) | 3000 | 29 | export |
+| isalmickindl (group) | 0 | 0 | export |
 
 ## Indexed channels (51)
 
 | Channel | Posts | Book files | Scope |
 |---|---|---|---|
-| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | — |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 3422 | 244 | — |
-| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | — |
-| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | — |
-| [altfwok](https://t.me/altfwok) | 17056 | 1000 | — |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | — |
-| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | — |
+| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 3422 | 244 | api-backfill |
+| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 17056 | 1000 | api-backfill |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | api-backfill |
+| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | api-backfill |
 | [arabicEread](https://t.me/arabicEread) | 3 | 0 | — |
-| [book_juice](https://t.me/book_juice) | 4808 | 226 | — |
-| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | — |
+| [book_juice](https://t.me/book_juice) | 4808 | 226 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | api-backfill |
 | [Bookkn](https://t.me/Bookkn) | 5 | 0 | — |
-| [books_p](https://t.me/books_p) | 8154 | 1195 | — |
+| [books_p](https://t.me/books_p) | 8157 | 1195 | api-backfill |
 | [booksguy](https://t.me/booksguy) | 2 | 0 | — |
-| [boook1023](https://t.me/boook1023) | 15000 | 4 | — |
-| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | — |
-| [daownbook](https://t.me/daownbook) | 3679 | 1794 | — |
-| [darkromancenovels](https://t.me/darkromancenovels) | 5079 | 1054 | — |
-| [eatae](https://t.me/eatae) | 3904 | 386 | — |
+| [boook1023](https://t.me/boook1023) | 18000 | 4 | api-backfill |
+| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | api-backfill |
+| [daownbook](https://t.me/daownbook) | 3679 | 1794 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 5087 | 1057 | api-backfill |
+| [eatae](https://t.me/eatae) | 3904 | 386 | api-backfill |
 | [eBookRoom](https://t.me/eBookRoom) | 1670 | 0 | — |
 | [Ebookspdfdownload](https://t.me/Ebookspdfdownload) | 2 | 0 | — |
-| [ekraly](https://t.me/ekraly) | 18011 | 264 | — |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 15000 | 13469 | — |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4583 | 317 | — |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | — |
-| [jad32](https://t.me/jad32) | 192 | 109 | — |
-| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | — |
-| [Kindle2](https://t.me/Kindle2) | 534 | 19 | — |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | — |
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | — |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | — |
-| [L_alnader8](https://t.me/L_alnader8) | 18003 | 1732 | — |
-| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | — |
+| [ekraly](https://t.me/ekraly) | 21012 | 1053 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 18001 | 16469 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4583 | 317 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | api-backfill |
+| [jad32](https://t.me/jad32) | 192 | 109 | api-backfill |
+| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | api-backfill |
+| [Kindle2](https://t.me/Kindle2) | 534 | 19 | api-backfill |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | api-backfill |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | api-backfill |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 21004 | 2623 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | api-backfill |
 | [Maktademia](https://t.me/Maktademia) | 1 | 0 | — |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | — |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 20 | 0 | — |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | api-backfill |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 20 | 0 | api-backfill |
 | [Motamayezon7](https://t.me/Motamayezon7) | 65 | 0 | — |
-| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | — |
-| [nourbook](https://t.me/nourbook) | 362 | 0 | — |
-| [osratouna1](https://t.me/osratouna1) | 4961 | 125 | — |
-| [Ouloalelm](https://t.me/Ouloalelm) | 278 | 85 | — |
+| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | api-backfill |
+| [nourbook](https://t.me/nourbook) | 362 | 0 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 4965 | 125 | api-backfill |
+| [Ouloalelm](https://t.me/Ouloalelm) | 278 | 85 | api-backfill |
 | [premium_ebooks](https://t.me/premium_ebooks) | 1172 | 0 | — |
-| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | — |
-| [roayati](https://t.me/roayati) | 530 | 0 | — |
-| [rwaiaty4](https://t.me/rwaiaty4) | 18002 | 9019 | — |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | — |
-| [Sumarians](https://t.me/Sumarians) | 52 | 0 | — |
-| [thedevilshours](https://t.me/thedevilshours) | 2010 | 169 | — |
-| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | — |
-| [twinkling4](https://t.me/twinkling4) | 921 | 287 | — |
-| [your_books](https://t.me/your_books) | 126 | 0 | — |
-| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | — |
+| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | api-backfill |
+| [roayati](https://t.me/roayati) | 531 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 21002 | 9509 | api-backfill |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | api-backfill |
+| [Sumarians](https://t.me/Sumarians) | 52 | 0 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 2013 | 169 | api-backfill |
+| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | api-backfill |
+| [twinkling4](https://t.me/twinkling4) | 921 | 287 | api-backfill |
+| [your_books](https://t.me/your_books) | 126 | 0 | api-backfill |
+| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | api-backfill |
 
 ## Channels with 0 book files — drop candidates (8)
 
@@ -81,7 +280,7 @@
 - [Merciful111Fate](https://t.me/Merciful111Fate) — 20 posts, 0 book files
 - [n_bhs2](https://t.me/n_bhs2) — 2 posts, 0 book files
 - [nourbook](https://t.me/nourbook) — 362 posts, 0 book files
-- [roayati](https://t.me/roayati) — 530 posts, 0 book files
+- [roayati](https://t.me/roayati) — 531 posts, 0 book files
 - [sharkelmoreeg](https://t.me/sharkelmoreeg) — 2 posts, 0 book files
 - [Sumarians](https://t.me/Sumarians) — 52 posts, 0 book files
 - [your_books](https://t.me/your_books) — 126 posts, 0 book files
@@ -104,187 +303,31 @@ Removed from the active config after the full first run (2026-11-06): 0 book fil
 Kept active, but they yield fewer than 1 book file per 100 posts — they cost walk time for almost no books. If a channel here stays this sparse, it is the next drop candidate.
 
 - [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) — 1469 posts, 14 book files (0.010 files/post)
-- [boook1023](https://t.me/boook1023) — 15000 posts, 4 book files (0.000 files/post)
+- [boook1023](https://t.me/boook1023) — 18000 posts, 4 book files (0.000 files/post)
 - [maktabahzahra](https://t.me/maktabahzahra) — 8877 posts, 46 book files (0.005 files/post)
 - [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — 1721 posts, 1 book files (0.001 files/post)
 
 ## Giants (uncapped walk is impractical)
 
 - [Sumarians](https://t.me/Sumarians) — newest post id 306117 ≈ ~8.5h for a full walk (indexed 52 posts, oldest reached 1)
-- [roayati](https://t.me/roayati) — newest post id 289147 ≈ ~8.0h for a full walk (indexed 530 posts, oldest reached 1)
-- [ekraly](https://t.me/ekraly) — newest post id 211509 ≈ ~5.9h for a full walk (indexed 18011 posts, oldest reached 119938)
-- [L_alnader8](https://t.me/L_alnader8) — newest post id 80307 ≈ ~2.2h for a full walk (indexed 18003 posts, oldest reached 9679)
-- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 18002 posts, oldest reached 18940)
+- [roayati](https://t.me/roayati) — newest post id 289172 ≈ ~8.0h for a full walk (indexed 531 posts, oldest reached 1)
+- [ekraly](https://t.me/ekraly) — newest post id 211530 ≈ ~5.9h for a full walk (indexed 21012 posts, oldest reached 100784)
+- [L_alnader8](https://t.me/L_alnader8) — newest post id 80309 ≈ ~2.2h for a full walk (indexed 21004 posts, oldest reached 5698)
+- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 21002 posts, oldest reached 15683)
 
 ## What failed so far
 
-Nothing failed on this run.
-- [Ahlahadota](https://t.me/Ahlahadota) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Almootnbe100](https://t.me/Almootnbe100) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ArabicMagazine](https://t.me/ArabicMagazine) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Arabic_PDF](https://t.me/Arabic_PDF) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Arabickindle1](https://t.me/Arabickindle1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ArwaCoffeeBook](https://t.me/ArwaCoffeeBook) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [BOOKCLUB_AR](https://t.me/BOOKCLUB_AR) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [BOOK_HOUSE_INTERNATIONAL](https://t.me/BOOK_HOUSE_INTERNATIONAL) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [BROKAREEMANDME](https://t.me/BROKAREEMANDME) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [BabyEnglishBooks](https://t.me/BabyEnglishBooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [BoOkJuiCe](https://t.me/BoOkJuiCe) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Book_cr2](https://t.me/Book_cr2) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Bookes2023](https://t.me/Bookes2023) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Comics_gate](https://t.me/Comics_gate) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [CoolBooks](https://t.me/CoolBooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [DrKhaledFahmy](https://t.me/DrKhaledFahmy) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Drnonaphrmacy](https://t.me/Drnonaphrmacy) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [EBook_Library](https://t.me/EBook_Library) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [FreeEbookDownloadEnglish](https://t.me/FreeEbookDownloadEnglish) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Free_IslamicBooks](https://t.me/Free_IslamicBooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [G5_Y5](https://t.me/G5_Y5) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [GoldenshamelaGroup](https://t.me/GoldenshamelaGroup) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [HadiAriyanLibrary](https://t.me/HadiAriyanLibrary) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [HindawiFoundationBooks](https://t.me/HindawiFoundationBooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [HoSo0oN](https://t.me/HoSo0oN) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [IslamicLibrary1](https://t.me/IslamicLibrary1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [K3tabi](https://t.me/K3tabi) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [K3tabiCo](https://t.me/K3tabiCo) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [KOTOB_ISLAMIC](https://t.me/KOTOB_ISLAMIC) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [KindleArabicLibrary](https://t.me/KindleArabicLibrary) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [KindleKotob](https://t.me/KindleKotob) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [KotobEslamiah](https://t.me/KotobEslamiah) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [KotobkhanaPDF](https://t.me/KotobkhanaPDF) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [L_alnader1](https://t.me/L_alnader1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [L_alnader14](https://t.me/L_alnader14) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Legacy_1945](https://t.me/Legacy_1945) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [M3RFAHALKOTOB](https://t.me/M3RFAHALKOTOB) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Mahmoud_Salem_5](https://t.me/Mahmoud_Salem_5) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [MaktabaBook](https://t.me/MaktabaBook) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Mohanime](https://t.me/Mohanime) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Motamayz00n](https://t.me/Motamayz00n) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
+- isalmickindl (group) — @isalmickindl: a wait of 67472 seconds is required (ResolveUsernameRequest)
 - [MyEnglishChannel](https://t.me/MyEnglishChannel) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [NewBooksAndEditions](https://t.me/NewBooksAndEditions) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Numidia_Library](https://t.me/Numidia_Library) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [OnePageAway](https://t.me/OnePageAway) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [OxfordBookwormers](https://t.me/OxfordBookwormers) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [OxfordBookwormsDominoes1](https://t.me/OxfordBookwormsDominoes1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [OxfordReadingTree](https://t.me/OxfordReadingTree) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Oxford_Bookwormss](https://t.me/Oxford_Bookwormss) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [PDFnew](https://t.me/PDFnew) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [READ4OR](https://t.me/READ4OR) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Rff404](https://t.me/Rff404) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [SARIQriwayat](https://t.me/SARIQriwayat) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [Sa7eralkutub](https://t.me/Sa7eralkutub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [ShamelaMakhtota](https://t.me/ShamelaMakhtota) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [Tleeq](https://t.me/Tleeq) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [To_The_Book](https://t.me/To_The_Book) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [ZAmericanEnglishCourse](https://t.me/ZAmericanEnglishCourse) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [aa2tyuq](https://t.me/aa2tyuq) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [abjjad_free](https://t.me/abjjad_free) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [abntaymia3](https://t.me/abntaymia3) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [abo_abdu](https://t.me/abo_abdu) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [adventurers5](https://t.me/adventurers5) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ahn1972](https://t.me/ahn1972) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ahn2323](https://t.me/ahn2323) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [alanbyawardmsr](https://t.me/alanbyawardmsr) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [almaktbhh](https://t.me/almaktbhh) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [almeshkat2023](https://t.me/almeshkat2023) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [almoghmiroonal5msa](https://t.me/almoghmiroonal5msa) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [arabJournalism](https://t.me/arabJournalism) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [art_of_book](https://t.me/art_of_book) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [asseralkotob](https://t.me/asseralkotob) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [audiobooks_kid](https://t.me/audiobooks_kid) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [baz_book](https://t.me/baz_book) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [book100100](https://t.me/book100100) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [book350](https://t.me/book350) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [book4kid](https://t.me/book4kid) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookcheldren](https://t.me/bookcheldren) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookclubarabic](https://t.me/bookclubarabic) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookforbooks](https://t.me/bookforbooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookjunkieb](https://t.me/bookjunkieb) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookpdfepub](https://t.me/bookpdfepub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [books2023](https://t.me/books2023) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [booksforarabs](https://t.me/booksforarabs) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [bookspsychology101](https://t.me/bookspsychology101) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [cambridge_library](https://t.me/cambridge_library) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [comics_link](https://t.me/comics_link) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [cozmoBooks](https://t.me/cozmoBooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ddfkindle](https://t.me/ddfkindle) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [debsibooks](https://t.me/debsibooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [donaldduckcomics](https://t.me/donaldduckcomics) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [dvjhtj](https://t.me/dvjhtj) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [e_books_eng](https://t.me/e_books_eng) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [easymath121](https://t.me/easymath121) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ebookstoread](https://t.me/ebookstoread) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ekraly3](https://t.me/ekraly3) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [englishbooks99](https://t.me/englishbooks99) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [englishcafe_1](https://t.me/englishcafe_1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [freebooksf](https://t.me/freebooksf) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [fun_to_read](https://t.me/fun_to_read) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [isalmickindl](https://t.me/isalmickindl) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [islamicMoral](https://t.me/islamicMoral) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [jame3_masahif](https://t.me/jame3_masahif) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [jazz223k](https://t.me/jazz223k) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [julietbookstoregroup](https://t.me/julietbookstoregroup) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [julietyoya](https://t.me/julietyoya) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [katabataa](https://t.me/katabataa) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kfxarabic](https://t.me/kfxarabic) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [khatabg](https://t.me/khatabg) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kidsbookden](https://t.me/kidsbookden) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kindel4](https://t.me/kindel4) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kindle4kurd](https://t.me/kindle4kurd) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kj7_oi](https://t.me/kj7_oi) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kotobkhana](https://t.me/kotobkhana) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kotokhatab](https://t.me/kotokhatab) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [kottobgededa1977](https://t.me/kottobgededa1977) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ktbmB_othaimen](https://t.me/ktbmB_othaimen) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ktbmfid](https://t.me/ktbmfid) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [l_alnader2](https://t.me/l_alnader2) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [langcours](https://t.me/langcours) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [lastStopbooks](https://t.me/lastStopbooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [lenaqra](https://t.me/lenaqra) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [lenaqra3](https://t.me/lenaqra3) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [llllTTTWW](https://t.me/llllTTTWW) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [lovekotob](https://t.me/lovekotob) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [magazineguy](https://t.me/magazineguy) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [maktbahnet](https://t.me/maktbahnet) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [maktbapdf](https://t.me/maktbapdf) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [maktph](https://t.me/maktph) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [megalatnawader](https://t.me/megalatnawader) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [mergebooks](https://t.me/mergebooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [muscatnonfiction](https://t.me/muscatnonfiction) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [mybook22](https://t.me/mybook22) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [ni3mehalzoubi](https://t.me/ni3mehalzoubi) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [noorlibrarykids](https://t.me/noorlibrarykids) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [novels2n](https://t.me/novels2n) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [oxford_bookworms_lm](https://t.me/oxford_bookworms_lm) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [palkotob](https://t.me/palkotob) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [pdf_novels](https://t.me/pdf_novels) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [pdfiat](https://t.me/pdfiat) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [pdfkotab19](https://t.me/pdfkotab19) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [plussheets](https://t.me/plussheets) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [pokidz](https://t.me/pokidz) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [qra_at](https://t.me/qra_at) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [quwaa](https://t.me/quwaa) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [read00](https://t.me/read00) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [safi_book](https://t.me/safi_book) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [samaheltaweelkidsstories](https://t.me/samaheltaweelkidsstories) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [sciencecamp1](https://t.me/sciencecamp1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [scincematerialsMH](https://t.me/scincematerialsMH) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [shamarly](https://t.me/shamarly) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [shamela4kindle](https://t.me/shamela4kindle) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [shamela_epub](https://t.me/shamela_epub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [shamela_kindle](https://t.me/shamela_kindle) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [soramnqraa](https://t.me/soramnqraa) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [stories_kids](https://t.me/stories_kids) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [storybooksforkids](https://t.me/storybooksforkids) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [storybookspdf](https://t.me/storybookspdf) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [tahmilkutubwarosaililmiyah](https://t.me/tahmilkutubwarosaililmiyah) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [tea_sugar](https://t.me/tea_sugar) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [the_romance_hub](https://t.me/the_romance_hub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [trunkietrunk](https://t.me/trunkietrunk) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [wadistreambooks](https://t.me/wadistreambooks) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [wessam_pdf](https://t.me/wessam_pdf) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [xepub](https://t.me/xepub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
-- [yasmeenbook](https://t.me/yasmeenbook) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [zamericangroup](https://t.me/zamericangroup) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 
 ## Not yet indexed — remaining 0 channels
@@ -295,172 +338,172 @@ None — every channel in the config has been indexed.
 
 Reason: public groups have no t.me/s/ preview, so live scraping is impossible. Each group needs a Telegram Desktop 'Export chat history' as JSON (result.json), then its entry is uncommented in channels.yaml. No export has been produced yet for most groups.
 
-- aa2tyuq — 0 posts, 0 book files (error)
-- abjjad_free — 0 posts, 0 book files (error)
-- abntaymia3 — 0 posts, 0 book files (error)
-- abo_abdu — 0 posts, 0 book files (error)
-- adventurers5 — 0 posts, 0 book files (error)
-- Ahlahadota — 0 posts, 0 book files (error)
-- ahn1972 — 0 posts, 0 book files (error)
-- ahn2323 — 0 posts, 0 book files (error)
-- alanbyawardmsr — 0 posts, 0 book files (error)
-- All_kinds_Books_Lib — 3000 posts, 2173 book files (ok)
-- almaktbhh — 0 posts, 0 book files (error)
-- almeshkat2023 — 0 posts, 0 book files (error)
-- almoghmiroonal5msa — 0 posts, 0 book files (error)
-- Almootnbe100 — 0 posts, 0 book files (error)
-- Arabic_PDF — 0 posts, 0 book files (error)
-- Arabickindle1 — 0 posts, 0 book files (error)
-- ArabicMagazine — 0 posts, 0 book files (error)
-- arabJournalism — 0 posts, 0 book files (error)
-- art_of_book — 0 posts, 0 book files (error)
-- ArwaCoffeeBook — 0 posts, 0 book files (error)
-- asseralkotob — 0 posts, 0 book files (error)
-- audiobooks_kid — 0 posts, 0 book files (error)
-- BabyEnglishBooks — 0 posts, 0 book files (error)
-- baz_book — 0 posts, 0 book files (error)
-- book100100 — 0 posts, 0 book files (error)
-- book350 — 0 posts, 0 book files (error)
-- book4kid — 0 posts, 0 book files (error)
-- Book_cr2 — 0 posts, 0 book files (error)
-- BOOK_HOUSE_INTERNATIONAL — 0 posts, 0 book files (error)
-- bookcheldren — 0 posts, 0 book files (error)
-- BOOKCLUB_AR — 0 posts, 0 book files (error)
-- bookclubarabic — 0 posts, 0 book files (error)
-- Bookes2023 — 0 posts, 0 book files (error)
-- bookforbooks — 0 posts, 0 book files (error)
-- BoOkJuiCe — 0 posts, 0 book files (error)
-- bookjunkieb — 0 posts, 0 book files (error)
-- bookpdfepub — 0 posts, 0 book files (error)
-- books2023 — 0 posts, 0 book files (error)
-- booksforarabs — 0 posts, 0 book files (error)
-- bookspsychology101 — 0 posts, 0 book files (error)
-- BROKAREEMANDME — 0 posts, 0 book files (error)
+- aa2tyuq — 3000 posts, 2881 book files (ok)
+- abjjad_free — 2589 posts, 1294 book files (ok)
+- abntaymia3 — 2931 posts, 594 book files (ok)
+- abo_abdu — 3000 posts, 1266 book files (ok)
+- adventurers5 — 220 posts, 144 book files (ok)
+- Ahlahadota — 1385 posts, 9 book files (ok)
+- ahn1972 — 3000 posts, 1547 book files (ok)
+- ahn2323 — 3000 posts, 1534 book files (ok)
+- alanbyawardmsr — 3000 posts, 1002 book files (ok)
+- All_kinds_Books_Lib — 6004 posts, 4751 book files (ok)
+- almaktbhh — 3000 posts, 1423 book files (ok)
+- almeshkat2023 — 3000 posts, 1443 book files (ok)
+- almoghmiroonal5msa — 641 posts, 241 book files (ok)
+- Almootnbe100 — 3000 posts, 2273 book files (ok)
+- Arabic_PDF — 560 posts, 260 book files (ok)
+- Arabickindle1 — 3000 posts, 2718 book files (ok)
+- ArabicMagazine — 475 posts, 22 book files (ok)
+- arabJournalism — 3000 posts, 2554 book files (ok)
+- art_of_book — 1120 posts, 452 book files (ok)
+- ArwaCoffeeBook — 3000 posts, 102 book files (ok)
+- asseralkotob — 1143 posts, 750 book files (ok)
+- audiobooks_kid — 126 posts, 0 book files (ok)
+- BabyEnglishBooks — 3000 posts, 2669 book files (ok)
+- baz_book — 3000 posts, 1557 book files (ok)
+- book100100 — 17 posts, 8 book files (ok)
+- book350 — 3000 posts, 1668 book files (ok)
+- book4kid — 801 posts, 528 book files (ok)
+- Book_cr2 — 3000 posts, 1388 book files (ok)
+- BOOK_HOUSE_INTERNATIONAL — 2495 posts, 1023 book files (ok)
+- bookcheldren — 3000 posts, 1803 book files (ok)
+- BOOKCLUB_AR — 278 posts, 153 book files (ok)
+- bookclubarabic — 341 posts, 257 book files (ok)
+- Bookes2023 — 3000 posts, 1551 book files (ok)
+- bookforbooks — 1136 posts, 148 book files (ok)
+- BoOkJuiCe — 3000 posts, 1261 book files (ok)
+- bookjunkieb — 3000 posts, 2185 book files (ok)
+- bookpdfepub — 807 posts, 152 book files (ok)
+- books2023 — 3000 posts, 2966 book files (ok)
+- booksforarabs — 3000 posts, 1896 book files (ok)
+- bookspsychology101 — 2551 posts, 1512 book files (ok)
+- BROKAREEMANDME — 3000 posts, 1261 book files (ok)
 - cambridge_library — 0 posts, 0 book files (error)
-- Comics_gate — 0 posts, 0 book files (error)
-- comics_link — 0 posts, 0 book files (error)
-- CoolBooks — 0 posts, 0 book files (error)
-- cozmoBooks — 0 posts, 0 book files (error)
-- ddfkindle — 0 posts, 0 book files (error)
-- debsibooks — 0 posts, 0 book files (error)
-- donaldduckcomics — 0 posts, 0 book files (error)
-- DrKhaledFahmy — 0 posts, 0 book files (error)
-- Drnonaphrmacy — 0 posts, 0 book files (error)
-- dvjhtj — 0 posts, 0 book files (error)
-- e_books_eng — 0 posts, 0 book files (error)
-- easymath121 — 0 posts, 0 book files (error)
-- EBook_Library — 3000 posts, 2000 book files (error)
-- ebookstoread — 0 posts, 0 book files (error)
-- ekraly3 — 0 posts, 0 book files (error)
-- englishbooks99 — 0 posts, 0 book files (error)
+- Comics_gate — 3000 posts, 2635 book files (ok)
+- comics_link — 3000 posts, 1564 book files (ok)
+- CoolBooks — 2763 posts, 1467 book files (ok)
+- cozmoBooks — 3000 posts, 2169 book files (ok)
+- ddfkindle — 1376 posts, 834 book files (ok)
+- debsibooks — 3000 posts, 885 book files (ok)
+- donaldduckcomics — 3000 posts, 2347 book files (ok)
+- DrKhaledFahmy — 394 posts, 169 book files (ok)
+- Drnonaphrmacy — 3000 posts, 9 book files (ok)
+- dvjhtj — 2787 posts, 0 book files (ok)
+- e_books_eng — 219 posts, 107 book files (ok)
+- easymath121 — 3000 posts, 6 book files (ok)
+- EBook_Library — 6020 posts, 4208 book files (ok)
+- ebookstoread — 3000 posts, 1254 book files (ok)
+- ekraly3 — 3000 posts, 901 book files (ok)
+- englishbooks99 — 1231 posts, 915 book files (ok)
 - englishcafe_1 — 0 posts, 0 book files (error)
-- Free_IslamicBooks — 0 posts, 0 book files (error)
-- freebooksf — 0 posts, 0 book files (error)
-- FreeEbookDownloadEnglish — 0 posts, 0 book files (error)
-- fun_to_read — 0 posts, 0 book files (error)
-- G5_Y5 — 0 posts, 0 book files (error)
-- GoldenshamelaGroup — 0 posts, 0 book files (error)
-- HadiAriyanLibrary — 0 posts, 0 book files (error)
-- HindawiFoundationBooks — 0 posts, 0 book files (error)
-- HoSo0oN — 0 posts, 0 book files (error)
+- Free_IslamicBooks — 2451 posts, 1442 book files (ok)
+- freebooksf — 3000 posts, 1719 book files (ok)
+- FreeEbookDownloadEnglish — 3000 posts, 2975 book files (ok)
+- fun_to_read — 3000 posts, 2776 book files (ok)
+- G5_Y5 — 3000 posts, 2879 book files (ok)
+- GoldenshamelaGroup — 3000 posts, 29 book files (ok)
+- HadiAriyanLibrary — 3000 posts, 1270 book files (ok)
+- HindawiFoundationBooks — 534 posts, 266 book files (ok)
+- HoSo0oN — 466 posts, 332 book files (ok)
 - isalmickindl — 0 posts, 0 book files (error)
-- IslamicLibrary1 — 0 posts, 0 book files (error)
-- islamicMoral — 0 posts, 0 book files (error)
-- jame3_masahif — 0 posts, 0 book files (error)
-- jazz223k — 0 posts, 0 book files (error)
-- julietbookstoregroup — 0 posts, 0 book files (error)
-- julietyoya — 0 posts, 0 book files (error)
-- K3tabi — 0 posts, 0 book files (error)
-- K3tabiCo — 0 posts, 0 book files (error)
-- katabataa — 0 posts, 0 book files (error)
-- kfxarabic — 0 posts, 0 book files (error)
-- khatabg — 0 posts, 0 book files (error)
-- kidsbookden — 0 posts, 0 book files (error)
-- kindel4 — 0 posts, 0 book files (error)
-- kindle4kurd — 0 posts, 0 book files (error)
-- KindleArabicLibrary — 0 posts, 0 book files (error)
-- KindleKotob — 0 posts, 0 book files (error)
-- kj7_oi — 0 posts, 0 book files (error)
-- KOTOB_ISLAMIC — 0 posts, 0 book files (error)
-- KotobEslamiah — 0 posts, 0 book files (error)
-- kotobkhana — 0 posts, 0 book files (error)
-- KotobkhanaPDF — 0 posts, 0 book files (error)
-- kotokhatab — 0 posts, 0 book files (error)
-- kottobgededa1977 — 0 posts, 0 book files (error)
-- ktbmB_othaimen — 0 posts, 0 book files (error)
-- ktbmfid — 0 posts, 0 book files (error)
-- L_alnader1 — 0 posts, 0 book files (error)
-- L_alnader14 — 0 posts, 0 book files (error)
-- l_alnader2 — 0 posts, 0 book files (error)
+- IslamicLibrary1 — 3000 posts, 2021 book files (ok)
+- islamicMoral — 3000 posts, 673 book files (ok)
+- jame3_masahif — 219 posts, 105 book files (ok)
+- jazz223k — 3000 posts, 1377 book files (ok)
+- julietbookstoregroup — 3000 posts, 966 book files (ok)
+- julietyoya — 3000 posts, 1242 book files (ok)
+- K3tabi — 8 posts, 0 book files (ok)
+- K3tabiCo — 724 posts, 465 book files (ok)
+- katabataa — 3000 posts, 1171 book files (ok)
+- kfxarabic — 3000 posts, 2985 book files (ok)
+- khatabg — 3000 posts, 1696 book files (ok)
+- kidsbookden — 3000 posts, 2301 book files (ok)
+- kindel4 — 3000 posts, 1826 book files (ok)
+- kindle4kurd — 3000 posts, 1886 book files (ok)
+- KindleArabicLibrary — 3000 posts, 2994 book files (ok)
+- KindleKotob — 3000 posts, 2428 book files (ok)
+- kj7_oi — 3000 posts, 1331 book files (ok)
+- KOTOB_ISLAMIC — 3000 posts, 1559 book files (ok)
+- KotobEslamiah — 3000 posts, 1520 book files (ok)
+- kotobkhana — 0 posts, 0 book files (ok)
+- KotobkhanaPDF — 169 posts, 82 book files (ok)
+- kotokhatab — 3000 posts, 1921 book files (ok)
+- kottobgededa1977 — 2499 posts, 1949 book files (ok)
+- ktbmB_othaimen — 1451 posts, 514 book files (ok)
+- ktbmfid — 3000 posts, 1543 book files (ok)
+- L_alnader1 — 3000 posts, 2124 book files (ok)
+- L_alnader14 — 3000 posts, 2376 book files (ok)
+- l_alnader2 — 3000 posts, 2244 book files (ok)
 - langcours — 0 posts, 0 book files (error)
-- lastStopbooks — 0 posts, 0 book files (error)
-- Legacy_1945 — 0 posts, 0 book files (error)
-- lenaqra — 0 posts, 0 book files (error)
-- lenaqra3 — 0 posts, 0 book files (error)
-- llllTTTWW — 0 posts, 0 book files (error)
-- lovekotob — 0 posts, 0 book files (error)
-- M3RFAHALKOTOB — 0 posts, 0 book files (error)
-- magazineguy — 0 posts, 0 book files (error)
-- Mahmoud_Salem_5 — 0 posts, 0 book files (error)
-- MaktabaBook — 0 posts, 0 book files (error)
-- maktbahnet — 0 posts, 0 book files (error)
-- maktbapdf — 0 posts, 0 book files (error)
-- maktph — 0 posts, 0 book files (error)
-- megalatnawader — 0 posts, 0 book files (error)
-- mergebooks — 0 posts, 0 book files (error)
-- Mohanime — 0 posts, 0 book files (error)
-- Motamayz00n — 0 posts, 0 book files (error)
-- muscatnonfiction — 0 posts, 0 book files (error)
-- mybook22 — 0 posts, 0 book files (error)
+- lastStopbooks — 3000 posts, 2973 book files (ok)
+- Legacy_1945 — 3000 posts, 1792 book files (ok)
+- lenaqra — 3000 posts, 1416 book files (ok)
+- lenaqra3 — 3000 posts, 910 book files (ok)
+- llllTTTWW — 3000 posts, 538 book files (ok)
+- lovekotob — 3000 posts, 2745 book files (ok)
+- M3RFAHALKOTOB — 3000 posts, 1668 book files (ok)
+- magazineguy — 80 posts, 77 book files (ok)
+- Mahmoud_Salem_5 — 184 posts, 183 book files (ok)
+- MaktabaBook — 3000 posts, 1695 book files (ok)
+- maktbahnet — 3000 posts, 17 book files (ok)
+- maktbapdf — 3000 posts, 2 book files (ok)
+- maktph — 3000 posts, 2239 book files (ok)
+- megalatnawader — 917 posts, 21 book files (ok)
+- mergebooks — 3000 posts, 1118 book files (ok)
+- Mohanime — 525 posts, 0 book files (ok)
+- Motamayz00n — 193 posts, 128 book files (ok)
+- muscatnonfiction — 3000 posts, 1433 book files (ok)
+- mybook22 — 3000 posts, 2949 book files (ok)
 - MyEnglishChannel — 0 posts, 0 book files (error)
-- NewBooksAndEditions — 0 posts, 0 book files (error)
-- ni3mehalzoubi — 0 posts, 0 book files (error)
-- noorlibrarykids — 0 posts, 0 book files (error)
-- novels2n — 0 posts, 0 book files (error)
-- Numidia_Library — 0 posts, 0 book files (error)
-- OnePageAway — 0 posts, 0 book files (error)
-- oxford_bookworms_lm — 0 posts, 0 book files (error)
-- Oxford_Bookwormss — 0 posts, 0 book files (error)
-- OxfordBookwormers — 0 posts, 0 book files (error)
-- OxfordBookwormsDominoes1 — 0 posts, 0 book files (error)
-- OxfordReadingTree — 0 posts, 0 book files (error)
-- palkotob — 0 posts, 0 book files (error)
-- pdf_novels — 0 posts, 0 book files (error)
-- pdfiat — 0 posts, 0 book files (error)
-- pdfkotab19 — 0 posts, 0 book files (error)
-- PDFnew — 0 posts, 0 book files (error)
-- plussheets — 0 posts, 0 book files (error)
-- pokidz — 0 posts, 0 book files (error)
-- qra_at — 0 posts, 0 book files (error)
-- quwaa — 0 posts, 0 book files (error)
-- read00 — 0 posts, 0 book files (error)
-- READ4OR — 0 posts, 0 book files (error)
-- Rff404 — 0 posts, 0 book files (error)
-- Sa7eralkutub — 0 posts, 0 book files (error)
-- safi_book — 0 posts, 0 book files (error)
-- samaheltaweelkidsstories — 0 posts, 0 book files (error)
-- SARIQriwayat — 0 posts, 0 book files (error)
-- sciencecamp1 — 0 posts, 0 book files (error)
-- scincematerialsMH — 0 posts, 0 book files (error)
-- shamarly — 0 posts, 0 book files (error)
+- NewBooksAndEditions — 3000 posts, 1336 book files (ok)
+- ni3mehalzoubi — 2217 posts, 1217 book files (ok)
+- noorlibrarykids — 3000 posts, 2705 book files (ok)
+- novels2n — 3000 posts, 2251 book files (ok)
+- Numidia_Library — 3000 posts, 1373 book files (ok)
+- OnePageAway — 3000 posts, 1 book files (ok)
+- oxford_bookworms_lm — 1868 posts, 326 book files (ok)
+- Oxford_Bookwormss — 576 posts, 104 book files (ok)
+- OxfordBookwormers — 1773 posts, 191 book files (ok)
+- OxfordBookwormsDominoes1 — 1631 posts, 205 book files (ok)
+- OxfordReadingTree — 3000 posts, 512 book files (ok)
+- palkotob — 3000 posts, 1675 book files (ok)
+- pdf_novels — 3000 posts, 1182 book files (ok)
+- pdfiat — 203 posts, 106 book files (ok)
+- pdfkotab19 — 905 posts, 874 book files (ok)
+- PDFnew — 3000 posts, 1582 book files (ok)
+- plussheets — 1650 posts, 901 book files (ok)
+- pokidz — 2946 posts, 470 book files (ok)
+- qra_at — 3000 posts, 1181 book files (ok)
+- quwaa — 2790 posts, 1319 book files (ok)
+- read00 — 3000 posts, 2985 book files (ok)
+- READ4OR — 202 posts, 93 book files (ok)
+- Rff404 — 14 posts, 4 book files (ok)
+- Sa7eralkutub — 3000 posts, 665 book files (ok)
+- safi_book — 3000 posts, 1446 book files (ok)
+- samaheltaweelkidsstories — 268 posts, 208 book files (ok)
+- SARIQriwayat — 41 posts, 19 book files (ok)
+- sciencecamp1 — 3000 posts, 1305 book files (ok)
+- scincematerialsMH — 787 posts, 524 book files (ok)
+- shamarly — 1100 posts, 375 book files (ok)
 - shamela4kindle — 0 posts, 0 book files (error)
 - shamela_epub — 0 posts, 0 book files (error)
 - shamela_kindle — 0 posts, 0 book files (error)
 - ShamelaMakhtota — 0 posts, 0 book files (error)
-- soramnqraa — 0 posts, 0 book files (error)
-- stories_kids — 0 posts, 0 book files (error)
-- storybooksforkids — 0 posts, 0 book files (error)
-- storybookspdf — 0 posts, 0 book files (error)
-- tahmilkutubwarosaililmiyah — 0 posts, 0 book files (error)
-- tea_sugar — 0 posts, 0 book files (error)
-- the_romance_hub — 0 posts, 0 book files (error)
+- soramnqraa — 3000 posts, 2663 book files (ok)
+- stories_kids — 149 posts, 31 book files (ok)
+- storybooksforkids — 634 posts, 395 book files (ok)
+- storybookspdf — 378 posts, 157 book files (ok)
+- tahmilkutubwarosaililmiyah — 3000 posts, 2686 book files (ok)
+- tea_sugar — 3000 posts, 1906 book files (ok)
+- the_romance_hub — 2166 posts, 1973 book files (ok)
 - Tleeq — 0 posts, 0 book files (error)
-- To_The_Book — 0 posts, 0 book files (error)
-- trunkietrunk — 0 posts, 0 book files (error)
-- wadistreambooks — 0 posts, 0 book files (error)
-- wessam_pdf — 0 posts, 0 book files (error)
-- xepub — 0 posts, 0 book files (error)
-- yasmeenbook — 0 posts, 0 book files (error)
+- To_The_Book — 3000 posts, 1752 book files (ok)
+- trunkietrunk — 3000 posts, 2928 book files (ok)
+- wadistreambooks — 419 posts, 218 book files (ok)
+- wessam_pdf — 3000 posts, 2776 book files (ok)
+- xepub — 204 posts, 84 book files (ok)
+- yasmeenbook — 1046 posts, 633 book files (ok)
 - ZAmericanEnglishCourse — 0 posts, 0 book files (error)
 - zamericangroup — 0 posts, 0 book files (error)
 

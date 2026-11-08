@@ -14,6 +14,1385 @@
       "access_hash": -8792559402475516305,
       "type": "channel",
       "resolved_at": "2026-11-08T17:26:20.706745+00:00"
+    },
+    "kindlebooksrepository": {
+      "handle": "KindleBooksRepository",
+      "id": 1348336705,
+      "access_hash": -7991905525946353632,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:39.605558+00:00"
+    },
+    "alnoorlib": {
+      "handle": "alnoorlib",
+      "id": 1483284183,
+      "access_hash": -999449172195724542,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:40.418344+00:00"
+    },
+    "daownbook": {
+      "handle": "daownbook",
+      "id": 1150224020,
+      "access_hash": 1230650961155070008,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:40.948138+00:00"
+    },
+    "hazem_massaod_kindle_books": {
+      "handle": "hazem_massaod_kindle_books",
+      "id": 1481855690,
+      "access_hash": -6661106099872425460,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:41.445838+00:00"
+    },
+    "kindlbook": {
+      "handle": "kindlbook",
+      "id": 1480835060,
+      "access_hash": 954457656299485923,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:41.984997+00:00"
+    },
+    "kindle2": {
+      "handle": "Kindle2",
+      "id": 1228178121,
+      "access_hash": -564312809943792983,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:42.528680+00:00"
+    },
+    "darkromancenovels": {
+      "handle": "darkromancenovels",
+      "id": 1671483077,
+      "access_hash": -3670794148892707471,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:43.150573+00:00"
+    },
+    "thedevilshours": {
+      "handle": "thedevilshours",
+      "id": 1798077208,
+      "access_hash": 6421895637274435780,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:43.930613+00:00"
+    },
+    "theebookstop": {
+      "handle": "TheEbookStop",
+      "id": 1250715800,
+      "access_hash": 4042813080672606411,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:44.714892+00:00"
+    },
+    "ekraly": {
+      "handle": "ekraly",
+      "id": 1529726502,
+      "access_hash": 7830317210132044794,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:34:45.297919+00:00"
+    },
+    "l_alnader8": {
+      "handle": "L_alnader8",
+      "id": 1174009113,
+      "access_hash": 1786304058813096600,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:35:21.875766+00:00"
+    },
+    "osratouna1": {
+      "handle": "osratouna1",
+      "id": 1927374136,
+      "access_hash": 1744303793878298762,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:35:58.200965+00:00"
+    },
+    "rwaiaty4": {
+      "handle": "rwaiaty4",
+      "id": 1801430794,
+      "access_hash": 6612123676624988665,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:35:58.833226+00:00"
+    },
+    "aat2024f": {
+      "handle": "AAT2024F",
+      "id": 1830432511,
+      "access_hash": 2888911356863511493,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:35.200562+00:00"
+    },
+    "mamachegucoloringforkids": {
+      "handle": "mamachegucoloringforkids",
+      "id": 1302304142,
+      "access_hash": 5024012304899384657,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:35.678335+00:00"
+    },
+    "eatae": {
+      "handle": "eatae",
+      "id": 1937875704,
+      "access_hash": 6616959490261528543,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:36.181991+00:00"
+    },
+    "altfwok": {
+      "handle": "altfwok",
+      "id": 1541555089,
+      "access_hash": -1129455686321428263,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:36.795559+00:00"
+    },
+    "ancientegyptianmagazines": {
+      "handle": "ancientegyptianmagazines",
+      "id": 1251843525,
+      "access_hash": 6191611782151048425,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:37.401730+00:00"
+    },
+    "alm_elmaref": {
+      "handle": "alm_elmaref",
+      "id": 1468502636,
+      "access_hash": -4833792792418196479,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:37.992223+00:00"
+    },
+    "arabicbooks": {
+      "handle": "arabicbooks",
+      "id": 1005837425,
+      "access_hash": -2753308657840335533,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:38.694033+00:00"
+    },
+    "book_juice": {
+      "handle": "book_juice",
+      "id": 1012651572,
+      "access_hash": 4748625057726818335,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:39.399757+00:00"
+    },
+    "book_lovers_s": {
+      "handle": "book_lovers_s",
+      "id": 1120033601,
+      "access_hash": 8339124767832029803,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:40.068981+00:00"
+    },
+    "books_p": {
+      "handle": "books_p",
+      "id": 1262438760,
+      "access_hash": -1997760766676178380,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:40.720998+00:00"
+    },
+    "haya_naqra": {
+      "handle": "HAYA_NAQRA",
+      "id": 1538822940,
+      "access_hash": 4022227973642345883,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:41.384939+00:00"
+    },
+    "maktabahzahra": {
+      "handle": "maktabahzahra",
+      "id": 1317250055,
+      "access_hash": 8234999354179457066,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:42.161026+00:00"
+    },
+    "n_bhs2": {
+      "handle": "n_bhs2",
+      "id": 3942815782,
+      "access_hash": -2516676179243923290,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:42.777018+00:00"
+    },
+    "nourbook": {
+      "handle": "nourbook",
+      "id": 1152565245,
+      "access_hash": 2603108464560479032,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:43.215963+00:00"
+    },
+    "roayati": {
+      "handle": "roayati",
+      "id": 1386898049,
+      "access_hash": 2885844674605396820,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:43.824021+00:00"
+    },
+    "sharkelmoreeg": {
+      "handle": "sharkelmoreeg",
+      "id": 3896158807,
+      "access_hash": -8927945795074817675,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:44.491936+00:00"
+    },
+    "sumarians": {
+      "handle": "Sumarians",
+      "id": 1192722130,
+      "access_hash": 767806982966655712,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:44.924966+00:00"
+    },
+    "twinkling4": {
+      "handle": "twinkling4",
+      "id": 1185174002,
+      "access_hash": 1679789197492814236,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:45.577017+00:00"
+    },
+    "your_books": {
+      "handle": "your_books",
+      "id": 2469336695,
+      "access_hash": -5126418017304808502,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:46.304508+00:00"
+    },
+    "ahmedsalem81": {
+      "handle": "ahmedsalem81",
+      "id": 1007340166,
+      "access_hash": -5614572112182013043,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:47.012110+00:00"
+    },
+    "ktbibnalqaim": {
+      "handle": "ktbibnalqaim",
+      "id": 1156004301,
+      "access_hash": 8324166862264199112,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:47.694875+00:00"
+    },
+    "qurany_is_life": {
+      "handle": "qurany_is_life",
+      "id": 2052735745,
+      "access_hash": -7618729214182203495,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:48.324192+00:00"
+    },
+    "jad32": {
+      "handle": "jad32",
+      "id": 1240386803,
+      "access_hash": 3718449610913684070,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:48.899648+00:00"
+    },
+    "merciful111fate": {
+      "handle": "Merciful111Fate",
+      "id": 3512952340,
+      "access_hash": -2744900951197385263,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:49.454387+00:00"
+    },
+    "boook1023": {
+      "handle": "boook1023",
+      "id": 1177033536,
+      "access_hash": 7629338962177526079,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:36:50.115479+00:00"
+    },
+    "goldenshamelaepub": {
+      "handle": "Goldenshamelaepub",
+      "id": 1349773466,
+      "access_hash": -4453168662222876752,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:37:24.587559+00:00"
+    },
+    "kindlearabicbook": {
+      "handle": "kindlearabicbook",
+      "id": 1165915792,
+      "access_hash": -4293583623338816939,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:38:01.641457+00:00"
+    },
+    "ouloalelm": {
+      "handle": "Ouloalelm",
+      "id": 1956485115,
+      "access_hash": 201676183441975514,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:38:02.247137+00:00"
+    },
+    "course_reserve": {
+      "handle": "Course_reserve",
+      "id": 1743711368,
+      "access_hash": 6371482948519407330,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:38:03.089052+00:00"
+    },
+    "zamerican0english": {
+      "handle": "zamerican0english",
+      "id": 1547193212,
+      "access_hash": -5472819590300370622,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:38:03.721694+00:00"
+    },
+    "bookclub_ar": {
+      "handle": "BOOKCLUB_AR",
+      "id": 1501427682,
+      "access_hash": 1224608756088077386,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:39:18.233384+00:00"
+    },
+    "bookclubarabic": {
+      "handle": "bookclubarabic",
+      "id": 3621009378,
+      "access_hash": 3772343573241027760,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:39:22.045997+00:00"
+    },
+    "booksforarabs": {
+      "handle": "booksforarabs",
+      "id": 1233869950,
+      "access_hash": -385021004020547528,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:39:26.424406+00:00"
+    },
+    "ddfkindle": {
+      "handle": "ddfkindle",
+      "id": 1752716734,
+      "access_hash": 2767673397299490928,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:40:05.040272+00:00"
+    },
+    "ebook_library": {
+      "handle": "EBook_Library",
+      "id": 1370655968,
+      "access_hash": 8053393497960339683,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:40:23.490584+00:00"
+    },
+    "jazz223k": {
+      "handle": "jazz223k",
+      "id": 2409858107,
+      "access_hash": 7329410172809907103,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:41:03.741812+00:00"
+    },
+    "kfxarabic": {
+      "handle": "kfxarabic",
+      "id": 1406638930,
+      "access_hash": -6628387855545603557,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:41:45.889309+00:00"
+    },
+    "kindel4": {
+      "handle": "kindel4",
+      "id": 1201655947,
+      "access_hash": 7814883857028998809,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:42:24.628560+00:00"
+    },
+    "kindle4kurd": {
+      "handle": "kindle4kurd",
+      "id": 1316582852,
+      "access_hash": 1959409061901620478,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:43:03.977483+00:00"
+    },
+    "kindlearabiclibrary": {
+      "handle": "KindleArabicLibrary",
+      "id": 1249947501,
+      "access_hash": 5649239719220823122,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:43:44.333861+00:00"
+    },
+    "kindlekotob": {
+      "handle": "KindleKotob",
+      "id": 1480741300,
+      "access_hash": -1946359893984436362,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:44:25.231404+00:00"
+    },
+    "kotobkhana": {
+      "handle": "kotobkhana",
+      "id": 1195589883,
+      "access_hash": 4903644600794854791,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:45:07.139970+00:00"
+    },
+    "pdfiat": {
+      "handle": "pdfiat",
+      "id": 1836042102,
+      "access_hash": 7031438566356728613,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:45:07.449742+00:00"
+    },
+    "xepub": {
+      "handle": "xepub",
+      "id": 2084019671,
+      "access_hash": 7262099920334849093,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:45:10.841336+00:00"
+    },
+    "book_house_international": {
+      "handle": "BOOK_HOUSE_INTERNATIONAL",
+      "id": 1126657469,
+      "access_hash": 7667535986760205372,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:45:14.467172+00:00"
+    },
+    "bookjunkieb": {
+      "handle": "bookjunkieb",
+      "id": 1477975264,
+      "access_hash": 331166129174673266,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:45:51.246599+00:00"
+    },
+    "bookpdfepub": {
+      "handle": "bookpdfepub",
+      "id": 2167450254,
+      "access_hash": -7297135474568900969,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:46:34.761775+00:00"
+    },
+    "bookspsychology101": {
+      "handle": "bookspsychology101",
+      "id": 1643479674,
+      "access_hash": -507418763585669979,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:46:46.655277+00:00"
+    },
+    "coolbooks": {
+      "handle": "CoolBooks",
+      "id": 1071537224,
+      "access_hash": -3681632925250944967,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:47:27.869998+00:00"
+    },
+    "e_books_eng": {
+      "handle": "e_books_eng",
+      "id": 1200528030,
+      "access_hash": -7770443960984625742,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:48:10.096516+00:00"
+    },
+    "ebookstoread": {
+      "handle": "ebookstoread",
+      "id": 1294716260,
+      "access_hash": -1126895403075567529,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:48:13.397745+00:00"
+    },
+    "englishbooks99": {
+      "handle": "englishbooks99",
+      "id": 1533510064,
+      "access_hash": 4486540474867556745,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:48:58.040482+00:00"
+    },
+    "freeebookdownloadenglish": {
+      "handle": "FreeEbookDownloadEnglish",
+      "id": 1473549412,
+      "access_hash": 2626033121512350453,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:49:17.034935+00:00"
+    },
+    "legacy_1945": {
+      "handle": "Legacy_1945",
+      "id": 2123683658,
+      "access_hash": 3498740257428088474,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:50:00.758591+00:00"
+    },
+    "muscatnonfiction": {
+      "handle": "muscatnonfiction",
+      "id": 1137165265,
+      "access_hash": 7729069018885294889,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:50:46.596574+00:00"
+    },
+    "onepageaway": {
+      "handle": "OnePageAway",
+      "id": 1360299214,
+      "access_hash": 2496640865339978519,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:51:34.618594+00:00"
+    },
+    "oxford_bookworms_lm": {
+      "handle": "oxford_bookworms_lm",
+      "id": 1958391634,
+      "access_hash": 617800651283820627,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:52:20.320233+00:00"
+    },
+    "oxford_bookwormss": {
+      "handle": "Oxford_Bookwormss",
+      "id": 1191655781,
+      "access_hash": -548420814265938862,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:52:48.874767+00:00"
+    },
+    "oxfordbookwormers": {
+      "handle": "OxfordBookwormers",
+      "id": 1065197642,
+      "access_hash": -3142568885683089448,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:52:57.431906+00:00"
+    },
+    "oxfordbookwormsdominoes1": {
+      "handle": "OxfordBookwormsDominoes1",
+      "id": 1693581946,
+      "access_hash": -3438457322977233604,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:53:25.466927+00:00"
+    },
+    "oxfordreadingtree": {
+      "handle": "OxfordReadingTree",
+      "id": 1691998731,
+      "access_hash": 790838010851881718,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:53:50.732677+00:00"
+    },
+    "storybookspdf": {
+      "handle": "storybookspdf",
+      "id": 1555192709,
+      "access_hash": 1484676536611142217,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:54:36.506611+00:00"
+    },
+    "the_romance_hub": {
+      "handle": "the_romance_hub",
+      "id": 2227027138,
+      "access_hash": -2089266061544102578,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:54:42.506754+00:00"
+    },
+    "trunkietrunk": {
+      "handle": "trunkietrunk",
+      "id": 1831839447,
+      "access_hash": -845559679089028748,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:55:17.133151+00:00"
+    },
+    "adventurers5": {
+      "handle": "adventurers5",
+      "id": 1606446280,
+      "access_hash": -5719699568281301266,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:56:04.418026+00:00"
+    },
+    "ahlahadota": {
+      "handle": "Ahlahadota",
+      "id": 1740505647,
+      "access_hash": -7203375908900963657,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:56:08.151172+00:00"
+    },
+    "almoghmiroonal5msa": {
+      "handle": "almoghmiroonal5msa",
+      "id": 2034119759,
+      "access_hash": 403994601281054506,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:56:31.282187+00:00"
+    },
+    "arabic_pdf": {
+      "handle": "Arabic_PDF",
+      "id": 1268467629,
+      "access_hash": -1487721083056242919,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:56:42.458461+00:00"
+    },
+    "bookcheldren": {
+      "handle": "bookcheldren",
+      "id": 1452886437,
+      "access_hash": -5723137758491462063,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:56:51.647063+00:00"
+    },
+    "mahmoud_salem_5": {
+      "handle": "Mahmoud_Salem_5",
+      "id": 2003374848,
+      "access_hash": 6804496131589395303,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:57:39.322614+00:00"
+    },
+    "maktph": {
+      "handle": "maktph",
+      "id": 1822904462,
+      "access_hash": -8233550253684167260,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:57:42.109870+00:00"
+    },
+    "noorlibrarykids": {
+      "handle": "noorlibrarykids",
+      "id": 2100451123,
+      "access_hash": -5884796086257981349,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:58:30.407435+00:00"
+    },
+    "pokidz": {
+      "handle": "pokidz",
+      "id": 1735599141,
+      "access_hash": 5572085918656687262,
+      "type": "channel",
+      "resolved_at": "2026-11-08T20:59:19.287175+00:00"
+    },
+    "samaheltaweelkidsstories": {
+      "handle": "samaheltaweelkidsstories",
+      "id": 1273306703,
+      "access_hash": -9128902356541755280,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:00:08.570350+00:00"
+    },
+    "comics_gate": {
+      "handle": "Comics_gate",
+      "id": 1268813702,
+      "access_hash": -9063630197826963619,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:00:12.848471+00:00"
+    },
+    "comics_link": {
+      "handle": "comics_link",
+      "id": 1328367697,
+      "access_hash": -6761746165666799050,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:01:02.969480+00:00"
+    },
+    "donaldduckcomics": {
+      "handle": "donaldduckcomics",
+      "id": 1772030439,
+      "access_hash": 8700829912549118314,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:02:09.203064+00:00"
+    },
+    "mohanime": {
+      "handle": "Mohanime",
+      "id": 1708727963,
+      "access_hash": 29610805763619026,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:03:03.019415+00:00"
+    },
+    "babyenglishbooks": {
+      "handle": "BabyEnglishBooks",
+      "id": 1718304858,
+      "access_hash": -33264703434490003,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:03:12.849847+00:00"
+    },
+    "book4kid": {
+      "handle": "book4kid",
+      "id": 1212931467,
+      "access_hash": 2149713158021764320,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:04:03.453440+00:00"
+    },
+    "stories_kids": {
+      "handle": "stories_kids",
+      "id": 1281109789,
+      "access_hash": -4447858259645420589,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:04:18.450515+00:00"
+    },
+    "storybooksforkids": {
+      "handle": "storybooksforkids",
+      "id": 1360356778,
+      "access_hash": -6943024576851289931,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:04:21.012478+00:00"
+    },
+    "audiobooks_kid": {
+      "handle": "audiobooks_kid",
+      "id": 1838728240,
+      "access_hash": 7600516289718778045,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:04:32.030116+00:00"
+    },
+    "easymath121": {
+      "handle": "easymath121",
+      "id": 2204021284,
+      "access_hash": -4353680126636891470,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:04:34.456327+00:00"
+    },
+    "g5_y5": {
+      "handle": "G5_Y5",
+      "id": 2355427626,
+      "access_hash": -6831751943083702291,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:05:25.402189+00:00"
+    },
+    "kidsbookden": {
+      "handle": "kidsbookden",
+      "id": 1297186856,
+      "access_hash": 5786288872904903250,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:06:20.043411+00:00"
+    },
+    "plussheets": {
+      "handle": "plussheets",
+      "id": 1393334059,
+      "access_hash": -2620451584069816616,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:07:12.262830+00:00"
+    },
+    "sciencecamp1": {
+      "handle": "sciencecamp1",
+      "id": 1580202508,
+      "access_hash": -3816843173350898400,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:07:42.125354+00:00"
+    },
+    "scincematerialsmh": {
+      "handle": "scincematerialsMH",
+      "id": 2459862446,
+      "access_hash": 4435194895983748211,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:08:37.757911+00:00"
+    },
+    "arabicmagazine": {
+      "handle": "ArabicMagazine",
+      "id": 1577437964,
+      "access_hash": -4965370129982828616,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:08:52.091526+00:00"
+    },
+    "arabjournalism": {
+      "handle": "arabJournalism",
+      "id": 1193818720,
+      "access_hash": 712917398744999318,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:09:00.183315+00:00"
+    },
+    "magazineguy": {
+      "handle": "magazineguy",
+      "id": 2030638429,
+      "access_hash": 2075333380379525534,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:09:53.260894+00:00"
+    },
+    "megalatnawader": {
+      "handle": "megalatnawader",
+      "id": 1880421208,
+      "access_hash": -4746350814425938974,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:09:54.524353+00:00"
+    },
+    "aa2tyuq": {
+      "handle": "aa2tyuq",
+      "id": 1761773488,
+      "access_hash": 6845944612162555180,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:10:10.972307+00:00"
+    },
+    "abo_abdu": {
+      "handle": "abo_abdu",
+      "id": 1402598725,
+      "access_hash": 5038678606907664993,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:11:07.781541+00:00"
+    },
+    "ahn1972": {
+      "handle": "ahn1972",
+      "id": 1137970258,
+      "access_hash": 6555874730606998252,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:12:04.410875+00:00"
+    },
+    "ahn2323": {
+      "handle": "ahn2323",
+      "id": 1260117712,
+      "access_hash": 2650071516644952525,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:13:03.580664+00:00"
+    },
+    "alanbyawardmsr": {
+      "handle": "alanbyawardmsr",
+      "id": 1413300257,
+      "access_hash": -3452804293703014066,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:14:01.098403+00:00"
+    },
+    "almaktbhh": {
+      "handle": "almaktbhh",
+      "id": 1028343451,
+      "access_hash": -2641234871513783770,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:15:00.986061+00:00"
+    },
+    "almootnbe100": {
+      "handle": "Almootnbe100",
+      "id": 1345293562,
+      "access_hash": -8107135073211222906,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:15:58.834736+00:00"
+    },
+    "art_of_book": {
+      "handle": "art_of_book",
+      "id": 2172563036,
+      "access_hash": -6779432722634185730,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:16:55.322941+00:00"
+    },
+    "arwacoffeebook": {
+      "handle": "ArwaCoffeeBook",
+      "id": 2022495629,
+      "access_hash": -6700223010198511451,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:17:19.093065+00:00"
+    },
+    "asseralkotob": {
+      "handle": "asseralkotob",
+      "id": 1992135809,
+      "access_hash": 1319407338532127169,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:18:17.767789+00:00"
+    },
+    "book100100": {
+      "handle": "book100100",
+      "id": 2931288859,
+      "access_hash": -738745436149617187,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:18:40.198276+00:00"
+    },
+    "book350": {
+      "handle": "book350",
+      "id": 1217369269,
+      "access_hash": 5608138419771402800,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:18:40.719845+00:00"
+    },
+    "book_cr2": {
+      "handle": "Book_cr2",
+      "id": 1370636068,
+      "access_hash": -3061420499545070068,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:19:38.588677+00:00"
+    },
+    "bookes2023": {
+      "handle": "Bookes2023",
+      "id": 1980447928,
+      "access_hash": -7900274268207329242,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:20:38.061711+00:00"
+    },
+    "bookforbooks": {
+      "handle": "bookforbooks",
+      "id": 1413934488,
+      "access_hash": -5305485551647277990,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:21:40.064354+00:00"
+    },
+    "bookjuice": {
+      "handle": "BoOkJuiCe",
+      "id": 1079988656,
+      "access_hash": -3310872458718618962,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:22:02.695167+00:00"
+    },
+    "books2023": {
+      "handle": "books2023",
+      "id": 1790980953,
+      "access_hash": 3698148407234821266,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:23:05.173251+00:00"
+    },
+    "brokareemandme": {
+      "handle": "BROKAREEMANDME",
+      "id": 1959459220,
+      "access_hash": 9152257946461295741,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:24:02.900922+00:00"
+    },
+    "cozmobooks": {
+      "handle": "cozmoBooks",
+      "id": 1390721146,
+      "access_hash": 1892613038545141560,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:25:01.238371+00:00"
+    },
+    "debsibooks": {
+      "handle": "debsibooks",
+      "id": 1162915652,
+      "access_hash": -6290415658249740621,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:26:02.016183+00:00"
+    },
+    "drkhaledfahmy": {
+      "handle": "DrKhaledFahmy",
+      "id": 3792021394,
+      "access_hash": -4603120119089903526,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:27:05.470421+00:00"
+    },
+    "ekraly3": {
+      "handle": "ekraly3",
+      "id": 1846609599,
+      "access_hash": -8299359535326074535,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:27:13.358364+00:00"
+    },
+    "freebooksf": {
+      "handle": "freebooksf",
+      "id": 1262727565,
+      "access_hash": 3186098391366159876,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:28:13.670271+00:00"
+    },
+    "fun_to_read": {
+      "handle": "fun_to_read",
+      "id": 1328037470,
+      "access_hash": 8218751417784690470,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:29:17.308592+00:00"
+    },
+    "hadiariyanlibrary": {
+      "handle": "HadiAriyanLibrary",
+      "id": 1253411853,
+      "access_hash": -7295634988336176628,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:30:19.221849+00:00"
+    },
+    "hindawifoundationbooks": {
+      "handle": "HindawiFoundationBooks",
+      "id": 1594816462,
+      "access_hash": 4020497651783418991,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:31:23.534442+00:00"
+    },
+    "hoso0on": {
+      "handle": "HoSo0oN",
+      "id": 1926547487,
+      "access_hash": -1370635775168980310,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:31:35.211783+00:00"
+    },
+    "julietyoya": {
+      "handle": "julietyoya",
+      "id": 1295933841,
+      "access_hash": -637548736299229529,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:31:45.247417+00:00"
+    },
+    "katabataa": {
+      "handle": "katabataa",
+      "id": 1951841249,
+      "access_hash": -8826124579591799530,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:32:50.286845+00:00"
+    },
+    "khatabg": {
+      "handle": "khatabg",
+      "id": 2180381023,
+      "access_hash": 2501562832321211971,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:33:55.048391+00:00"
+    },
+    "kotobkhanapdf": {
+      "handle": "KotobkhanaPDF",
+      "id": 2439919899,
+      "access_hash": 387404306047642595,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:34:59.139372+00:00"
+    },
+    "kotokhatab": {
+      "handle": "kotokhatab",
+      "id": 1427473652,
+      "access_hash": 5558081617229134908,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:35:02.881793+00:00"
+    },
+    "kottobgededa1977": {
+      "handle": "kottobgededa1977",
+      "id": 1152526515,
+      "access_hash": -3713340923155677862,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:36:08.629065+00:00"
+    },
+    "l_alnader1": {
+      "handle": "L_alnader1",
+      "id": 1091977367,
+      "access_hash": -2981055639905015793,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:37:04.270190+00:00"
+    },
+    "l_alnader14": {
+      "handle": "L_alnader14",
+      "id": 1390209588,
+      "access_hash": 1432341297157041174,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:38:09.971605+00:00"
+    },
+    "l_alnader2": {
+      "handle": "l_alnader2",
+      "id": 1072069210,
+      "access_hash": 7541991071550507312,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:39:17.776572+00:00"
+    },
+    "laststopbooks": {
+      "handle": "lastStopbooks",
+      "id": 1952299092,
+      "access_hash": -7778839728605658835,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:40:28.033055+00:00"
+    },
+    "lenaqra": {
+      "handle": "lenaqra",
+      "id": 1080496839,
+      "access_hash": 8290512317705501132,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:41:36.062267+00:00"
+    },
+    "lenaqra3": {
+      "handle": "lenaqra3",
+      "id": 1692652479,
+      "access_hash": -4090056852499509851,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:42:49.049899+00:00"
+    },
+    "lllltttww": {
+      "handle": "llllTTTWW",
+      "id": 1906255822,
+      "access_hash": -3948501515136614098,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:44:04.092829+00:00"
+    },
+    "lovekotob": {
+      "handle": "lovekotob",
+      "id": 1265912123,
+      "access_hash": 6790126707386009221,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:45:14.460357+00:00"
+    },
+    "m3rfahalkotob": {
+      "handle": "M3RFAHALKOTOB",
+      "id": 1322209555,
+      "access_hash": 685790649249141626,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:46:26.774670+00:00"
+    },
+    "maktababook": {
+      "handle": "MaktabaBook",
+      "id": 1046404703,
+      "access_hash": -8078182006958271676,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:47:37.494021+00:00"
+    },
+    "maktbahnet": {
+      "handle": "maktbahnet",
+      "id": 1191596603,
+      "access_hash": 6650374281453161775,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:48:50.136666+00:00"
+    },
+    "maktbapdf": {
+      "handle": "maktbapdf",
+      "id": 1421547597,
+      "access_hash": 7014128475662994189,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:50:05.993429+00:00"
+    },
+    "mybook22": {
+      "handle": "mybook22",
+      "id": 1423607345,
+      "access_hash": 5320220803970280229,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:51:21.542818+00:00"
+    },
+    "ni3mehalzoubi": {
+      "handle": "ni3mehalzoubi",
+      "id": 1472940565,
+      "access_hash": -8982092714081216383,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:52:34.578199+00:00"
+    },
+    "novels2n": {
+      "handle": "novels2n",
+      "id": 1057737370,
+      "access_hash": -6518019993759713763,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:53:31.210824+00:00"
+    },
+    "numidia_library": {
+      "handle": "Numidia_Library",
+      "id": 1280766119,
+      "access_hash": 3550257923400523516,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:54:46.508576+00:00"
+    },
+    "pdf_novels": {
+      "handle": "pdf_novels",
+      "id": 1485077391,
+      "access_hash": 1400686179610086219,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:56:00.086451+00:00"
+    },
+    "pdfkotab19": {
+      "handle": "pdfkotab19",
+      "id": 1437228041,
+      "access_hash": 1451889576310470808,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:57:16.672114+00:00"
+    },
+    "read00": {
+      "handle": "read00",
+      "id": 1014682592,
+      "access_hash": -5412322327662693569,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:57:39.658486+00:00"
+    },
+    "sa7eralkutub": {
+      "handle": "Sa7eralkutub",
+      "id": 1750723737,
+      "access_hash": -8859103019673872123,
+      "type": "channel",
+      "resolved_at": "2026-11-08T21:58:54.495079+00:00"
+    },
+    "soramnqraa": {
+      "handle": "soramnqraa",
+      "id": 1896621693,
+      "access_hash": 3551932133515105205,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:00:15.565675+00:00"
+    },
+    "tea_sugar": {
+      "handle": "tea_sugar",
+      "id": 1354779141,
+      "access_hash": 3021071202716524696,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:01:34.791955+00:00"
+    },
+    "to_the_book": {
+      "handle": "To_The_Book",
+      "id": 1359112124,
+      "access_hash": 1106987374258543208,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:02:53.009258+00:00"
+    },
+    "wadistreambooks": {
+      "handle": "wadistreambooks",
+      "id": 2951568349,
+      "access_hash": 8039465394483982056,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:04:11.719904+00:00"
+    },
+    "wessam_pdf": {
+      "handle": "wessam_pdf",
+      "id": 1062123393,
+      "access_hash": 6202335909832691054,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:04:23.783862+00:00"
+    },
+    "yasmeenbook": {
+      "handle": "yasmeenbook",
+      "id": 2097038592,
+      "access_hash": 638522986139704813,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:05:43.548610+00:00"
+    },
+    "abntaymia3": {
+      "handle": "abntaymia3",
+      "id": 1411911963,
+      "access_hash": -1766064332481735847,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:06:12.673539+00:00"
+    },
+    "almeshkat2023": {
+      "handle": "almeshkat2023",
+      "id": 1366206618,
+      "access_hash": -8389007266631922131,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:07:31.244479+00:00"
+    },
+    "baz_book": {
+      "handle": "baz_book",
+      "id": 1333605286,
+      "access_hash": 8346865499502385786,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:08:52.552535+00:00"
+    },
+    "drnonaphrmacy": {
+      "handle": "Drnonaphrmacy",
+      "id": 1257238095,
+      "access_hash": 2218857178316414579,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:10:10.847185+00:00"
+    },
+    "dvjhtj": {
+      "handle": "dvjhtj",
+      "id": 1602018812,
+      "access_hash": 429125693432976047,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:11:30.300284+00:00"
+    },
+    "free_islamicbooks": {
+      "handle": "Free_IslamicBooks",
+      "id": 1503190157,
+      "access_hash": -406992076566694373,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:12:46.524029+00:00"
+    },
+    "islamiclibrary1": {
+      "handle": "IslamicLibrary1",
+      "id": 1001534747,
+      "access_hash": 8981699279564772168,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:13:52.506968+00:00"
+    },
+    "islamicmoral": {
+      "handle": "islamicMoral",
+      "id": 1214324326,
+      "access_hash": -6297318158061500561,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:15:12.132855+00:00"
+    },
+    "kj7_oi": {
+      "handle": "kj7_oi",
+      "id": 1431420300,
+      "access_hash": -323323824514545500,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:16:33.236324+00:00"
+    },
+    "kotob_islamic": {
+      "handle": "KOTOB_ISLAMIC",
+      "id": 1010154913,
+      "access_hash": 723396712401827397,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:17:54.901089+00:00"
+    },
+    "kotobeslamiah": {
+      "handle": "KotobEslamiah",
+      "id": 1188304447,
+      "access_hash": 4571419558435579329,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:19:14.912055+00:00"
+    },
+    "ktbmb_othaimen": {
+      "handle": "ktbmB_othaimen",
+      "id": 1249882139,
+      "access_hash": -3990633706379396062,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:20:36.547083+00:00"
+    },
+    "ktbmfid": {
+      "handle": "ktbmfid",
+      "id": 1155915813,
+      "access_hash": -302971778198000803,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:21:17.604897+00:00"
+    },
+    "mergebooks": {
+      "handle": "mergebooks",
+      "id": 2009320626,
+      "access_hash": 3977210943466864508,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:22:45.311870+00:00"
+    },
+    "newbooksandeditions": {
+      "handle": "NewBooksAndEditions",
+      "id": 1792625229,
+      "access_hash": -1900979673318052984,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:24:12.769788+00:00"
+    },
+    "palkotob": {
+      "handle": "palkotob",
+      "id": 1549325405,
+      "access_hash": -8174368622656861741,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:25:39.455200+00:00"
+    },
+    "pdfnew": {
+      "handle": "PDFnew",
+      "id": 1057559966,
+      "access_hash": -6799336275198758640,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:27:06.401582+00:00"
+    },
+    "qra_at": {
+      "handle": "qra_at",
+      "id": 1596119991,
+      "access_hash": -3323686853450032885,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:28:30.379890+00:00"
+    },
+    "quwaa": {
+      "handle": "quwaa",
+      "id": 1631493930,
+      "access_hash": -698361871037927397,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:29:56.799928+00:00"
+    },
+    "safi_book": {
+      "handle": "safi_book",
+      "id": 1736938458,
+      "access_hash": 7786893736254774656,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:31:17.678916+00:00"
+    },
+    "tahmilkutubwarosaililmiyah": {
+      "handle": "tahmilkutubwarosaililmiyah",
+      "id": 1262915971,
+      "access_hash": 5286385371005501298,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:32:42.819174+00:00"
+    },
+    "jame3_masahif": {
+      "handle": "jame3_masahif",
+      "id": 1492762787,
+      "access_hash": -4482729380145288332,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:34:08.987019+00:00"
+    },
+    "shamarly": {
+      "handle": "shamarly",
+      "id": 1977471901,
+      "access_hash": -5798524641170983155,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:34:15.466041+00:00"
+    },
+    "abjjad_free": {
+      "handle": "abjjad_free",
+      "id": 3874744629,
+      "access_hash": 6539484235475222431,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:34:47.894448+00:00"
+    },
+    "julietbookstoregroup": {
+      "handle": "julietbookstoregroup",
+      "id": 1374306092,
+      "access_hash": -6616101209701779278,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:36:00.743774+00:00"
+    },
+    "k3tabi": {
+      "handle": "K3tabi",
+      "id": 1497183484,
+      "access_hash": -2263812428084431917,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:37:27.037325+00:00"
+    },
+    "k3tabico": {
+      "handle": "K3tabiCo",
+      "id": 1321614690,
+      "access_hash": 4993316519163751032,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:37:27.658970+00:00"
+    },
+    "motamayz00n": {
+      "handle": "Motamayz00n",
+      "id": 3939940292,
+      "access_hash": -6005225795084843817,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:37:49.748974+00:00"
+    },
+    "read4or": {
+      "handle": "READ4OR",
+      "id": 1106216912,
+      "access_hash": 3895777504495202563,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:37:55.445176+00:00"
+    },
+    "rff404": {
+      "handle": "Rff404",
+      "id": 2159967589,
+      "access_hash": -9179734189733256022,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:38:01.743212+00:00"
+    },
+    "sariqriwayat": {
+      "handle": "SARIQriwayat",
+      "id": 1546257322,
+      "access_hash": 2122701020778184932,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:38:02.487984+00:00"
+    },
+    "goldenshamelagroup": {
+      "handle": "GoldenshamelaGroup",
+      "id": 1398626525,
+      "access_hash": -5024104648694588840,
+      "type": "channel",
+      "resolved_at": "2026-11-08T22:38:03.699694+00:00"
     }
   }
 }
