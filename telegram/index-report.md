@@ -1,278 +1,214 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-08T22:39:29.860583+00:00 — **Status:** partial — **Mode:** api-backfill — **Duration:** 2h 4m
+**Date:** 2026-11-09T11:30:25.301098+00:00 — **Status:** ok — **Mode:** backfill — **Duration:** 39m 19s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
-**Note:** STOPPED by a Telegram flood-wait on username resolution: @isalmickindl needs a 67472 second wait (until 2026-11-09T17:24:01.859447+00:00). No further sources were attempted — re-run after the wait expires. The entity cache means the next run resolves each handle only once.
+**Note:** Backfill: one block of 3000 posts per channel below the oldest indexed post; a channel is complete when a block reaches post 1 or returns fewer than 3000 posts.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **566089 posts, 251667 book files** (197304 distinct books)
+- **Channels with data: 51 of 51 walkable** — **579469 posts, 257435 book files** (202059 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
 - **Not yet indexed: 0 channels**
-- **Failures this run: 1** (see below; a failed channel keeps its last-good data)
+- **Failures this run: 0** (see below; a failed channel keeps its last-good data)
 - **Groups indexed from exports: 168** — 0 more groups are commented out in channels.yaml, each needs a Desktop JSON export
 
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | api-backfill |
-| [daownbook](https://t.me/daownbook) | 0 | 0 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | api-backfill |
-| [kindlbook](https://t.me/kindlbook) | 0 | 0 | api-backfill |
-| [Kindle2](https://t.me/Kindle2) | 0 | 0 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 8 | 3 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 3 | 0 | api-backfill |
-| [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | api-backfill |
-| [ekraly](https://t.me/ekraly) | 3001 | 789 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 3001 | 891 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 4 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 3000 | 490 | api-backfill |
-| [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | api-backfill |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | api-backfill |
-| [eatae](https://t.me/eatae) | 0 | 0 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 0 | 0 | api-backfill |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | api-backfill |
-| [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | api-backfill |
-| [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | api-backfill |
-| [book_juice](https://t.me/book_juice) | 0 | 0 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | api-backfill |
-| [books_p](https://t.me/books_p) | 3 | 0 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 0 | 0 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | api-backfill |
-| [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | api-backfill |
-| [nourbook](https://t.me/nourbook) | 0 | 0 | api-backfill |
-| [roayati](https://t.me/roayati) | 1 | 0 | api-backfill |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | api-backfill |
-| [Sumarians](https://t.me/Sumarians) | 0 | 0 | api-backfill |
-| [twinkling4](https://t.me/twinkling4) | 0 | 0 | api-backfill |
-| [your_books](https://t.me/your_books) | 0 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | api-backfill |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | api-backfill |
-| [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | api-backfill |
-| [jad32](https://t.me/jad32) | 0 | 0 | api-backfill |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | api-backfill |
-| [boook1023](https://t.me/boook1023) | 3000 | 0 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 3001 | 3000 | api-backfill |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | api-backfill |
-| [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | api-backfill |
-| [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | api-backfill |
-| [zamerican0english](https://t.me/zamerican0english) | 0 | 0 | api-backfill |
-| All_kinds_Books_Lib (group) | 3004 | 2578 | export |
-| Arabickindle1 (group) | 3000 | 2718 | export |
-| BOOKCLUB_AR (group) | 278 | 153 | export |
-| bookclubarabic (group) | 341 | 257 | export |
-| booksforarabs (group) | 3000 | 1896 | export |
-| ddfkindle (group) | 1376 | 834 | export |
-| EBook_Library (group) | 3020 | 2208 | export |
-| jazz223k (group) | 3000 | 1377 | export |
-| kfxarabic (group) | 3000 | 2985 | export |
-| kindel4 (group) | 3000 | 1826 | export |
-| kindle4kurd (group) | 3000 | 1886 | export |
-| KindleArabicLibrary (group) | 3000 | 2994 | export |
-| KindleKotob (group) | 3000 | 2428 | export |
-| kotobkhana (group) | 0 | 0 | export |
-| pdfiat (group) | 203 | 106 | export |
-| xepub (group) | 204 | 84 | export |
-| BOOK_HOUSE_INTERNATIONAL (group) | 2495 | 1023 | export |
-| bookjunkieb (group) | 3000 | 2185 | export |
-| bookpdfepub (group) | 807 | 152 | export |
-| bookspsychology101 (group) | 2551 | 1512 | export |
-| CoolBooks (group) | 2763 | 1467 | export |
-| e_books_eng (group) | 219 | 107 | export |
-| ebookstoread (group) | 3000 | 1254 | export |
-| englishbooks99 (group) | 1231 | 915 | export |
-| FreeEbookDownloadEnglish (group) | 3000 | 2975 | export |
-| Legacy_1945 (group) | 3000 | 1792 | export |
-| muscatnonfiction (group) | 3000 | 1433 | export |
-| OnePageAway (group) | 3000 | 1 | export |
-| oxford_bookworms_lm (group) | 1868 | 326 | export |
-| Oxford_Bookwormss (group) | 576 | 104 | export |
-| OxfordBookwormers (group) | 1773 | 191 | export |
-| OxfordBookwormsDominoes1 (group) | 1631 | 205 | export |
-| OxfordReadingTree (group) | 3000 | 512 | export |
-| storybookspdf (group) | 378 | 157 | export |
-| the_romance_hub (group) | 2166 | 1973 | export |
-| trunkietrunk (group) | 3000 | 2928 | export |
-| adventurers5 (group) | 220 | 144 | export |
-| Ahlahadota (group) | 1385 | 9 | export |
-| almoghmiroonal5msa (group) | 641 | 241 | export |
-| Arabic_PDF (group) | 560 | 260 | export |
-| bookcheldren (group) | 3000 | 1803 | export |
-| Mahmoud_Salem_5 (group) | 184 | 183 | export |
-| maktph (group) | 3000 | 2239 | export |
-| noorlibrarykids (group) | 3000 | 2705 | export |
-| pokidz (group) | 2946 | 470 | export |
-| samaheltaweelkidsstories (group) | 268 | 208 | export |
-| Comics_gate (group) | 3000 | 2635 | export |
-| comics_link (group) | 3000 | 1564 | export |
-| donaldduckcomics (group) | 3000 | 2347 | export |
-| Mohanime (group) | 525 | 0 | export |
-| BabyEnglishBooks (group) | 3000 | 2669 | export |
-| book4kid (group) | 801 | 528 | export |
-| stories_kids (group) | 149 | 31 | export |
-| storybooksforkids (group) | 634 | 395 | export |
-| audiobooks_kid (group) | 126 | 0 | export |
-| easymath121 (group) | 3000 | 6 | export |
-| G5_Y5 (group) | 3000 | 2879 | export |
-| kidsbookden (group) | 3000 | 2301 | export |
-| plussheets (group) | 1650 | 901 | export |
-| sciencecamp1 (group) | 3000 | 1305 | export |
-| scincematerialsMH (group) | 787 | 524 | export |
-| ArabicMagazine (group) | 475 | 22 | export |
-| arabJournalism (group) | 3000 | 2554 | export |
-| magazineguy (group) | 80 | 77 | export |
-| megalatnawader (group) | 917 | 21 | export |
-| aa2tyuq (group) | 3000 | 2881 | export |
-| abo_abdu (group) | 3000 | 1266 | export |
-| ahn1972 (group) | 3000 | 1547 | export |
-| ahn2323 (group) | 3000 | 1534 | export |
-| alanbyawardmsr (group) | 3000 | 1002 | export |
-| almaktbhh (group) | 3000 | 1423 | export |
-| Almootnbe100 (group) | 3000 | 2273 | export |
-| art_of_book (group) | 1120 | 452 | export |
-| ArwaCoffeeBook (group) | 3000 | 102 | export |
-| asseralkotob (group) | 1143 | 750 | export |
-| book100100 (group) | 17 | 8 | export |
-| book350 (group) | 3000 | 1668 | export |
-| Book_cr2 (group) | 3000 | 1388 | export |
-| Bookes2023 (group) | 3000 | 1551 | export |
-| bookforbooks (group) | 1136 | 148 | export |
-| BoOkJuiCe (group) | 3000 | 1261 | export |
-| books2023 (group) | 3000 | 2966 | export |
-| BROKAREEMANDME (group) | 3000 | 1261 | export |
-| cozmoBooks (group) | 3000 | 2169 | export |
-| debsibooks (group) | 3000 | 885 | export |
-| DrKhaledFahmy (group) | 394 | 169 | export |
-| ekraly3 (group) | 3000 | 901 | export |
-| freebooksf (group) | 3000 | 1719 | export |
-| fun_to_read (group) | 3000 | 2776 | export |
-| HadiAriyanLibrary (group) | 3000 | 1270 | export |
-| HindawiFoundationBooks (group) | 534 | 266 | export |
-| HoSo0oN (group) | 466 | 332 | export |
-| julietyoya (group) | 3000 | 1242 | export |
-| katabataa (group) | 3000 | 1171 | export |
-| khatabg (group) | 3000 | 1696 | export |
-| KotobkhanaPDF (group) | 169 | 82 | export |
-| kotokhatab (group) | 3000 | 1921 | export |
-| kottobgededa1977 (group) | 2499 | 1949 | export |
-| L_alnader1 (group) | 3000 | 2124 | export |
-| L_alnader14 (group) | 3000 | 2376 | export |
-| l_alnader2 (group) | 3000 | 2244 | export |
-| lastStopbooks (group) | 3000 | 2973 | export |
-| lenaqra (group) | 3000 | 1416 | export |
-| lenaqra3 (group) | 3000 | 910 | export |
-| llllTTTWW (group) | 3000 | 538 | export |
-| lovekotob (group) | 3000 | 2745 | export |
-| M3RFAHALKOTOB (group) | 3000 | 1668 | export |
-| MaktabaBook (group) | 3000 | 1695 | export |
-| maktbahnet (group) | 3000 | 17 | export |
-| maktbapdf (group) | 3000 | 2 | export |
-| mybook22 (group) | 3000 | 2949 | export |
-| ni3mehalzoubi (group) | 2217 | 1217 | export |
-| novels2n (group) | 3000 | 2251 | export |
-| Numidia_Library (group) | 3000 | 1373 | export |
-| pdf_novels (group) | 3000 | 1182 | export |
-| pdfkotab19 (group) | 905 | 874 | export |
-| read00 (group) | 3000 | 2985 | export |
-| Sa7eralkutub (group) | 3000 | 665 | export |
-| soramnqraa (group) | 3000 | 2663 | export |
-| tea_sugar (group) | 3000 | 1906 | export |
-| To_The_Book (group) | 3000 | 1752 | export |
-| wadistreambooks (group) | 419 | 218 | export |
-| wessam_pdf (group) | 3000 | 2776 | export |
-| yasmeenbook (group) | 1046 | 633 | export |
-| abntaymia3 (group) | 2931 | 594 | export |
-| almeshkat2023 (group) | 3000 | 1443 | export |
-| baz_book (group) | 3000 | 1557 | export |
-| Drnonaphrmacy (group) | 3000 | 9 | export |
-| dvjhtj (group) | 2787 | 0 | export |
-| Free_IslamicBooks (group) | 2451 | 1442 | export |
-| IslamicLibrary1 (group) | 3000 | 2021 | export |
-| islamicMoral (group) | 3000 | 673 | export |
-| kj7_oi (group) | 3000 | 1331 | export |
-| KOTOB_ISLAMIC (group) | 3000 | 1559 | export |
-| KotobEslamiah (group) | 3000 | 1520 | export |
-| ktbmB_othaimen (group) | 1451 | 514 | export |
-| ktbmfid (group) | 3000 | 1543 | export |
-| mergebooks (group) | 3000 | 1118 | export |
-| NewBooksAndEditions (group) | 3000 | 1336 | export |
-| palkotob (group) | 3000 | 1675 | export |
-| PDFnew (group) | 3000 | 1582 | export |
-| qra_at (group) | 3000 | 1181 | export |
-| quwaa (group) | 2790 | 1319 | export |
-| safi_book (group) | 3000 | 1446 | export |
-| tahmilkutubwarosaililmiyah (group) | 3000 | 2686 | export |
-| jame3_masahif (group) | 219 | 105 | export |
-| shamarly (group) | 1100 | 375 | export |
-| abjjad_free (group) | 2589 | 1294 | export |
-| julietbookstoregroup (group) | 3000 | 966 | export |
-| K3tabi (group) | 8 | 0 | export |
-| K3tabiCo (group) | 724 | 465 | export |
-| Motamayz00n (group) | 193 | 128 | export |
-| READ4OR (group) | 202 | 93 | export |
-| Rff404 (group) | 14 | 4 | export |
-| SARIQriwayat (group) | 41 | 19 | export |
-| GoldenshamelaGroup (group) | 3000 | 29 | export |
-| isalmickindl (group) | 0 | 0 | export |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | backfill — complete |
+| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | backfill — complete |
+| [daownbook](https://t.me/daownbook) | 0 | 0 | backfill — complete |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | backfill — complete |
+| [kindlbook](https://t.me/kindlbook) | 0 | 0 | backfill — complete |
+| [Kindle2](https://t.me/Kindle2) | 0 | 0 | backfill — complete |
+| [darkromancenovels](https://t.me/darkromancenovels) | 6 | 0 | backfill — complete |
+| [thedevilshours](https://t.me/thedevilshours) | 1 | 0 | backfill — complete |
+| [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | backfill — complete |
+| [ekraly](https://t.me/ekraly) | 3003 | 1118 | backfill — more remain |
+| [L_alnader8](https://t.me/L_alnader8) | 3001 | 823 | backfill — more remain |
+| [osratouna1](https://t.me/osratouna1) | 4 | 0 | backfill — complete |
+| [rwaiaty4](https://t.me/rwaiaty4) | 3000 | 825 | backfill — more remain |
+| [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | backfill — complete |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | backfill — complete |
+| [eatae](https://t.me/eatae) | 0 | 0 | backfill — complete |
+| [altfwok](https://t.me/altfwok) | 15 | 2 | backfill — complete |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | backfill — complete |
+| [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | backfill — complete |
+| [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | backfill — complete |
+| [book_juice](https://t.me/book_juice) | 0 | 0 | backfill — complete |
+| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | backfill — complete |
+| [books_p](https://t.me/books_p) | 0 | 0 | backfill — complete |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 2 | 0 | backfill — complete |
+| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | backfill — complete |
+| [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | backfill — complete |
+| [nourbook](https://t.me/nourbook) | 0 | 0 | backfill — complete |
+| [roayati](https://t.me/roayati) | 2 | 0 | backfill — complete |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | backfill — complete |
+| [Sumarians](https://t.me/Sumarians) | 0 | 0 | backfill — complete |
+| [twinkling4](https://t.me/twinkling4) | 0 | 0 | backfill — complete |
+| [your_books](https://t.me/your_books) | 0 | 0 | backfill — complete |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | backfill — complete |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | backfill — complete |
+| [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | backfill — complete |
+| [jad32](https://t.me/jad32) | 0 | 0 | backfill — complete |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | backfill — complete |
+| [boook1023](https://t.me/boook1023) | 1345 | 0 | backfill — complete |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 3001 | 3000 | backfill — more remain |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | backfill — complete |
+| [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | backfill — complete |
+| [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | backfill — complete |
+| [zamerican0english](https://t.me/zamerican0english) | 0 | 0 | backfill — complete |
+
+## Backfill status
+
+Each backfill run walks one block (3000 posts by default) below the oldest indexed post of every not-yet-complete channel, newest first. A channel is complete when a block reaches post 1 or returns fewer than the block size (the preview is exhausted). Once every channel is complete, backfill runs only check for new posts — the same as `--new-only` — and the workflow can be switched to it.
+
+- [KindleBooksRepository](https://t.me/KindleBooksRepository) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [alnoorlib](https://t.me/alnoorlib) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [daownbook](https://t.me/daownbook) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [kindlbook](https://t.me/kindlbook) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Kindle2](https://t.me/Kindle2) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [darkromancenovels](https://t.me/darkromancenovels) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [thedevilshours](https://t.me/thedevilshours) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [TheEbookStop](https://t.me/TheEbookStop) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [ekraly](https://t.me/ekraly) — block: 3000 posts, oldest reached 85369, more remain
+  Backfill block: 3000 posts; oldest reached 85369. More remain — the next run continues below post 85369.
+- [L_alnader8](https://t.me/L_alnader8) — block: 3000 posts, oldest reached 273, more remain
+  Backfill block: 3000 posts; oldest reached 273. More remain — the next run continues below post 273.
+- [osratouna1](https://t.me/osratouna1) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [rwaiaty4](https://t.me/rwaiaty4) — block: 3000 posts, oldest reached 9865, more remain
+  Backfill block: 3000 posts; oldest reached 9865. More remain — the next run continues below post 9865.
+- [AAT2024F](https://t.me/AAT2024F) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [eatae](https://t.me/eatae) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [altfwok](https://t.me/altfwok) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [alm_elmaref](https://t.me/alm_elmaref) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [arabicbooks](https://t.me/arabicbooks) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [book_juice](https://t.me/book_juice) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [book_lovers_s](https://t.me/book_lovers_s) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [books_p](https://t.me/books_p) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [HAYA_NAQRA](https://t.me/HAYA_NAQRA) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [maktabahzahra](https://t.me/maktabahzahra) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [n_bhs2](https://t.me/n_bhs2) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [nourbook](https://t.me/nourbook) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [roayati](https://t.me/roayati) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [sharkelmoreeg](https://t.me/sharkelmoreeg) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Sumarians](https://t.me/Sumarians) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [twinkling4](https://t.me/twinkling4) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [your_books](https://t.me/your_books) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [ahmedsalem81](https://t.me/ahmedsalem81) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [ktbibnalqaim](https://t.me/ktbibnalqaim) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [qurany_is_life](https://t.me/qurany_is_life) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [jad32](https://t.me/jad32) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Merciful111Fate](https://t.me/Merciful111Fate) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [boook1023](https://t.me/boook1023) — block: 1345 posts, oldest reached 1, complete
+  Backfill block: 1345 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Goldenshamelaepub](https://t.me/Goldenshamelaepub) — block: 3000 posts, oldest reached 9648, more remain
+  Backfill block: 3000 posts; oldest reached 9648. More remain — the next run continues below post 9648.
+- [kindlearabicbook](https://t.me/kindlearabicbook) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Ouloalelm](https://t.me/Ouloalelm) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [Course_reserve](https://t.me/Course_reserve) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+- [zamerican0english](https://t.me/zamerican0english) — block: 0 posts, oldest reached 1, complete
+  Backfill block: 0 posts; oldest reached 1. Complete — reached the first post or the preview is exhausted.
+
+Complete this run: 39 of 43 channels touched.
 
 ## Indexed channels (51)
 
 | Channel | Posts | Book files | Scope |
 |---|---|---|---|
-| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 3422 | 244 | api-backfill |
-| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 17056 | 1000 | api-backfill |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | api-backfill |
-| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | api-backfill |
+| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 3422 | 244 | backfill |
+| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | backfill |
+| [altfwok](https://t.me/altfwok) | 17071 | 1002 | backfill |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | backfill |
+| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | backfill |
 | [arabicEread](https://t.me/arabicEread) | 3 | 0 | — |
-| [book_juice](https://t.me/book_juice) | 4808 | 226 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | api-backfill |
+| [book_juice](https://t.me/book_juice) | 4808 | 226 | backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | backfill |
 | [Bookkn](https://t.me/Bookkn) | 5 | 0 | — |
-| [books_p](https://t.me/books_p) | 8157 | 1195 | api-backfill |
+| [books_p](https://t.me/books_p) | 8157 | 1195 | backfill |
 | [booksguy](https://t.me/booksguy) | 2 | 0 | — |
-| [boook1023](https://t.me/boook1023) | 18000 | 4 | api-backfill |
-| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | api-backfill |
-| [daownbook](https://t.me/daownbook) | 3679 | 1794 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 5087 | 1057 | api-backfill |
-| [eatae](https://t.me/eatae) | 3904 | 386 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 19345 | 4 | backfill |
+| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | backfill |
+| [daownbook](https://t.me/daownbook) | 3679 | 1794 | backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 5093 | 1057 | backfill |
+| [eatae](https://t.me/eatae) | 3904 | 386 | backfill |
 | [eBookRoom](https://t.me/eBookRoom) | 1670 | 0 | — |
 | [Ebookspdfdownload](https://t.me/Ebookspdfdownload) | 2 | 0 | — |
-| [ekraly](https://t.me/ekraly) | 21012 | 1053 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 18001 | 16469 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4583 | 317 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | api-backfill |
-| [jad32](https://t.me/jad32) | 192 | 109 | api-backfill |
-| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | api-backfill |
-| [Kindle2](https://t.me/Kindle2) | 534 | 19 | api-backfill |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | api-backfill |
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | api-backfill |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 21004 | 2623 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 24015 | 2171 | backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 21002 | 19469 | backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4585 | 317 | backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | backfill |
+| [jad32](https://t.me/jad32) | 192 | 109 | backfill |
+| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | backfill |
+| [Kindle2](https://t.me/Kindle2) | 534 | 19 | backfill |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | backfill |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | backfill |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 24005 | 3446 | backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | backfill |
 | [Maktademia](https://t.me/Maktademia) | 1 | 0 | — |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | api-backfill |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 20 | 0 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | backfill |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 20 | 0 | backfill |
 | [Motamayezon7](https://t.me/Motamayezon7) | 65 | 0 | — |
-| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | api-backfill |
-| [nourbook](https://t.me/nourbook) | 362 | 0 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 4965 | 125 | api-backfill |
-| [Ouloalelm](https://t.me/Ouloalelm) | 278 | 85 | api-backfill |
+| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | backfill |
+| [nourbook](https://t.me/nourbook) | 362 | 0 | backfill |
+| [osratouna1](https://t.me/osratouna1) | 4969 | 125 | backfill |
+| [Ouloalelm](https://t.me/Ouloalelm) | 278 | 85 | backfill |
 | [premium_ebooks](https://t.me/premium_ebooks) | 1172 | 0 | — |
-| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | api-backfill |
-| [roayati](https://t.me/roayati) | 531 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 21002 | 9509 | api-backfill |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | api-backfill |
-| [Sumarians](https://t.me/Sumarians) | 52 | 0 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 2013 | 169 | api-backfill |
-| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | api-backfill |
-| [twinkling4](https://t.me/twinkling4) | 921 | 287 | api-backfill |
-| [your_books](https://t.me/your_books) | 126 | 0 | api-backfill |
-| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | api-backfill |
+| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | backfill |
+| [roayati](https://t.me/roayati) | 533 | 0 | backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 24002 | 10334 | backfill |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | backfill |
+| [Sumarians](https://t.me/Sumarians) | 52 | 0 | backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 2014 | 169 | backfill |
+| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | backfill |
+| [twinkling4](https://t.me/twinkling4) | 921 | 287 | backfill |
+| [your_books](https://t.me/your_books) | 126 | 0 | backfill |
+| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | backfill |
 
 ## Channels with 0 book files — drop candidates (8)
 
@@ -280,7 +216,7 @@
 - [Merciful111Fate](https://t.me/Merciful111Fate) — 20 posts, 0 book files
 - [n_bhs2](https://t.me/n_bhs2) — 2 posts, 0 book files
 - [nourbook](https://t.me/nourbook) — 362 posts, 0 book files
-- [roayati](https://t.me/roayati) — 531 posts, 0 book files
+- [roayati](https://t.me/roayati) — 533 posts, 0 book files
 - [sharkelmoreeg](https://t.me/sharkelmoreeg) — 2 posts, 0 book files
 - [Sumarians](https://t.me/Sumarians) — 52 posts, 0 book files
 - [your_books](https://t.me/your_books) — 126 posts, 0 book files
@@ -303,27 +239,28 @@ Removed from the active config after the full first run (2026-11-06): 0 book fil
 Kept active, but they yield fewer than 1 book file per 100 posts — they cost walk time for almost no books. If a channel here stays this sparse, it is the next drop candidate.
 
 - [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) — 1469 posts, 14 book files (0.010 files/post)
-- [boook1023](https://t.me/boook1023) — 18000 posts, 4 book files (0.000 files/post)
+- [boook1023](https://t.me/boook1023) — 19345 posts, 4 book files (0.000 files/post)
 - [maktabahzahra](https://t.me/maktabahzahra) — 8877 posts, 46 book files (0.005 files/post)
 - [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) — 1721 posts, 1 book files (0.001 files/post)
 
 ## Giants (uncapped walk is impractical)
 
 - [Sumarians](https://t.me/Sumarians) — newest post id 306117 ≈ ~8.5h for a full walk (indexed 52 posts, oldest reached 1)
-- [roayati](https://t.me/roayati) — newest post id 289172 ≈ ~8.0h for a full walk (indexed 531 posts, oldest reached 1)
-- [ekraly](https://t.me/ekraly) — newest post id 211530 ≈ ~5.9h for a full walk (indexed 21012 posts, oldest reached 100784)
-- [L_alnader8](https://t.me/L_alnader8) — newest post id 80309 ≈ ~2.2h for a full walk (indexed 21004 posts, oldest reached 5698)
-- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 21002 posts, oldest reached 15683)
+- [roayati](https://t.me/roayati) — newest post id 289216 ≈ ~8.0h for a full walk (indexed 533 posts, oldest reached 1)
+- [ekraly](https://t.me/ekraly) — newest post id 211571 ≈ ~5.9h for a full walk (indexed 24015 posts, oldest reached 85369)
+- [L_alnader8](https://t.me/L_alnader8) — newest post id 80312 ≈ ~2.2h for a full walk (indexed 24005 posts, oldest reached 273)
+- [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 24002 posts, oldest reached 9865)
 
 ## What failed so far
 
-- isalmickindl (group) — @isalmickindl: a wait of 67472 seconds is required (ResolveUsernameRequest)
+Nothing failed on this run.
 - [MyEnglishChannel](https://t.me/MyEnglishChannel) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [ShamelaMakhtota](https://t.me/ShamelaMakhtota) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [Tleeq](https://t.me/Tleeq) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [ZAmericanEnglishCourse](https://t.me/ZAmericanEnglishCourse) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [cambridge_library](https://t.me/cambridge_library) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [englishcafe_1](https://t.me/englishcafe_1) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
+- [isalmickindl](https://t.me/isalmickindl) — @isalmickindl: a wait of 67472 seconds is required (ResolveUsernameRequest) (from an earlier run)
 - [langcours](https://t.me/langcours) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [shamela4kindle](https://t.me/shamela4kindle) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
 - [shamela_epub](https://t.me/shamela_epub) — A wait of 71998 seconds is required (caused by ResolveUsernameRequest) (from an earlier run)
