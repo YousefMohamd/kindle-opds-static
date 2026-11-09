@@ -493,18 +493,22 @@ def test_state_corrupt_file_is_refused(tmp_path):
 
 def test_real_join_state_file_v049():
     """The committed join-state.json: all 168 groups, with the owner's
-    folder title and the batch size — and no dead handle. One group
-    (All_kinds_Books_Lib) is flood_wait from the first scheduled run
-    (2026-11-08), the other 167 are pending."""
+    folder title and the batch size — and no dead handle. The first
+    scheduled run (2026-11-08) joined All_kinds_Books_Lib and found
+    three groups already joined; the other 164 are pending."""
     root = Path(__file__).resolve().parent.parent
     state = json.loads((root / "join-state.json").read_text(encoding="utf-8"))
     cfg = load_config(root / "channels.yaml")
     assert list(state["groups"]) == [g.name for g in cfg.groups]
     assert len(state["groups"]) == 168
-    assert state["groups"]["All_kinds_Books_Lib"]["status"] == "flood_wait"
+    assert state["groups"]["All_kinds_Books_Lib"]["status"] == "joined"
+    assert state["groups"]["All_kinds_Books_Lib"]["folder"] == "added"
+    assert {
+        n for n, v in state["groups"].items() if v["status"] == "already_member"
+    } == {"Arabickindle1", "BOOKCLUB_AR", "bookclubarabic"}
     assert sum(
         1 for v in state["groups"].values() if v["status"] == "pending"
-    ) == 167
+    ) == 164
     assert state["folder_title"] == FOLDER
     assert state["batch_size"] == 2
     assert state["delay_seconds"] == [120.0, 180.0]

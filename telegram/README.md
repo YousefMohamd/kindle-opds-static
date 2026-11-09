@@ -1,4 +1,4 @@
-# telegram-book-index (v0.4.9 — merged into kindle-opds-static)
+# telegram-book-index (v0.6.1 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -371,6 +371,17 @@ seed is pushed.
   (the workflows decompress/compress it at the edges). A 26.9 MB seed
   compresses to ~6.2 MB (gzip, ~23% — measured 2026-11-07 on a
   62,806-post DB of the same schema).
+- **Search index, sharded (v0.6.1):** the search page at `/telegram/`
+  loads `site/telegram/index.json` (a small manifest: totals, sources,
+  formats, and the shard list) plus `index-<n>.json` shard files
+  (compact book arrays, grouped by source, each under 20 MiB). The
+  single `index.json` used to hold every distinct book (197,304 books
+  = 53.3 MiB) and Cloudflare Pages rejected it (25 MiB per-file
+  limit), which broke the deployment on 2026-11-09. Sharding keeps
+  every deployed file small; the search covers every book, loading
+  only the shard(s) for the selected source (or all shards, in
+  parallel, for a free-text search). The seed DB itself is also split
+  (`telegram/index.db.gz.part-*`, v0.6.0) for the same 25 MiB limit.
 - **API backfill (manual-only):** `.github/workflows/telegram-api-backfill.yml`
   runs only on manual dispatch (optional channel input, backfill or
   new-only mode), uses the three GitHub secrets, and publishes the

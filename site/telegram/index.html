@@ -75,7 +75,10 @@ function norm(s) {
     .toLowerCase();
 }
 
-let DATA = null;
+let MANIFEST = null;
+let BOOKS = [];          // Books loaded so far (objects, from shards).
+const LOADED = new Set(); // Shard files already loaded.
+let LOADING = null;      // In-flight shard-load promise (or null).
 const qEl = document.getElementById("q");
 const fmtEl = document.getElementById("fmt");
 const srcEl = document.getElementById("src");
@@ -90,13 +93,51 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
-function render() {
-  if (!DATA) return;
+// A shard stores books as compact arrays:
+// [title, author, filename, ext, size, source, sources, date, url].
+// Map one back to the object shape the renderer uses.
+function toBook(a) {
+  return { title: a[0], author: a[1], filename: a[2], ext: a[3],
+           size: a[4], source: a[5], sources: a[6], date: a[7], url: a[8] };
+}
+
+// Shards needed for the current source filter (all of them when no
+// source is selected). A source filter loads only the shard(s) that
+// hold that source, so browsing one source is fast.
+function neededShards() {
+  const src = srcEl.value;
+  return (MANIFEST.shards || [])
+    .filter(s => !src || (s.sources || []).includes(src))
+    .map(s => s.file);
+}
+
+// Load every needed shard that is not loaded yet (in parallel).
+// Returns a promise that resolves when they are all in BOOKS.
+// Concurrent calls share the same in-flight promise.
+function loadNeeded() {
+  const need = neededShards().filter(f => !LOADED.has(f));
+  if (need.length === 0) return Promise.resolve();
+  if (LOADING) return LOADING;
+  const total = neededShards().length;
+  countEl.textContent = "جارٍ تحميل الفهرس… (" + LOADED.size + "/" + total + " ملفات)";
+  LOADING = Promise.all(need.map(f =>
+    fetch(f).then(r => {
+      if (!r.ok) throw new Error(f + " (HTTP " + r.status + ")");
+      return r.json();
+    }).then(d => {
+      for (const a of (d.books || [])) BOOKS.push(toBook(a));
+      LOADED.add(f);
+    })
+  )).finally(() => { LOADING = null; });
+  return LOADING;
+}
+
+function renderList() {
   const q = norm(qEl.value.trim());
   const fmt = fmtEl.value;
   const src = srcEl.value;
   const hits = [];
-  for (const b of DATA.books) {
+  for (const b of BOOKS) {
     if (fmt && b.ext !== fmt) continue;
     if (src && b.source !== src) continue;
     if (q) {
@@ -111,7 +152,7 @@ function render() {
     : "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
   // "Not in the index yet": the book may live in a channel whose deep
   // history is still being backfilled, or in a channel nobody added.
-  // A priority request (via the Telegram bot, Phase 2) searches that
+  // A priority request (via the Telegram bot) searches that
   // channel directly and queues its backfill first — see the README.
   if (q && hits.length === 0) {
     notfoundEl.hidden = false;
@@ -119,9 +160,8 @@ function render() {
       "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
       "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
       "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
-      "بوت تيليجرام (المرحلة 2 — لسه ما اتبنتش): البوت بيدوّر في القناة " +
-      "مباشرة ويرجع لك الرابط فورًا لو لقاه، ولو ما لقاهوش بيحط القناة " +
-      "في أول طابور الفهرسة.";
+      "بوت تيليجرام: البوت بيدوّر في القناة مباشرة ويرجع لك الرابط " +
+      "فورًا لو لقاه، ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
   } else {
     notfoundEl.hidden = true;
     notfoundEl.textContent = "";
@@ -138,13 +178,26 @@ function render() {
   }).join("");
 }
 
+// Ensure the shards for the current filter are loaded, then render.
+function render() {
+  if (!MANIFEST) return;
+  loadNeeded().then(renderList).catch(err => {
+    countEl.textContent = "تعذّر تحميل الفهرس: " + err.message;
+  });
+}
+
 fetch("index.json").then(r => {
   if (!r.ok) throw new Error("index.json not found (HTTP " + r.status + ")");
   return r.json();
 }).then(data => {
-  DATA = data;
-  const fmts = [...new Set(data.books.map(b => b.ext))].sort();
-  for (const f of fmts) {
+  MANIFEST = data;
+  // Backward compatibility: an old single-file index.json (with a
+  // "books" array) still works — use it directly, no shards.
+  if (Array.isArray(data.books)) {
+    BOOKS = data.books;
+    for (const s of (data.shards || [])) LOADED.add(s.file);
+  }
+  for (const f of (data.formats || [])) {
     const o = document.createElement("option");
     o.value = f; o.textContent = f; fmtEl.appendChild(o);
   }
@@ -155,7 +208,7 @@ fetch("index.json").then(r => {
   const t = data.totals || {};
   statsEl.textContent = "الفهرس: " + (t.books || 0) + " كتاب مميز، " +
     (t.files || 0) + " ملف، " + (t.posts || 0) + " بوست، من " +
-    (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated || "؟");
+    (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated_at || data.generated || "؟");
   countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
   render();
 }).catch(err => {

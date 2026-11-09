@@ -1,4 +1,4 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.4.9)
+# Publishing the Telegram merge into kindle-opds-static (v0.6.1)
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo

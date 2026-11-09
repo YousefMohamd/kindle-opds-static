@@ -1298,7 +1298,11 @@ def cmd_export_static(args: argparse.Namespace) -> int:
         f"Static export: {stats['books']} books, {stats['files']} files, "
         f"{stats['posts']} posts from {stats['sources']} sources"
     )
-    print(f"  {stats['json_path']} ({stats['json_bytes']} bytes)")
+    print(
+        f"  index.json manifest ({stats['json_bytes']} bytes) + "
+        f"{stats['shards']} shard(s), "
+        f"largest {stats['max_shard_bytes']} bytes"
+    )
     if stats["report_copied"]:
         print(f"  report copied to {Path(args.out) / 'index-report.md'}")
     return 0
@@ -1345,8 +1349,43 @@ def cmd_validate(args: argparse.Namespace) -> int:
             except Exception as exc:
                 problems.append(f"index.json is not valid JSON: {exc}")
             else:
+                # Two shapes: the old single-file index (books is a
+                # non-empty list) and the sharded manifest (books is
+                # a count, shards lists the shard files next to it).
                 books = data.get("books")
-                if not isinstance(books, list) or not books:
+                shards = data.get("shards")
+                if isinstance(books, list):
+                    if not books:
+                        problems.append("index.json has no books")
+                elif isinstance(books, int) and isinstance(shards, list) and shards:
+                    if books <= 0:
+                        problems.append("index.json has no books")
+                    shard_books = 0
+                    for entry in shards:
+                        fname = entry.get("file") if isinstance(entry, dict) else None
+                        if not fname:
+                            problems.append("index.json shard entry has no file")
+                            continue
+                        spath = jpath.parent / fname
+                        if not spath.is_file():
+                            problems.append(f"shard file missing: {fname}")
+                            continue
+                        try:
+                            sdata = json.loads(spath.read_text(encoding="utf-8"))
+                        except Exception as exc:
+                            problems.append(f"shard {fname} is not valid JSON: {exc}")
+                            continue
+                        sbooks = sdata.get("books")
+                        if not isinstance(sbooks, list):
+                            problems.append(f"shard {fname} has no books array")
+                            continue
+                        shard_books += len(sbooks)
+                    if shard_books != books:
+                        problems.append(
+                            f"shard books ({shard_books}) do not match "
+                            f"manifest books ({books})"
+                        )
+                else:
                     problems.append("index.json has no books")
                 if "totals" not in data:
                     problems.append("index.json has no totals")
