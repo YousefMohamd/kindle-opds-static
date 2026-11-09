@@ -27,20 +27,20 @@
       "folder": "already_there"
     },
     "BOOKCLUB_AR": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "already_there"
     },
     "bookclubarabic": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "already_there"
     },
     "booksforarabs": {
       "status": "pending",
