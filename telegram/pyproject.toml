@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telegram-book-index"
-version = "0.5.0"
+version = "0.6.0"
 description = "Standalone index of books shared in public Telegram channels and groups. No API credentials by default; an optional manual-only API backfill uses GitHub secrets. No server."
 readme = "README.md"
 license = { text = "MIT" }

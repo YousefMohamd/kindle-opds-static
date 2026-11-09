@@ -1,4 +1,4 @@
-# Telegram book index — MANUAL-ONLY API backfill, v0.4.5 (merged into kindle-opds-static).
+# Telegram book index — MANUAL-ONLY API backfill, v0.6.0 (merged into kindle-opds-static).
 #
 # Runs the Telegram indexer (telegram/) through the MTProto API (Telethon)
 # and publishes its section to Cloudflare Pages at /telegram/
@@ -84,7 +84,15 @@ jobs:
 
       - name: Decompress the seed DB
         run: |
-          if [ -f index.db.gz ]; then
+          if ls index.db.gz.part-* 1>/dev/null 2>&1; then
+            # v0.6.0: the seed is split into 20 MB parts (each under
+            # Cloudflare Pages' 25 MB per-file limit); reassemble them
+            # first, then decompress as before. The glob expands in
+            # sorted order (part-aa, part-ab, ...), which is the
+            # correct order for `split` output.
+            cat index.db.gz.part-* > index.db.gz
+            gunzip -f index.db.gz
+          elif [ -f index.db.gz ]; then
             gunzip -f index.db.gz
           elif [ -f index.db ]; then
             echo "No index.db.gz — using the raw index.db (transition; it will be compressed on publish)."
@@ -157,9 +165,18 @@ jobs:
           # Pages deployment (25 MB per-file limit) and leaves /telegram/
           # on a 404. gzip -f replaces index.db with index.db.gz.
           gzip -f telegram/index.db
+          # Split the seed (v0.6.0): the compressed DB is now ~66 MB,
+          # over Cloudflare Pages' 25 MB per-file limit, so a single
+          # index.db.gz breaks the deployment and the site serves stale
+          # data. Split it into 20 MB parts (each under the limit) and
+          # commit the parts; the Decompress step reassembles them.
+          # Remove the old parts first (a smaller new DB has fewer).
+          rm -f telegram/index.db.gz.part-*
+          split -b 20M telegram/index.db.gz telegram/index.db.gz.part-
+          rm -f telegram/index.db.gz
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram/index.db.gz telegram/index-report.md site/telegram/
+          git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/
           # The entity cache (v0.4.8): the resolved handles must persist
           # across runs, or every run re-resolves all 211 handles and
           # trips the ResolveUsernameRequest flood wait again. Tolerant
@@ -169,6 +186,9 @@ jobs:
           # Drop the raw seed from the repo if it is still tracked (the
           # transition commit); harmless once it is gone.
           git rm --cached telegram/index.db 2>/dev/null || true
+          # Drop the old single-file seed too (v0.6.0 transition):
+          # the repo now stores the split parts, not index.db.gz.
+          git rm --cached telegram/index.db.gz 2>/dev/null || true
           git commit -m "[telegram-api-backfill] manual API backfill" || echo "nothing to commit"
           # Rebase before pushing (v0.4.7): a code push during a long
           # run used to reject this push (non-fast-forward) and lose
@@ -231,6 +251,11 @@ jobs:
               conn.close()
           "
               gzip -f index.db
+              # Split the seed (v0.6.0): see the Publish step — the
+              # compressed DB is over Pages' 25 MB per-file limit.
+              rm -f index.db.gz.part-*
+              split -b 20M index.db.gz index.db.gz.part-
+              rm -f index.db.gz
             else
               echo "::warning::DB failed validation after checkpoint — not saving it; the last-good seed in the repo stays untouched."
             fi
@@ -246,7 +271,8 @@ jobs:
           # then built on the current remote head. If the rebase
           # conflicts, fail loudly instead of pushing.
           git pull --rebase --autostash origin main || { echo "::error::Rebase before failure-save failed — the progress cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
-          git add index.db.gz 2>/dev/null || true
+          git add index.db.gz.part-* 2>/dev/null || true
+          git rm --cached index.db.gz 2>/dev/null || true
           git add index-report.md 2>/dev/null || true
           # The entity cache (v0.4.8): the failure-save must persist
           # the newly resolved handles too, or the next run resolves
