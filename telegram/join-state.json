@@ -43,20 +43,20 @@
       "folder": "already_there"
     },
     "booksforarabs": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-09T21:45:22.339310+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "ddfkindle": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "already_there"
     },
     "EBook_Library": {
       "status": "pending",
