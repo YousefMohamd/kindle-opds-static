@@ -1393,6 +1393,90 @@
       "access_hash": -5024104648694588840,
       "type": "channel",
       "resolved_at": "2026-11-08T22:38:03.699694+00:00"
+    },
+    "isalmickindl": {
+      "handle": "isalmickindl",
+      "id": 1944273636,
+      "access_hash": -6249928566030300932,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:24:13.923167+00:00"
+    },
+    "shamela4kindle": {
+      "handle": "shamela4kindle",
+      "id": 1282338521,
+      "access_hash": 6672336402831350699,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:24:32.332672+00:00"
+    },
+    "shamela_epub": {
+      "handle": "shamela_epub",
+      "id": 1289318786,
+      "access_hash": 6738860362092341255,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:27:04.896562+00:00"
+    },
+    "shamela_kindle": {
+      "handle": "shamela_kindle",
+      "id": 1717148983,
+      "access_hash": -8869402481213019326,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:29:41.740295+00:00"
+    },
+    "shamelamakhtota": {
+      "handle": "ShamelaMakhtota",
+      "id": 1892845473,
+      "access_hash": -7855446874023765432,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:32:16.381175+00:00"
+    },
+    "cambridge_library": {
+      "handle": "cambridge_library",
+      "id": 1160771614,
+      "access_hash": -8487086730431502510,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:32:18.089142+00:00"
+    },
+    "englishcafe_1": {
+      "handle": "englishcafe_1",
+      "id": 1158165939,
+      "access_hash": 4455243250257910801,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:32:31.718257+00:00"
+    },
+    "langcours": {
+      "handle": "langcours",
+      "id": 1539721652,
+      "access_hash": -8823832422459279396,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:34:37.945139+00:00"
+    },
+    "myenglishchannel": {
+      "handle": "MyEnglishChannel",
+      "id": 1098220128,
+      "access_hash": -733618051096273327,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:37:13.249026+00:00"
+    },
+    "tleeq": {
+      "handle": "Tleeq",
+      "id": 1761232700,
+      "access_hash": -8139534718144561518,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:39:49.426915+00:00"
+    },
+    "zamericanenglishcourse": {
+      "handle": "ZAmericanEnglishCourse",
+      "id": 1120073650,
+      "access_hash": 2732698233002947599,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:39:59.494716+00:00"
+    },
+    "zamericangroup": {
+      "handle": "zamericangroup",
+      "id": 1514098441,
+      "access_hash": 7780145690136402918,
+      "type": "channel",
+      "resolved_at": "2026-11-10T08:40:11.562384+00:00"
     }
   }
 }
