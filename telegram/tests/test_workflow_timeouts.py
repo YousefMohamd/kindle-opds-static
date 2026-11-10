@@ -125,23 +125,23 @@ def test_join_groups_workflow():
     assert "progress + report saved" in run
 
 
-def test_version_is_0_6_1():
-    """pyproject, package __init__, and both docs agree on v0.6.1."""
+def test_version_is_0_6_2():
+    """pyproject, package __init__, and both docs agree on v0.6.2."""
     pyproject = (
         REPO_ROOT / "telegram" / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    assert re.search(r'^version = "0\.6\.1"$', pyproject, re.M)
+    assert re.search(r'^version = "0\.6\.2"$', pyproject, re.M)
     init = (
         REPO_ROOT / "telegram" / "tbi" / "__init__.py"
     ).read_text(encoding="utf-8")
-    assert '__version__ = "0.6.1"' in init
+    assert '__version__ = "0.6.2"' in init
     readme = (REPO_ROOT / "telegram" / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# telegram-book-index (v0.6.1")
+    assert readme.startswith("# telegram-book-index (v0.6.2")
     guide = (
         REPO_ROOT / "telegram" / "PUSH_GUIDE.md"
     ).read_text(encoding="utf-8")
     assert guide.startswith(
-        "# Publishing the Telegram merge into kindle-opds-static (v0.6.1)"
+        "# Publishing the Telegram merge into kindle-opds-static (v0.6.2)"
     )
 
 

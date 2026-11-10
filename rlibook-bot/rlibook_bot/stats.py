@@ -1,4 +1,14 @@
-"""Fetch the live RliBook catalog stats from the published index report."""
+"""Fetch the live RliBook catalog resources from the published index report.
+
+/resources shows only two numbers: the channel count and the distinct-book
+count, both from the "Channels with data" line of the live index report.
+Posts, files and groups are deliberately not returned.
+
+Note on the book number: that report line carries the catalog-wide
+distinct-book total (channels + groups) — the report does not publish a
+per-kind distinct-book count. The label in the bot output is "Books",
+matching what the report line reports.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +18,8 @@ INDEX_REPORT_URL = (
     "https://raw.githubusercontent.com/YousefMohamd/kindle-opds-static/main/telegram/index-report.md"
 )
 
-_POSTS_RE = re.compile(r"(\d[\d,]*) posts, (\d[\d,]*) book files")
+_CHANNELS_RE = re.compile(r"Channels with data: (\d+) of (\d+) walkable")
 _BOOKS_RE = re.compile(r"\((\d[\d,]*) distinct books\)")
-_GROUPS_RE = re.compile(r"Groups indexed from exports: (\d+)")
 
 
 def _num(text):
@@ -18,7 +27,7 @@ def _num(text):
 
 
 def fetch_stats(http_get=None):
-    """Return {'posts': int, 'files': int, 'books': int, 'groups': int} or None."""
+    """Return {'channels': int, 'books': int} or None."""
     if http_get is None:
         import httpx
 
@@ -28,27 +37,22 @@ def fetch_stats(http_get=None):
         text = resp.text
     except Exception:
         return None
-    m = _POSTS_RE.search(text)
+    c = _CHANNELS_RE.search(text)
     b = _BOOKS_RE.search(text)
-    g = _GROUPS_RE.search(text)
-    if not m or not b:
+    if not c or not b:
         return None
     return {
-        "posts": _num(m.group(1)),
-        "files": _num(m.group(2)),
+        "channels": _num(c.group(1)),
         "books": _num(b.group(1)),
-        "groups": _num(g.group(1)) if g else 0,
     }
 
 
-def format_stats(stats):
+def format_resources(stats):
     if not stats:
-        return "Catalog stats are unavailable right now. Please try again later."
+        return "Catalog resources are unavailable right now. Please try again later."
     return (
-        "📚 RliBook catalog\n"
-        "• Posts indexed: %s\n" % format(stats["posts"], ",")
-        + "• Book files: %s\n" % format(stats["files"], ",")
-        + "• Distinct books: %s\n" % format(stats["books"], ",")
-        + "• Groups indexed: %d\n" % stats["groups"]
+        "📚 RliBook resources\n"
+        "• Channels: %s\n" % format(stats["channels"], ",")
+        + "• Books: %s\n" % format(stats["books"], ",")
         + "Search and download: https://kindle-opds-static.pages.dev"
     )

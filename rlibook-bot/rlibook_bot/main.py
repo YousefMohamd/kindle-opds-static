@@ -17,8 +17,8 @@ from .handlers import (
     invite,
     kindle,
     priority,
+    resources,
     start,
-    stats,
 )
 
 logging.basicConfig(
@@ -37,7 +37,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("kindle", kindle))
     app.add_handler(CommandHandler("donate", donate))
-    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("resources", resources))
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("addchannel", addchannel))
     app.add_handler(CommandHandler("addbook", addbook))

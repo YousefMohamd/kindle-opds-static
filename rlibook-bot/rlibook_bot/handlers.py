@@ -20,10 +20,13 @@ from .messages import (
     HELP,
     KINDLE_MSG,
     WELCOME,
+    download_message,
     parse_addbook_args,
     parse_channel_arg,
+    parse_download_link,
 )
-from .stats import fetch_stats, format_stats
+from .stats import fetch_stats, format_resources
+from .submissions import log_submission
 
 OWNER_ID = int(os.environ.get("RLIBOOK_OWNER_ID", "0") or 0)
 
@@ -48,6 +51,14 @@ def get_limits(context):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    # Download deep link: /start dl_<handle>_<post_id>_<format>
+    # (from a format chip on the catalog site).
+    if context.args:
+        dl = parse_download_link(context.args[0])
+        if dl is not None:
+            handle, post_id, fmt = dl
+            await update.message.reply_text(download_message(handle, post_id, fmt))
+            return
     # Referral: /start ref_<id>
     if context.args:
         referrer = parse_referral(context.args[0])
@@ -72,8 +83,8 @@ async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(DONATE_MSG)
 
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(format_stats(fetch_stats()))
+async def resources(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(format_resources(fetch_stats()))
 
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,6 +113,13 @@ async def addchannel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     day = today_str()
     limits = get_limits(context)
     if not limits.can(user.id, "channel", day, is_owner=is_owner(user.id)):
+        log_submission(
+            user.id,
+            "channel",
+            " ".join(context.args).strip() if context.args else "(none)",
+            "rejected",
+            "daily limit (5 channel additions/day)",
+        )
         await update.message.reply_text(
             "You have used today's 5 free channel additions. Invite a friend "
             "(/invite) to earn +5 more today, or try again tomorrow."
@@ -115,6 +133,7 @@ async def addchannel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     handle = parse_channel_arg(arg)
     if not handle:
+        log_submission(user.id, "channel", arg, "rejected", "invalid channel name")
         await update.message.reply_text(
             "That channel name does not look right. Try /addchannel @channelname"
         )
@@ -123,16 +142,33 @@ async def addchannel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         chat = await context.bot.get_chat("@" + handle)
     except Exception:
+        log_submission(
+            user.id, "channel", "@" + handle, "rejected", "channel not found or not public"
+        )
         await update.message.reply_text(
             "Could not find @%s. Make sure the channel is public and the name is correct." % handle
         )
         return
     if chat.type not in ("channel", "supergroup"):
+        log_submission(
+            user.id,
+            "channel",
+            "@" + handle,
+            "rejected",
+            "not a channel or group (type: %s)" % chat.type,
+        )
         await update.message.reply_text(
             "@%s is not a channel or group. Please send a channel or a group." % handle
         )
         return
     limits.record(user.id, "channel", day)
+    log_submission(
+        user.id,
+        "channel",
+        "@" + handle,
+        "pending",
+        "received; verification pending (public, exists, book content, not spam)",
+    )
     await update.message.reply_text(
         "✅ @%s received. It will be checked first (public, exists, "
         "book content in Kindle/PDF formats, not spam) and then indexed. "
@@ -157,12 +193,22 @@ async def addbook(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     result = check_book(title, author)
+    source_note = "source: %s; %s" % (source, result["reason"])
     if result["verdict"] == "refuse":
+        log_submission(
+            update.effective_user.id, "book", title, "rejected", source_note
+        )
         await update.message.reply_text("❌ This upload is refused.\n\n" + result["reason"])
         return
     if result["verdict"] == "unknown":
+        log_submission(
+            update.effective_user.id, "book", title, "pending", source_note
+        )
         await update.message.reply_text("📝 Received. " + result["reason"])
         return
+    log_submission(
+        update.effective_user.id, "book", title, "accepted", source_note
+    )
     await update.message.reply_text(
         "✅ Received: “%s”%s (source: %s).\nCheck: %s\nIt will be indexed and you will be notified."
         % (title, (" by " + author) if author else "", source, result["reason"])

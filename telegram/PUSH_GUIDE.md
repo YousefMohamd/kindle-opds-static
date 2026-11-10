@@ -1,4 +1,16 @@
-# Publishing the Telegram merge into kindle-opds-static (v0.6.1)
+# Publishing the Telegram merge into kindle-opds-static (v0.6.2)
+
+## v0.6.2 — grouped results + format chips (site) / v0.5.1 (bot)
+
+The search page groups results by book and shows one download chip per
+format (`tg://` one-tap link); channel names never appear in the UI. The
+bot renames `/stats` to `/resources` (channels + books only), logs every
+`/addchannel` / `/addbook` submission to `telegram/submissions.jsonl`, and
+accepts `/start dl_<handle>_<post_id>_<format>`. Deploy with the same
+delta push as above (the new/changed files are in the zip) — the site
+file is `site/telegram/index.html`, the bot files are under
+`rlibook-bot/`, and the new `telegram/submissions.jsonl` is committed
+with its header comment only.
 
 **No new repo, no new Pages project, no new domain.** The Telegram
 index merges into the existing public repo

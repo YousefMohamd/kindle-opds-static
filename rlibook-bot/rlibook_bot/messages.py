@@ -3,6 +3,8 @@ these are unit-testable without python-telegram-bot installed)."""
 
 from __future__ import annotations
 
+import re
+
 CATALOG_URL = "https://kindle-opds-static.pages.dev"
 
 WELCOME = (
@@ -18,7 +20,7 @@ WELCOME = (
     "• /kindle — get the Kindle / e-reader tool\n"
     "• /priority — priority indexing for your submission\n"
     "• /invite — invite a friend (earn extra additions)\n"
-    "• /stats — catalog stats\n"
+    "• /resources — catalog resources (channels + books)\n"
     "• /help — this list"
 )
 
@@ -29,7 +31,7 @@ HELP = (
     "/kindle — the Kindle / e-reader tool\n"
     "/priority <what> — priority indexing (3/day free)\n"
     "/invite — your referral link\n"
-    "/stats — catalog stats\n"
+    "/resources — catalog resources (channels + books)\n"
     "/donate — donations (open after launch)\n"
     "/help — this list\n\n"
     "Search and download books here: " + CATALOG_URL
@@ -80,3 +82,37 @@ def parse_channel_arg(text):
             handle = handle[len(prefix):]
     handle = handle.lstrip("@").strip("/").split("/")[0].strip()
     return handle or None
+
+
+_DL_RE = re.compile(r"^dl_(.+)_(\d+)_([A-Za-z0-9]+)$")
+
+
+def parse_download_link(arg):
+    """Parse a /start dl_<handle>_<post_id>_<format> payload.
+
+    Returns (handle, post_id, format) or None. The handle may contain
+    underscores, so the post id (all digits) anchors the split.
+    """
+    if not arg:
+        return None
+    m = _DL_RE.match(arg.strip())
+    if not m:
+        return None
+    return m.group(1), m.group(2), m.group(3).lower()
+
+
+def download_message(handle, post_id, fmt):
+    """The reply for a /start dl_ deep link.
+
+    The bot cannot fetch files from channels itself (it only has the Bot
+    API token, no Telethon session), so the user downloads the file from
+    the original post. Never claim otherwise.
+    """
+    url = "https://t.me/%s/%s" % (handle, post_id)
+    return (
+        "⬇️ Download (%s)\n\n"
+        "Open the post in Telegram and tap the file to download it:\n%s\n\n"
+        "The bot cannot send you the file itself — it has no access to "
+        "channel files, so the download happens from the original post."
+        % (fmt.upper(), url)
+    )

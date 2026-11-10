@@ -1,4 +1,4 @@
-# telegram-book-index (v0.6.1 — merged into kindle-opds-static)
+# telegram-book-index (v0.6.2 — merged into kindle-opds-static)
 
 Standalone index of **books shared in public Telegram channels and groups**,
 so you can search across all of them by title or author.
@@ -379,9 +379,22 @@ seed is pushed.
   = 53.3 MiB) and Cloudflare Pages rejected it (25 MiB per-file
   limit), which broke the deployment on 2026-11-09. Sharding keeps
   every deployed file small; the search covers every book, loading
-  only the shard(s) for the selected source (or all shards, in
-  parallel, for a free-text search). The seed DB itself is also split
+  all shards in parallel. The seed DB itself is also split
   (`telegram/index.db.gz.part-*`, v0.6.0) for the same 25 MiB limit.
+- **Grouped results + format chips (v0.6.2):** results are grouped by
+  book (title + author); each book shows one download chip per
+  available format (EPUB / PDF / MOBI / AZW3 / KFX / TXT) that opens
+  the Telegram post in the Telegram app (`tg://resolve?domain=...&post=...`)
+  with one tap. Channel/group names are never shown in the UI — no
+  source filter, no source in the result text; the handle lives only
+  inside the chip link. (The bot-delivery version, where the bot sends
+  the file, comes later; the bot already accepts `/start dl_<handle>_<post_id>_<format>`.)
+- **Submissions log (v0.5.1, bot):** every `/addchannel` and `/addbook`
+  submission is appended to `telegram/submissions.jsonl` (one JSON
+  object per line; the first line is a `#` header comment) — the
+  owner's review sheet. Note: the bot on Railway cannot write to the
+  repo (no git there), so it falls back to a local file next to the
+  bot; see `rlibook_bot/submissions.py`.
 - **API backfill (manual-only):** `.github/workflows/telegram-api-backfill.yml`
   runs only on manual dispatch (optional channel input, backfill or
   new-only mode), uses the three GitHub secrets, and publishes the

@@ -11,4 +11,4 @@ shadow the installed `python-telegram-bot` library (`import telegram`) when
 the bot runs from the repo root. This directory is the Railway service root.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"

@@ -23,8 +23,12 @@
   li { border-bottom: 1px solid #ddd; padding: 0.7rem 0; }
   .title { font-weight: 700; }
   .meta { color: #555; font-size: 0.9rem; }
-  .badge { display: inline-block; background: #e8e4d8; border-radius: 4px;
-           padding: 0 0.4rem; font-size: 0.85rem; margin-inline-start: 0.4rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.4rem; }
+  .chip { display: inline-block; background: #0b5cad; color: #fff;
+          border-radius: 999px; padding: 0.15rem 0.75rem; font-size: 0.9rem;
+          font-weight: 600; text-decoration: none; }
+  .chip:hover, .chip:focus { background: #094a8a; }
+  .chip .sz { font-weight: 400; opacity: 0.85; font-size: 0.85rem; }
   .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
            border-radius: 6px; padding: 0.8rem 1rem; }
   a { color: #0b5cad; }
@@ -34,17 +38,15 @@
 </head>
 <body>
 <h1>فهرس كتب تيليجرام</h1>
-<p class="sub">Telegram Book Index — فهرس ميتاداتا فقط: عنوان الكتاب وصيغته وحجمه
-ورابط البوست الأصلي في تيليجرام. لا ملفات كتب مستضافة هنا؛ التنزيل يتم من
-تيليجرام نفسه. المصادر قانونية فقط (كتب قديمة / مرخّصة / ملفات شخصية).</p>
+<p class="sub">Telegram Book Index — فهرس ميتاداتا فقط: عنوان الكتاب ومؤلفه
+والصيغ المتاحة له. دوس على زر الصيغة (EPUB / PDF / MOBI / AZW3 / KFX /
+TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة. لا ملفات كتب مستضافة هنا؛
+المصادر قانونية فقط (كتب قديمة / مرخّصة / ملفات شخصية).</p>
 
 <input type="search" id="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="بحث">
 <div class="filters">
   <select id="fmt" aria-label="الصيغة">
     <option value="">كل الصيغ</option>
-  </select>
-  <select id="src" aria-label="المصدر">
-    <option value="">كل المصادر</option>
   </select>
 </div>
 <p id="count" class="stats">جارٍ تحميل الفهرس…</p>
@@ -52,8 +54,7 @@
 <ul id="results"></ul>
 <footer>
   <p id="stats" class="stats"></p>
-  <p><a href="index-report.md">تقرير الفهرسة</a> — القنوات المفهرسة، والفشل،
-  والقنوات بلا كتب، والقنوات الضخمة. •
+  <p><a href="index-report.md">تقرير الفهرسة</a> •
   <a href="https://github.com/YousefMohamd/kindle-opds-static">المشروع على GitHub</a> •
   <a href="../">← المكتبات (الكتالوج الرئيسي)</a></p>
 </footer>
@@ -81,7 +82,6 @@ const LOADED = new Set(); // Shard files already loaded.
 let LOADING = null;      // In-flight shard-load promise (or null).
 const qEl = document.getElementById("q");
 const fmtEl = document.getElementById("fmt");
-const srcEl = document.getElementById("src");
 const countEl = document.getElementById("count");
 const notfoundEl = document.getElementById("notfound");
 const listEl = document.getElementById("results");
@@ -101,14 +101,19 @@ function toBook(a) {
            size: a[4], source: a[5], sources: a[6], date: a[7], url: a[8] };
 }
 
-// Shards needed for the current source filter (all of them when no
-// source is selected). A source filter loads only the shard(s) that
-// hold that source, so browsing one source is fast.
+// The post URL is https://t.me/<handle>/<post_id>. Build the one-tap
+// Telegram-app link (tg://) for it. The channel/group handle never
+// appears as text in the UI — it lives only inside the button href.
+function tgLink(b) {
+  const m = /^https?:\/\/t\.me\/([^\/]+)\/(\d+)\/?$/.exec(b.url || "");
+  if (!m) return b.url;
+  return "tg://resolve?domain=" + encodeURIComponent(m[1]) + "&post=" + m[2];
+}
+
+// No source filter: channel/group names are never shown in the UI, so
+// every search loads all shards (in parallel).
 function neededShards() {
-  const src = srcEl.value;
-  return (MANIFEST.shards || [])
-    .filter(s => !src || (s.sources || []).includes(src))
-    .map(s => s.file);
+  return (MANIFEST.shards || []).map(s => s.file);
 }
 
 // Load every needed shard that is not loaded yet (in parallel).
@@ -132,24 +137,53 @@ function loadNeeded() {
   return LOADING;
 }
 
+let GROUPS = null;      // Books grouped by (title, author) — built once.
+let GROUPS_FOR = -1;    // BOOKS.length the groups were built for.
+
+// Group all loaded entries by book (normalized title + author). One
+// group per book; each group keeps one entry per format (the first
+// seen), so every available format gets its own download chip. The
+// match haystack (title + author + every filename) is precomputed
+// once, so rendering a keystroke is a cheap filter over the groups
+// instead of re-scanning every entry.
+function buildGroups() {
+  if (GROUPS && GROUPS_FOR === BOOKS.length) return GROUPS;
+  const map = new Map();
+  for (const b of BOOKS) {
+    const key = norm(b.title) + "\0" + norm(b.author || "");
+    let g = map.get(key);
+    if (!g) {
+      g = { title: b.title, author: b.author, formats: new Map(), hayParts: [] };
+      map.set(key, g);
+    }
+    g.hayParts.push(b.filename);
+    if (!g.formats.has(b.ext)) g.formats.set(b.ext, b);
+  }
+  for (const g of map.values()) {
+    g.hay = norm(g.title + " " + (g.author || "") + " " + g.hayParts.join(" "));
+    delete g.hayParts;
+  }
+  GROUPS = [...map.values()];
+  GROUPS_FOR = BOOKS.length;
+  return GROUPS;
+}
+
 function renderList() {
   const q = norm(qEl.value.trim());
   const fmt = fmtEl.value;
-  const src = srcEl.value;
+  // The format filter picks which books are shown (books that have
+  // that format); the chips of a shown book always list every format
+  // available for it. At most 100 books are shown.
   const hits = [];
-  for (const b of BOOKS) {
-    if (fmt && b.ext !== fmt) continue;
-    if (src && b.source !== src) continue;
-    if (q) {
-      const hay = norm(b.title + " " + (b.author || "") + " " + b.filename);
-      if (!hay.includes(q)) continue;
-    }
-    hits.push(b);
+  for (const g of buildGroups()) {
+    if (fmt && !g.formats.has(fmt)) continue;
+    if (q && !g.hay.includes(q)) continue;
+    hits.push(g);
     if (hits.length >= 100) break;
   }
-  countEl.textContent = q || fmt || src
-    ? "النتائج: " + hits.length + (hits.length >= 100 ? " (أول 100 فقط — ضيّق البحث)" : "")
-    : "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
+  countEl.textContent = q || fmt
+    ? "النتائج: " + hits.length + (hits.length >= 100 ? " (أول 100 كتاب فقط — ضيّق البحث)" : "")
+    : "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   // "Not in the index yet": the book may live in a channel whose deep
   // history is still being backfilled, or in a channel nobody added.
   // A priority request (via the Telegram bot) searches that
@@ -166,15 +200,16 @@ function renderList() {
     notfoundEl.hidden = true;
     notfoundEl.textContent = "";
   }
-  listEl.innerHTML = hits.map(b => {
-    const meta = [b.author, b.source, b.size, b.date].filter(Boolean).join(" • ");
-    return "<li><div class=\"title\">" + esc(b.title) +
-      "<span class=\"badge\">" + esc(b.ext) + "</span></div>" +
-      (meta ? "<div class=\"meta\">" + esc(meta) + "</div>" : "") +
-      "<div><a href=\"" + esc(b.url) + "\" target=\"_blank\" rel=\"noopener\">" +
-      "فتح البوست في تيليجرام ↗</a>" +
-      (b.sources > 1 ? " <span class=\"meta\">(موجود في " + b.sources + " مصادر)</span>" : "") +
-      "</div></li>";
+  listEl.innerHTML = hits.map(g => {
+    const chips = [...g.formats.values()].map(b =>
+      "<a class=\"chip\" href=\"" + esc(tgLink(b)) + "\">" +
+      esc(b.ext.toUpperCase()) +
+      (b.size ? " <span class=\"sz\">" + esc(b.size) + "</span>" : "") +
+      "</a>"
+    ).join("");
+    return "<li><div class=\"title\">" + esc(g.title) + "</div>" +
+      (g.author ? "<div class=\"meta\">" + esc(g.author) + "</div>" : "") +
+      "<div class=\"chips\">" + chips + "</div></li>";
   }).join("");
 }
 
@@ -201,15 +236,11 @@ fetch("index.json").then(r => {
     const o = document.createElement("option");
     o.value = f; o.textContent = f; fmtEl.appendChild(o);
   }
-  for (const s of (data.sources || [])) {
-    const o = document.createElement("option");
-    o.value = s.name; o.textContent = s.name; srcEl.appendChild(o);
-  }
   const t = data.totals || {};
   statsEl.textContent = "الفهرس: " + (t.books || 0) + " كتاب مميز، " +
     (t.files || 0) + " ملف، " + (t.posts || 0) + " بوست، من " +
     (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated_at || data.generated || "؟");
-  countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة/مصدرًا للتصفح.";
+  countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   render();
 }).catch(err => {
   countEl.textContent = "تعذّر تحميل الفهرس: " + err.message;
@@ -217,7 +248,6 @@ fetch("index.json").then(r => {
 
 qEl.addEventListener("input", render);
 fmtEl.addEventListener("change", render);
-srcEl.addEventListener("change", render);
 </script>
 </body>
 </html>

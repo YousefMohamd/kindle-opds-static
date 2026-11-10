@@ -1,4 +1,4 @@
-# RliBook bot (v0.5.0)
+# RliBook bot (v0.5.1)
 
 Submit-only Telegram bot for the RliBook catalog (@RliBook_bot). It lets users
 submit channels and single books for indexing, request the Kindle / e-reader
@@ -24,7 +24,7 @@ deployment directory. In Railway, set the service **Root Directory** to
 | /kindle | The Kindle / e-reader tool link + instructions (the one-tap launcher file is coming next; this command will serve it when ready). |
 | /priority <what> | Priority indexing for a submission. 3/day free. |
 | /invite | Your referral link + today's usage. |
-| /stats | Live catalog stats (from the published index report). |
+| /resources | Catalog resources: channel count + book count (from the published index report). |
 | /donate | Donations open after the project launches properly (no link yet). |
 | /help | Command list. |
 
