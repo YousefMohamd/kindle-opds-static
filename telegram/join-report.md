@@ -1,22 +1,19 @@
 # Telegram group-join report (slow join, v0.4.6)
 
-Run at 2026-11-09T21:47:42.337604+00:00 — batch: up to 2 groups per run, every 12 h (~4 groups/day).
+Run at 2026-11-10T08:46:46.621447+00:00 — batch: up to 2 groups per run, every 12 h (~4 groups/day).
 
-Joined: 1 | already a member: 1 | failed: 0
-
-## Newly joined
-
-- @booksforarabs — folder: added
+Joined: 0 | already a member: 2 | failed: 0
 
 ## Already a member (no join sent)
 
-- @ddfkindle — folder: already_there
+- @EBook_Library — folder: added
+- @jazz223k — folder: already_there
 
 ## Overall progress
 
 - joined: 2
-- already_member: 4
-- pending: 162
+- already_member: 6
+- pending: 160
 - failed: 0
 - flood_wait: 0
 - total groups: 168
