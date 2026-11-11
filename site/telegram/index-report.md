@@ -1,12 +1,12 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-10T19:11:42.405887+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 2m 20s
+**Date:** 2026-11-11T03:53:51.932805+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 25s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **875848 posts, 428474 book files** (314104 distinct books)
+- **Channels with data: 51 of 51 walkable** — **879369 posts, 430867 book files** (315030 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
@@ -17,7 +17,7 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| kindel4 (group) | 3000 | 1821 | export |
+| KindleArabicLibrary (group) | 521 | 518 | export |
 
 ## Indexed channels (51)
 
@@ -210,8 +210,8 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 - khatabg — 6001 posts, 3158 book files (ok)
 - kidsbookden — 3616 posts, 2895 book files (ok)
 - kindel4 — 9000 posts, 5431 book files (ok)
-- kindle4kurd — 6147 posts, 4070 book files (ok)
-- KindleArabicLibrary — 6000 posts, 5994 book files (ok)
+- kindle4kurd — 9147 posts, 5945 book files (ok)
+- KindleArabicLibrary — 6521 posts, 6512 book files (ok)
 - KindleKotob — 6001 posts, 4830 book files (ok)
 - kj7_oi — 3949 posts, 1798 book files (ok)
 - KOTOB_ISLAMIC — 6012 posts, 3266 book files (ok)
