@@ -53,7 +53,7 @@ export async function onRequest(context) {
     let id, href;
     if (lib.kind === "drive") {
       id = "urn:drive:" + b.i;
-      href = "https://drive.google.com/uc?id=" + b.i + "&amp;export=download";
+      href = "https://drive.google.com/uc?id=" + b.i + "&export=download";
     } else if (lib.kind === "hindawi") {
       id = "urn:hindawi:" + b.i;
       href = "https://www.hindawi.org/books/" + b.i + ".epub";
