@@ -32,8 +32,11 @@ import {
   safeFilename,
   isKindleEmail,
   magicBytesOk,
+  dedupeKeyFor,
+  proxyDownloadUrl,
   MAX_FILE_BYTES,
   DAILY_PER_DEST,
+  DEDUPE_TTL_SECONDS,
   RESEND_API_URL,
 } from "./send-to-kindle.js";
 
@@ -107,14 +110,20 @@ function makeFetch({ bookBytes = FAKE_EPUB, bookType, bookLength = null, resendS
   return { fetchImpl, calls };
 }
 
-function makeCtx({ kv, apiKey = "re_test_key", fetchImpl, params }) {
+function makeCtx({ kv, apiKey = "re_test_key", fetchImpl, params, proxyBase, proxyKey }) {
   const url = "https://rlibook.tech/api/send-to-kindle?" + new URLSearchParams(params).toString();
+  const env = { RLIBOOK_KV: kv, RESEND_API_KEY: apiKey };
+  if (proxyBase !== undefined) env.PROXY_BASE_URL = proxyBase;
+  if (proxyKey !== undefined) env.PROXY_SIGNING_KEY = proxyKey;
   return {
     request: new Request(url, { method: "GET", headers: { "cf-connecting-ip": "1.2.3.4" } }),
-    env: { RLIBOOK_KV: kv, RESEND_API_KEY: apiKey },
+    env,
     _fetchImpl: fetchImpl,
   };
 }
+
+const PROXY_BASE = "https://proxy.example.test";
+const PROXY_KEY = "test_signing_key_0123456789abcdef";
 
 // onRequest uses the global fetch — swap it per test.
 async function run(ctx, fetchImpl) {
@@ -130,6 +139,7 @@ async function run(ctx, fetchImpl) {
 const FP = "fp_test_token_abc";
 const TG_ID = 7283934644; // same shape as production, fake pairing here
 const KINDLE_EMAIL = "testuser@kindle.com";
+const TG_PARAMS = { lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "Test Book", fp: FP };
 
 // --- 15/16. pure helpers ------------------------------------------------
 check("resolveAcquisitionUrl drive", resolveAcquisitionUrl("khazendar", "1MPnTH-P5PD3KCwkQd8Swayi2my_RD1Uq")
@@ -341,6 +351,211 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   );
   check("14 resend 403: 502 error page", res.status === 502, `status=${res.status}`);
   check("14 resend 403: attempted once", calls.resend.length === 1);
+}
+
+// --- W4. idempotency: one (destination + book), sent twice -> one email -
+// --- 15. exact repeat inside the window: 2nd request, 0 new emails -------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const params = { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP };
+  const res1 = await run(makeCtx({ kv, fetchImpl, params }), fetchImpl);
+  const body1 = await res1.text();
+  const res2 = await run(makeCtx({ kv, fetchImpl, params }), fetchImpl);
+  const body2 = await res2.text();
+  check("15 dedupe: 1st send 200", res1.status === 200 && body1.includes("تم الإرسال"), `status=${res1.status}`);
+  check("15 dedupe: 2nd send also 200 (confirmation, not error)", res2.status === 200 && body2.includes("تم الإرسال"), `status=${res2.status}`);
+  check("15 dedupe: 2nd page says already sent, no duplicate",
+    body2.includes("أُرسل بالفعل") && body2.includes("لم نرسله مرة أخرى"));
+  check("15 dedupe: still exactly one Resend call", calls.resend.length === 1, `calls=${calls.resend.length}`);
+  const day = new Date().toISOString().slice(0, 10);
+  const { createHash } = await import("node:crypto");
+  const destHash = createHash("sha256").update(KINDLE_EMAIL).digest("hex");
+  check("15 dedupe: repeat did not burn daily quota",
+    kv.map.get(`stk:dest:${destHash}:${day}`) === "1",
+    `counter=${kv.map.get(`stk:dest:${destHash}:${day}`)}`);
+}
+
+// --- 16. same destination, DIFFERENT book -> sends normally ----------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  await run(makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }), fetchImpl);
+  const res = await run(makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "99999999", f: "epub", t: "y", fp: FP } }), fetchImpl);
+  check("16 dedupe: different book sends (2 Resend calls)", res.status === 200 && calls.resend.length === 2, `calls=${calls.resend.length}`);
+}
+
+// --- 17. same book, DIFFERENT destination -> sends normally ----------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  await run(makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }), fetchImpl);
+  const res = await run(makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", to: "second@kindle.com" } }), fetchImpl);
+  check("17 dedupe: different destination sends (2 Resend calls)", res.status === 200 && calls.resend.length === 2, `calls=${calls.resend.length}`);
+}
+
+// --- 18. failed send releases the key: retry after a Resend 403 works -----
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const bad = makeFetch({ resendStatus: 403 });
+  const res1 = await run(makeCtx({ kv, fetchImpl: bad.fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }), bad.fetchImpl);
+  check("18 dedupe: 1st attempt fails 502", res1.status === 502, `status=${res1.status}`);
+  const good = makeFetch({});
+  const res2 = await run(makeCtx({ kv, fetchImpl: good.fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }), good.fetchImpl);
+  check("18 dedupe: retry after failure sends", res2.status === 200 && good.calls.resend.length === 1, `status=${res2.status}`);
+}
+
+// --- 19. dedupeKeyFor unit: stable, book-sensitive, case-insensitive -------
+{
+  const k1 = await dedupeKeyFor("Test@kindle.com", "hindawi:13028368", "epub");
+  const k2 = await dedupeKeyFor("test@kindle.com", "hindawi:13028368", "epub");
+  const k3 = await dedupeKeyFor("test@kindle.com", "hindawi:99999999", "epub");
+  const k4 = await dedupeKeyFor("test@kindle.com", "hindawi:13028368", "pdf");
+  check("19 dedupeKey: same inputs -> same key", k1 === k2);
+  check("19 dedupeKey: different book -> different key", k1 !== k3);
+  check("19 dedupeKey: different format -> different key", k1 !== k4);
+  check("19 dedupeKey: key is stk:dedup: + hex, no email in it",
+    k1.startsWith("stk:dedup:") && !k1.includes("test@kindle.com") && !k1.includes("13028368"));
+  check("19 dedupeKey: TTL is 600s", DEDUPE_TTL_SECONDS === 600);
+}
+
+// --- W6. Telegram books via the proxy --------------------------------
+// --- 20. tg success: proxy fetch -> Resend, signed /dl URL --------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("20 tg proxy: 200 + confirmation", res.status === 200 && body.includes("تم الإرسال"), `status=${res.status}`);
+  check("20 tg proxy: one Resend call", calls.resend.length === 1, `calls=${calls.resend.length}`);
+  check("20 tg proxy: fetched from the proxy /dl URL",
+    calls.book.length === 1 && calls.book[0].url.startsWith(PROXY_BASE + "/dl?h=kotobkhana&p=7559&f=epub&t=v1."),
+    calls.book[0] && calls.book[0].url);
+  check("20 tg proxy: .epub attachment", calls.resend[0].body.attachments[0].filename.endsWith(".epub"));
+}
+
+// --- 21. tg proxy unset -> honest 503, nothing fetched or sent -----------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: TG_PARAMS }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("21 tg no proxy: 503 honest page", res.status === 503 && body.includes("غير مهيأة"), `status=${res.status}`);
+  check("21 tg no proxy: nothing fetched or sent", calls.book.length === 0 && calls.resend.length === 0);
+}
+
+// --- 22. tg flagged book -> 403, nothing fetched or sent ------------------
+{
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+    "flag:kotobkhana:7559": "1",
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("22 tg flagged: 403 + bot hint", res.status === 403 && body.includes("RliBook_bot"), `status=${res.status}`);
+  check("22 tg flagged: nothing fetched or sent", calls.book.length === 0 && calls.resend.length === 0);
+}
+
+// --- 23. tg bad handle / bad post -> 400 -----------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const r1 = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "tg", h: "BAD HANDLE!", p: "7559", f: "epub", t: "x", fp: FP }, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  check("23 tg bad handle: 400", r1.status === 400, `status=${r1.status}`);
+  const r2 = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "tg", h: "kotobkhana", p: "abc", f: "epub", t: "x", fp: FP }, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  check("23 tg bad post: 400", r2.status === 400, `status=${r2.status}`);
+  check("23 tg bad params: nothing sent", calls.resend.length === 0);
+}
+
+// --- 24. tg MOBI refused before any fetch -----------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { ...TG_PARAMS, f: "mobi" }, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  check("24 tg mobi: 400", res.status === 400, `status=${res.status}`);
+  check("24 tg mobi: no proxy fetch, no send", calls.book.length === 0 && calls.resend.length === 0);
+}
+
+// --- 25. tg dedupe: same Telegram book twice -> one email -------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const ctx1 = makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY });
+  const ctx2 = makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY });
+  const res1 = await run(ctx1, fetchImpl);
+  const res2 = await run(ctx2, fetchImpl);
+  check("25 tg dedupe: both 200", res1.status === 200 && res2.status === 200);
+  check("25 tg dedupe: still one Resend call", calls.resend.length === 1, `calls=${calls.resend.length}`);
+}
+
+// --- 26. tg proxy returns HTML -> 502, no send -------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ bookBytes: FAKE_HTML, bookType: "text/html; charset=utf-8" });
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  check("26 tg proxy html: 502", res.status === 502, `status=${res.status}`);
+  check("26 tg proxy html: nothing sent", calls.resend.length === 0);
+}
+
+// --- 27. tg proxy oversized -> 413, no send ----------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ bookBytes: FAKE_EPUB, bookLength: MAX_FILE_BYTES + 1 });
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  check("27 tg proxy oversized: 413", res.status === 413, `status=${res.status}`);
+  check("27 tg proxy oversized: nothing sent", calls.resend.length === 0);
+}
+
+// --- 28. proxyDownloadUrl unit ------------------------------------------------
+{
+  const u = await proxyDownloadUrl({ PROXY_BASE_URL: PROXY_BASE + "/", PROXY_SIGNING_KEY: PROXY_KEY }, "kotobkhana", 7559, "epub");
+  check("28 proxyDownloadUrl: signed /dl URL, trailing slash trimmed",
+    typeof u === "string" && u.startsWith(PROXY_BASE + "/dl?h=kotobkhana&p=7559&f=epub&t=v1."), u);
+  check("28 proxyDownloadUrl: no base -> null",
+    (await proxyDownloadUrl({ PROXY_SIGNING_KEY: PROXY_KEY }, "k", 1, "epub")) === null);
+  check("28 proxyDownloadUrl: no signing key -> null",
+    (await proxyDownloadUrl({ PROXY_BASE_URL: PROXY_BASE }, "k", 1, "epub")) === null);
+}
+
+// --- 29. tg typed-email form keeps h + p through the form ----------------------
+{
+  const kv = makeKv({});
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "Test Book" }, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("29 tg form: 200 form page", res.status === 200 && body.includes("<form"), `status=${res.status}`);
+  check("29 tg form: hidden h + p inputs present",
+    body.includes('name="h" value="kotobkhana"') && body.includes('name="p" value="7559"'));
+  check("29 tg form: nothing sent", calls.resend.length === 0 && calls.book.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -3,10 +3,27 @@
 //
 //   GET /new
 //     -> 200 text/html — the newest 30 books added to the catalog:
-//        title, author, source, format, post date, a link to the
-//        Telegram source post. No JavaScript, minimal CSS, tiny page —
-//        built for the Kindle experimental browser. Same style as
-//        functions/book.js.
+//        title, author, source (as TEXT under the book info), format,
+//        post date, and a "📧 أرسل إلى جهازي" send button (the button
+//        is the send action, via /api/send-to-kindle?lib=tg, which
+//        fetches the file from the Block 2 proxy first). No JavaScript,
+//        minimal CSS, tiny page — built for the Kindle experimental
+//        browser. Same style as functions/book.js.
+//
+// Flagged (commercial) books: a ⚑ marker, NO send button, NO
+// reading on the website — with a one-line explanation that the book
+// can be reached via Telegram (the bot). The flag lives in KV as
+// flag:<handle>:<post_id>, the same denylist functions/api/tg-search.js
+// uses: one KV get per shown book, in parallel, after slicing to the
+// page limit (at most `limit`, max 50, reads per page view). KV has no
+// batch get, so this is the cleanest check inside a Function — the
+// cost is the reads themselves (free tier: 100k KV reads/day, so a
+// page view costs up to 50 of them; ~3,300 /new views/day of headroom
+// at the default limit of 30). If the KV binding is missing, or a
+// book's URL does not parse to a public t.me post, the book reports
+// unflagged — the honest v1 limit, same as tg-search. A cheaper
+// future step is to bake the flag into newest.json at build time
+// (the builder already knows the denylist); until then this is it.
 //
 // Data: the static file /telegram/newest.json — newest 30 books,
 // generated at publish time by telegram/tbi/newest.py (a full scan of
@@ -45,9 +62,10 @@ const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 50;
 const LIVE_KEY = "live:additions";
 
-// The one line the user asked for: the dictionary updates weekly,
+// The one line under the heading: the dictionary is a file and
+// cannot update itself — the bot sends a new copy automatically,
 // and this page always holds the newest books.
-const WEEKLY_NOTICE = "القاموس يتحدث أسبوعياً — هذه الصفحة فيها أحدث الكتب دائماً";
+const WEEKLY_NOTICE = "القاموس ملف لا يحدّث نفسه — البوت يرسل النسخة الجديدة تلقائياً، وهذه الصفحة فيها أحدث الكتب دائماً";
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -95,6 +113,51 @@ async function readLive(env) {
     return out;
   } catch (e) {
     return [];
+  }
+}
+
+// Parse a t.me post URL into { handle, postId } for the Telegram send
+// path and the flag check. Private-group links (https://t.me/c/...) return
+// null: "c" is not a public handle. Exported for tests.
+export function parseTelegramPostUrl(url) {
+  const m = /^https?:\/\/t\.me\/([^/?#]+)\/(\d+)/.exec(url || "");
+  if (!m || m[1] === "c") return null;
+  return { handle: m[1].toLowerCase(), postId: Number(m[2]) };
+}
+
+// Formats the email endpoint accepts (Send-to-Kindle's list).
+export const TG_SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
+
+/** The send URL for one newest book, or null when it cannot be sent
+ *  from the website (flagged, private-group link, no usable format, or
+ *  a non-sendable format). `fpQ` is the "&amp;fp=..." suffix ("" when
+ *  no fingerprint). Exported for tests. */
+export function telegramSendUrl(b, fpQ = "") {
+  if (!b || b.flagged) return null;
+  const post = parseTelegramPostUrl(b.url);
+  if (!post) return null;
+  const fmt = String(b.format || "").trim().toLowerCase();
+  if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
+  return "/api/send-to-kindle?lib=tg"
+    + "&amp;h=" + encodeURIComponent(post.handle)
+    + "&amp;p=" + post.postId
+    + "&amp;f=" + fmt
+    + "&amp;t=" + encodeURIComponent(b.title || "") + fpQ;
+}
+
+// Flag check against the shared KV denylist (same as
+// functions/api/tg-search.js and dl-token.js): a KV key
+// `flag:<handle>:<post_id>` means flagged/commercial.
+async function isFlagged(env, url) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return false;
+  const parsed = parseTelegramPostUrl(url);
+  if (!parsed) return false;
+  try {
+    const v = await kv.get(`flag:${parsed.handle}:${parsed.postId}`);
+    return v !== null && v !== undefined;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -160,6 +223,14 @@ export async function onRequest(context) {
   }
   books = books.slice(0, limit);
 
+  // 3. Flag check (website rule): one parallel KV get per shown book
+  // against the flag:<handle>:<post_id> denylist. Books whose URL
+  // does not parse to a public t.me post cannot be flagged this way
+  // and report unflagged. Missing KV binding -> all unflagged.
+  const flagged = await Promise.all(books.map((b) => isFlagged(env, b.url)));
+  const fp = (url.searchParams.get("fp") || "").trim();
+  const fpQ = fp ? "&amp;fp=" + encodeURIComponent(fp) : "";
+
   const headers = {
     "content-type": "text/html; charset=utf-8",
     // Regenerated daily; live additions (when they exist) are at most
@@ -185,18 +256,34 @@ export async function onRequest(context) {
     + "<p>أحدث " + books.length + " كتاب أُضيفت إلى الكتالوج"
     + (generatedAt ? " — آخر تحديث " + esc(generatedAt.slice(0, 10)) : "")
     + ":</p>\n";
-  for (const b of books) {
+  for (let i = 0; i < books.length; i++) {
+    const b = books[i];
+    const isFlag = flagged[i] === true;
     body += "<div class=\"card\"><h2>" + esc(b.title) + "</h2>\n";
     if (b.author) body += "<p>المؤلف: " + esc(b.author) + "</p>\n";
-    const meta = [b.source, b.format, b.date].filter(Boolean).join(" · ");
-    if (meta) body += "<p>" + esc(meta) + "</p>\n";
-    if (b.url) {
-      body += "<p><a class=\"btn\" href=\"" + esc(b.url) + "\">المصدر في تليجرام</a></p>\n";
+    const meta = [b.format, b.date].filter(Boolean).join(" · ");
+    if (meta || isFlag) {
+      body += "<p>" + esc(meta) + (isFlag ? (meta ? " · " : "") + "⚑ تجاري" : "") + "</p>\n";
+    }
+    if (b.source) body += "<p>المصدر: " + esc(b.source) + "</p>\n";
+    if (isFlag) {
+      body += "<p class=\"note\">⚑ كتاب تجاري — لا يمكن تنزيله أو إرساله من الموقع؛ "
+        + "اطلبه عبر تيليجرام من البوت "
+        + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
+    } else {
+      const sendUrl = telegramSendUrl(b, fpQ);
+      if (sendUrl) {
+        body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
+      } else {
+        body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
+          + "اطلبه من البوت "
+          + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
+      }
     }
     body += "</div>\n";
   }
-  body += "<p class=\"note\">هذه كتب من فهرس تيليجرام — لتصلك على كيندلك، "
-    + "اطلب الكتاب من <a href=\"https://t.me/RliBook_bot\">البوت @RliBook_bot</a>.</p>\n"
+  body += "<p class=\"note\">زر «أرسل إلى جهازي» يجلب الكتاب من تيليجرام "
+    + "ثم يرسله إلى بريد جهازك. الكتب التجارية (⚑) تُطلب من البوت.</p>\n"
     + foot;
   return new Response(body, { headers });
 }

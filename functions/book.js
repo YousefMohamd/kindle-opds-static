@@ -34,15 +34,16 @@
 // cards appear with no further change to this file.
 //
 // Telegram cards are NORMAL cards (title, author, source, format)
-// with one difference in the action: the button opens the source
-// t.me post ("📖 المصدر"). There is NO "📧 أرسل إلى كيندلي" button
-// on Telegram cards — functions/api/send-to-kindle.js can only fetch
-// books from the five OPDS libraries (Drive / Hindawi / DOAB URLs);
-// it cannot fetch a Telegram post, and no fetch-from-proxy step
-// exists yet. Flagged (commercial) Telegram books show a ⚑ marker
-// and NO source link, per the website rule that flagged books are
-// flagged but not readable/downloadable on the site — they point at
-// the bot instead, which enforces the 3/day cap.
+// with the SAME "📧 أرسل إلى جهازي" send button as OPDS cards —
+// the button sends the book by email via functions/api/send-to-
+// kindle.js (lib=tg), which fetches the file from the Block 2 proxy
+// first. The source (library/channel name) is plain TEXT under the
+// book info, never the button label and never a t.me link: tapping
+// a source link opened the Telegram website, which is not a download.
+// Flagged (commercial) Telegram books show a ⚑ marker and NO send
+// button and NO reading on the website, per the website rule that
+// flagged books are flagged but not readable/downloadable on the
+// site — they point at the bot instead, which enforces the 3/day cap.
 //
 // Graceful degradation (never a 500 from the Telegram half): the
 // tg-search fetch is wrapped so it can only resolve to
@@ -56,7 +57,7 @@
 // EPUB/PDF ("Invalid File Type — Only .AZW, .PRC, .MOBI or .TXT"), and
 // the dialog's ".AZW" does NOT cover ".azw3" (BicBucStriim #287: *.azw3
 // hits the same error, *.mobi downloads). So there is no direct browser
-// download for these books. The "📧 أرسل إلى كيندلي" button therefore
+// download for these books. The "📧 أرسل إلى جهازي" button therefore
 // sends the book by Send-to-Kindle email instead
 // (functions/api/send-to-kindle.js): EPUB by email IS accepted — Amazon
 // converts it to AZW3/KFX on delivery. The old direct-download link
@@ -118,6 +119,41 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
     console.warn("[book] telegram search unavailable:", e && e.message);
     return {available: false, total: 0, results: []};
   }
+}
+
+// Parse a t.me post URL into { handle, postId } for the Telegram send
+// path (/api/send-to-kindle?lib=tg&h=..&p=..). Same shape as
+// functions/api/tg-search.js parsePostUrl. Private-group links
+// (https://t.me/c/<id>/<post>) return null: "c" is not a public handle
+// and the proxy cannot fetch from it. Exported for tests.
+export function parseTelegramPostUrl(url) {
+  const m = /^https?:\/\/t\.me\/([^/?#]+)\/(\d+)/.exec(url || "");
+  if (!m || m[1] === "c") return null;
+  return { handle: m[1].toLowerCase(), postId: Number(m[2]) };
+}
+
+// Formats the email endpoint accepts (Send-to-Kindle's list). A Telegram
+// book in any other format (MOBI/AZW3/KFX) gets no send button — the
+// endpoint would refuse it anyway — and a note pointing at the bot.
+export const TG_SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
+
+/** The send URL for one Telegram result, or null when it cannot be
+ *  sent from the website (private-group link, no usable format, or a
+ *  non-sendable format). `fpQ` is the "&amp;fp=..." suffix ("" when
+ *  no fingerprint). Exported for tests. */
+export function telegramSendUrl(r, fpQ = "") {
+  if (!r || r.flagged) return null;
+  const post = parseTelegramPostUrl(r.url);
+  if (!post) return null;
+  const fmt = Array.isArray(r.formats) && r.formats.length
+    ? String(r.formats[0]).toLowerCase()
+    : "";
+  if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
+  return "/api/send-to-kindle?lib=tg"
+    + "&amp;h=" + encodeURIComponent(post.handle)
+    + "&amp;p=" + post.postId
+    + "&amp;f=" + fmt
+    + "&amp;t=" + encodeURIComponent(r.title || "") + fpQ;
 }
 
 export async function onRequest(context) {
@@ -272,18 +308,22 @@ export async function onRequest(context) {
     body += "<div class=\"card\"><h2>" + esc(b.t) + "</h2>\n";
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
-    body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى كيندلي</a></p>\n";
+    body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
     body += "<p class=\"note\"><a href=\"" + esc(href) + "\">تنزيل مباشر</a> "
-      + "(من متصفح عادي أو USB — متصفح الكيندل يرفض EPUB/PDF)</p>\n";
+      + "(من متصفح عادي أو USB — متصفح جهازك يرفض EPUB/PDF)</p>\n";
     body += "</div>\n";
   }
 
-  // ---- Telegram results: same card layout, different action --------
-  // No "📧 أرسل إلى كيندلي" button here — send-to-kindle can only
-  // fetch OPDS-library books (see header). The action is the source
-  // t.me post. Flagged (commercial) books get no source link, per the
-  // website rule (flagged = shown, not readable/downloadable here);
-  // they point at the bot, which enforces the 3/day cap.
+  // ---- Telegram results: same card layout, same SEND button --------
+  // The button is the send action (via the proxy fetch in
+  // functions/api/send-to-kindle.js, lib=tg); the source is plain
+  // TEXT under the book info, never the button label and never a
+  // t.me link — tapping a source link opened the Telegram website,
+  // which is not a download. Flagged (commercial) books get NO send
+  // button and NO reading on the website, per the website rule
+  // (flagged = shown with a ⚑ marker, reachable via the bot, which
+  // enforces the 3/day cap); a book that cannot be sent (private
+  // group, no usable format, MOBI/AZW3/KFX) gets a note instead.
   if (tg.results.length > 0) {
     body += "<h2>من تيليجرام"
       + (tg.total > tg.results.length
@@ -293,33 +333,42 @@ export async function onRequest(context) {
     for (const r of tg.results) {
       body += "<div class=\"card\"><h2>" + esc(r.title) + "</h2>\n";
       if (r.author) body += "<p>المؤلف: " + esc(r.author) + "</p>\n";
-      body += "<p>تيليجرام · " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة"))
+      body += "<p>تيليجرام"
         + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
         + (r.flagged ? " · ⚑ تجاري" : "")
         + "</p>\n";
+      body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
       if (r.flagged) {
-        body += "<p class=\"note\">⚑ كتاب تجاري — اطلبه من البوت "
-          + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> "
-          + "(يخضع لحدّ الكتب التجارية).</p>\n";
+        body += "<p class=\"note\">⚑ كتاب تجاري — لا يمكن تنزيله أو إرساله من الموقع؛ "
+          + "اطلبه عبر تيليجرام من البوت "
+          + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
       } else {
-        body += "<p><a class=\"btn\" href=\"" + esc(r.url) + "\">📖 المصدر (تيليجرام)</a></p>\n";
+        const sendUrl = telegramSendUrl(r, fpQ);
+        if (sendUrl) {
+          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
+        } else {
+          body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
+            + "اطلبه من البوت "
+            + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
+        }
       }
       body += "</div>\n";
     }
-    body += "<p class=\"note\">كتب تيليجرام تُؤخذ من المصدر مباشرة — "
-      + "الإرسال إلى كيندلي بالبريد لهذه الكتب غير متاح بعد "
-      + "(يحتاج جلب الملف من تيليجرام أولاً).</p>\n";
+    body += "<p class=\"note\">زر «أرسل إلى جهازي» على كتب تيليجرام يجلب الملف "
+      + "من تيليجرام ثم يرسله إلى بريد جهازك.</p>\n";
   }
 
-  // Footer notes, only for the halves actually shown: the send-to-
-  // Kindle note only when an OPDS card (with a send button) is on
-  // the page — a Telegram-only page must not promise a send button.
-  if (hits.length > 0) {
-    body += "<p class=\"note\">متصفح الكيندل لا ينزّل EPUB/PDF — زر «أرسل إلى كيندلي» يرسل الكتاب "
-      + "إلى ميل الكيندل الخاص بك، فيظهر في مكتبتك خلال دقائق. "
+  // Footer note whenever ANY send button is on the page (OPDS cards,
+  // or a sendable non-flagged Telegram card) — a page with no send
+  // button must not promise one.
+  const anySend = hits.length > 0
+    || tg.results.some((r) => telegramSendUrl(r, fpQ) !== null);
+  if (anySend) {
+    body += "<p class=\"note\">متصفح جهازك لا ينزّل EPUB/PDF — زر «أرسل إلى جهازي» يرسل الكتاب "
+      + "إلى بريد جهازك، فيظهر في مكتبتك خلال دقائق. "
       + (fp
         ? "ميلك محفوظ في البوت — لن يُطلب منك كتابته."
-        : "سيُطلب منك كتابة ميل الكيندل مرة واحدة لكل كتاب — أو أرسله للبوت "
+        : "سيُطلب منك كتابة بريد جهازك مرة واحدة لكل كتاب — أو أرسله للبوت "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> ليُحفظ.")
       + "</p>\n";
   }
