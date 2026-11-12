@@ -381,8 +381,8 @@ export async function onRequest(context) {
     } catch { flagged = false; }
     if (flagged) {
       return page("⚑ كتاب تجاري",
-        "<p>⚑ هذا كتاب تجاري — لا يمكن تنزيله أو إرساله من الموقع.</p>\n"
-        + "<p>اطلبه عبر تيليجرام من البوت "
+        "<p>⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+        + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);
     }

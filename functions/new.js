@@ -267,8 +267,8 @@ export async function onRequest(context) {
     }
     if (b.source) body += "<p>المصدر: " + esc(b.source) + "</p>\n";
     if (isFlag) {
-      body += "<p class=\"note\">⚑ كتاب تجاري — لا يمكن تنزيله أو إرساله من الموقع؛ "
-        + "اطلبه عبر تيليجرام من البوت "
+      body += "<p class=\"note\">⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
+        + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
     } else {
       const sendUrl = telegramSendUrl(b, fpQ);

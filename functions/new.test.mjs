@@ -182,8 +182,13 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
   check("7 flagged: ⚑ marker on the flagged book", text.includes("⚑ تجاري"));
   check("7 flagged: NO send button for the flagged book", !text.includes("p=11692"));
   check("7 flagged: one-line bot explanation, no reading",
-    text.includes("لا يمكن تنزيله أو إرساله من الموقع")
+    text.includes("هذا الكتاب تجاري (عليه علامة)")
+    && text.includes("الموقع لا يتيح تحميله أو إرساله")
+    && text.includes("قناة النشر")
     && text.includes("@RliBook_bot"));
+  check("7 flagged: reason comes BEFORE the bot direction",
+    text.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
+    && text.indexOf("هذا الكتاب تجاري (عليه علامة)") < text.indexOf("قناة النشر"));
   check("7 flagged: other books still have send buttons",
     text.includes("/api/send-to-kindle?lib=tg"));
   check("7 flag check cost: one KV get per shown book (30)",

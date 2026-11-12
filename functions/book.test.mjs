@@ -208,8 +208,13 @@ tgMode = "ok";
   check("B3 flagged card: NO t.me link for the flagged book",
     !r.body.includes("https://t.me/darkromancenovels/123"));
   check("B3 flagged card: points at the bot instead",
-    r.body.includes("لا يمكن تنزيله أو إرساله من الموقع")
+    r.body.includes("هذا الكتاب تجاري (عليه علامة)")
+    && r.body.includes("الموقع لا يتيح تحميله أو إرساله")
+    && r.body.includes("قناة النشر")
     && r.body.includes("@RliBook_bot"));
+  check("B3 flagged card: reason comes BEFORE the bot direction",
+    r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
+    && r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") < r.body.indexOf("قناة النشر"));
   check("B3 flagged card: NO send button for the flagged book",
     !r.body.includes("h=darkromancenovels"));
 }

@@ -339,8 +339,8 @@ export async function onRequest(context) {
         + "</p>\n";
       body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
       if (r.flagged) {
-        body += "<p class=\"note\">⚑ كتاب تجاري — لا يمكن تنزيله أو إرساله من الموقع؛ "
-          + "اطلبه عبر تيليجرام من البوت "
+        body += "<p class=\"note\">⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
+          + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
       } else {
         const sendUrl = telegramSendUrl(r, fpQ);
