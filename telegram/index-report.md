@@ -1,12 +1,12 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-11T19:05:20.497259+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 2s
+**Date:** 2026-11-12T04:59:06.527792+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **889302 posts, 439114 book files** (321448 distinct books)
+- **Channels with data: 51 of 51 walkable** — **889303 posts, 439114 book files** (321448 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
@@ -17,7 +17,7 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| kotobkhana (group) | 8 | 4 | export |
+| xepub (group) | 1 | 0 | export |
 
 ## Indexed channels (51)
 
@@ -292,7 +292,7 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 - trunkietrunk — 6016 posts, 5802 book files (ok)
 - wadistreambooks — 419 posts, 218 book files (ok)
 - wessam_pdf — 6000 posts, 5635 book files (ok)
-- xepub — 207 posts, 85 book files (ok)
+- xepub — 208 posts, 85 book files (ok)
 - yasmeenbook — 1046 posts, 633 book files (ok)
 - ZAmericanEnglishCourse — 224 posts, 84 book files (ok)
 - zamericangroup — 3000 posts, 48 book files (ok)

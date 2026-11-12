@@ -123,20 +123,20 @@
       "folder": "added"
     },
     "pdfiat": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-12T04:56:55.084397+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "xepub": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-12T04:59:00.621799+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "BOOK_HOUSE_INTERNATIONAL": {
       "status": "pending",
