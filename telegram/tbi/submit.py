@@ -118,8 +118,9 @@ def submit_book(
 ) -> dict:
     """Index one book with its source recorded. Returns the record.
 
-    ``format`` must be one of ``BOOK_EXTS`` (EPUB, MOBI, AZW3, KFX,
-    PDF, TXT). ``size_bytes``/``size_text`` are optional — when only
+    ``format`` must be one of ``BOOK_EXTS`` (EPUB, MOBI, AZW3, AZW, KFX,
+    KEPUB, PDF, TXT, DOC, DOCX, DJVU, DJV, FB2, CBR, CBZ, RTF, PRC,
+    ODT, CHM, LIT, LRF, PDB). ``size_bytes``/``size_text`` are optional — when only
     one is given the other is derived (``parse_size`` / ``format_size``).
     The book lands in the same ``posts``/``files`` tables as scraped
     books, with ``obtain_url`` = the source link, so search, the static

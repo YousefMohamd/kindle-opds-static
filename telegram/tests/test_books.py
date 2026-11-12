@@ -86,9 +86,113 @@ def test_dedupe_key():
 
 
 def test_book_exts():
-    # KFX is Amazon's current Kindle format (v0.3): the indexer and the
-    # bot's channel-validation rule accept the same six formats.
-    assert BOOK_EXTS == {"epub", "mobi", "azw3", "kfx", "pdf", "txt"}
+    # All readable book/document formats (v0.5): the original six
+    # Kindle-workflow formats plus DOC/DOCX, DJVU/DJV, FB2, CBR/CBZ,
+    # RTF, AZW, PRC, ODT, CHM, LIT, LRF, PDB and KEPUB. Audio, video,
+    # generic archives, images and HTML stay out.
+    assert BOOK_EXTS == {
+        "azw", "azw3", "cbr", "cbz", "chm", "djv", "djvu", "doc",
+        "docx", "epub", "fb2", "kepub", "kfx", "lit", "lrf", "mobi",
+        "odt", "pdf", "pdb", "prc", "rtf", "txt",
+    }
+
+
+def test_new_formats_parse_title_author():
+    # A DOC/DJVU/FB2/CBZ filename parses to the right title/author/
+    # format, exactly like an EPUB one.
+    assert parse_title_author("متن طيبة النشر في القراءات العشر.doc") == (
+        "متن طيبة النشر في القراءات العشر",
+        "",
+    )
+    assert parse_title_author("Dune - Frank Herbert.docx") == (
+        "Dune",
+        "Frank Herbert",
+    )
+    assert parse_title_author("Dune (Frank Herbert).djvu") == (
+        "Dune",
+        "Frank Herbert",
+    )
+    assert parse_title_author("Dune by Frank Herbert.fb2") == (
+        "Dune",
+        "Frank Herbert",
+    )
+    assert parse_title_author("Watchmen - Alan Moore.cbz") == (
+        "Watchmen",
+        "Alan Moore",
+    )
+    assert parse_title_author("Old Book - Some Author.azw") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.prc") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.lrf") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.pdb") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.odt") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.rtf") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.chm") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.lit") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.kepub") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.cbr") == (
+        "Old Book",
+        "Some Author",
+    )
+    assert parse_title_author("Old Book - Some Author.djv") == (
+        "Old Book",
+        "Some Author",
+    )
+
+
+def test_new_format_noise_stripped():
+    title, author = parse_title_author("[DOCX] The Hobbit - J.R.R. Tolkien (2019).docx")
+    assert title == "The Hobbit"
+    assert "Tolkien" in author
+    # Trailing format tag ("Title djvu") is stripped like "Title pdf".
+    title, author = parse_title_author("Dune djvu.djvu")
+    assert title == "Dune"
+    # Prefix extensions do not leave a leftover digit/letter: ".azw3"
+    # strips fully, ".docx" does not leave an "x".
+    assert parse_title_author("Dune.azw3")[0] == "Dune"
+    assert parse_title_author("Dune.docx")[0] == "Dune"
+    assert parse_title_author("Dune.djvu")[0] == "Dune"
+
+
+def test_doc_lit_words_not_stripped():
+    # "doc" and "lit" are ordinary English words: a title legitimately
+    # ending in them must survive _clean (only bracket/paren tags and
+    # the file extension are removed).
+    assert parse_title_author("The Doc.doc")[0] == "The Doc"
+    assert parse_title_author("Something Lit.lit")[0] == "Something Lit"
+
+
+def test_non_book_exts_still_rejected():
+    # Audio, video, generic archives, images and HTML are not books.
+    for ext in ("mp3", "m4b", "m4a", "mp4", "mkv", "zip", "rar", "7z",
+                "jpg", "png", "html", "exe"):
+        assert ext not in BOOK_EXTS
 
 
 def test_format_size():

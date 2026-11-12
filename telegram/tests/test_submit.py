@@ -149,6 +149,43 @@ def test_submit_book_reports_already_indexed(tmp_path):
         store.close()
 
 
+def test_submit_book_new_formats_accepted(tmp_path):
+    # The expanded format list (v0.5): DOC/DOCX/DJVU/FB2/CBZ submit
+    # exactly like EPUB.
+    db = tmp_path / "index.db"
+    store = Store(db)
+    try:
+        for i, (fmt, filename) in enumerate((
+            ("docx", "Dune.docx"),
+            ("doc", "Dune.doc"),
+            ("djvu", "Dune.djvu"),
+            ("fb2", "Dune.fb2"),
+            ("cbz", "Dune.cbz"),
+        )):
+            record = submit_book(
+                store, f"https://t.me/testchan/{100 + i}", "Dune",
+                author="Frank Herbert", format=fmt, size_bytes=1200000,
+            )
+            assert record["format"] == fmt
+            assert record["filename"] == filename
+        assert store.counts()["files"] == 5
+    finally:
+        store.close()
+
+
+def test_submit_book_non_book_formats_rejected(tmp_path):
+    db = tmp_path / "index.db"
+    store = Store(db)
+    try:
+        for fmt in ("mp3", "mp4", "zip", "jpg", "html"):
+            with pytest.raises(ValueError, match="unsupported format"):
+                submit_book(
+                    store, "https://t.me/testchan/1", "Dune", format=fmt
+                )
+    finally:
+        store.close()
+
+
 def test_submit_book_validation_errors(tmp_path):
     db = tmp_path / "index.db"
     store = Store(db)

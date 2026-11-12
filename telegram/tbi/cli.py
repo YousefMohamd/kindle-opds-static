@@ -1470,7 +1470,10 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("query", nargs="*", help="Words to search for")
     ps.add_argument("--db", default="index.db")
     ps.add_argument("--format", default=None,
-                    help="Filter: epub, mobi, azw3, kfx, pdf, txt")
+                    help="Filter: any book format in BOOK_EXTS "
+                    "(epub, mobi, azw3, azw, kfx, kepub, pdf, txt, doc, "
+                    "docx, djvu, djv, fb2, cbr, cbz, rtf, prc, odt, chm, "
+                    "lit, lrf, pdb)")
     ps.add_argument("--source", default=None, help="Filter by source name")
     ps.add_argument("--limit", type=int, default=50)
     ps.set_defaults(func=cmd_search)
@@ -1589,8 +1592,10 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--title", required=True, help="Book title")
     pb.add_argument("--author", default="", help="Author (optional)")
     pb.add_argument("--format", default="epub",
-                    help="Format: epub, mobi, azw3, kfx, pdf, txt "
-                    "(default: epub)")
+                    help="Format: any book format in BOOK_EXTS "
+                    "(epub, mobi, azw3, azw, kfx, kepub, pdf, txt, doc, "
+                    "docx, djvu, djv, fb2, cbr, cbz, rtf, prc, odt, chm, "
+                    "lit, lrf, pdb) (default: epub)")
     pb.add_argument("--size", type=int, default=None,
                     help="File size in bytes (optional)")
     pb.add_argument("--size-text", default=None,

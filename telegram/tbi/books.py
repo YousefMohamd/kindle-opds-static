@@ -6,10 +6,16 @@ nature — Telegram posts have no standard book format — so every rule
 is conservative: when the author cannot be identified it stays empty
 rather than guessing wrong.
 
-Supported book formats (the ones the Kindle workflow uses):
-EPUB, MOBI, AZW3, KFX, PDF, TXT. KFX is Amazon's current Kindle format;
-shares of it are rare on Telegram, but a KFX file counts as a book
-exactly like the others. Audio books (MP3/M4B) are out of scope.
+Supported book formats (every readable book/document format found in
+Telegram book shares — the Kindle workflow uses the first six, the
+rest are indexed the same way and converted on the download path):
+EPUB, MOBI, AZW3, AZW, KFX, KEPUB, PDF, TXT, DOC, DOCX, DJVU, DJV,
+FB2, CBR, CBZ, RTF, PRC, ODT, CHM, LIT, LRF, PDB. DJVU (scanned
+books) and CBR/CBZ (comics: archives of images) are books even though
+a stock Kindle cannot open them natively — they need conversion, which
+is a download-path concern, not an indexing reason to skip them.
+Audio books (MP3/M4B), video (MP4/MKV), generic archives (ZIP/RAR),
+images and HTML pages are NOT books and stay out of scope.
 """
 
 from __future__ import annotations
@@ -17,13 +23,26 @@ from __future__ import annotations
 import re
 import unicodedata
 
-BOOK_EXTS = {"epub", "mobi", "azw3", "kfx", "pdf", "txt"}
+BOOK_EXTS = {
+    "azw", "azw3", "cbr", "cbz", "chm", "djv", "djvu", "doc", "docx",
+    "epub", "fb2", "kepub", "kfx", "lit", "lrf", "mobi", "odt", "pdf",
+    "pdb", "prc", "rtf", "txt",
+}
 
 # Noise removed from filenames/captions before parsing.
+# In every alternation the longer form comes first where one extension
+# is a prefix of another (azw3/azw, docx/doc, djvu/djv, kepub/epub),
+# so "book.azw3" does not match as "azw" + leftover "3".
+# The bare trailing-word pattern deliberately OMITS "doc" and "lit":
+# both are ordinary English words, so stripping a trailing "Doc"/"Lit"
+# would mangle real titles ("The Doc"); the bracket/paren forms
+# ("[DOC]", "(lit)") are still stripped, since those are format tags.
+_FMT_BRACKET = r"azw3|azw|cbz|cbr|chm|djvu|djv|docx|doc|kepub|epub|fb2|kfx|lit|lrf|mobi|odt|pdf|pdb|prc|rtf|txt"
+_FMT_TRAIL = r"azw3|azw|cbz|cbr|chm|djvu|djv|docx|kepub|epub|fb2|kfx|lrf|mobi|odt|pdf|pdb|prc|rtf|txt"
 _NOISE_RES = [
-    re.compile(r"\[(?:pdf|epub|mobi|azw3|kfx|kindle|book|ebook)\]", re.IGNORECASE),
-    re.compile(r"\((?:pdf|epub|mobi|azw3|kfx|kindle|ebook)\)", re.IGNORECASE),
-    re.compile(r"\b(?:pdf|epub|mobi|azw3|kfx)\b\s*$", re.IGNORECASE),
+    re.compile(r"\[(?:" + _FMT_BRACKET + r"|kindle|book|ebook)\]", re.IGNORECASE),
+    re.compile(r"\((?:" + _FMT_BRACKET + r"|kindle|ebook)\)", re.IGNORECASE),
+    re.compile(r"\b(?:" + _FMT_TRAIL + r")\b\s*$", re.IGNORECASE),
     re.compile(r"\b\d{4}\b\s*$"),  # trailing year ("Title 2019")
     re.compile(r"[\[\(]\d{4}[\]\)]"),  # parenthesised year "(2019)"
     re.compile(r"[\[\(]\s*(?:download|free|كتاب|رواية)\s*[\]\)]", re.IGNORECASE),
@@ -58,7 +77,12 @@ def normalize_filename(name: str) -> str:
 def _clean(raw: str) -> str:
     text = normalize_filename(raw)
     # Drop the file extension for title parsing.
-    text = re.sub(r"\.(?:epub|mobi|azw3|kfx|pdf|txt)$", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\.(?:azw3|azw|cbz|cbr|chm|djvu|djv|docx|doc|kepub|epub|fb2|kfx|lit|lrf|mobi|odt|pdf|pdb|prc|rtf|txt)$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
     for rx in _NOISE_RES:
         text = rx.sub("", text)
     # Collapse repeated separators/spaces left by the removals.
@@ -82,7 +106,10 @@ def _looks_like_author(part: str, max_words: int = 4) -> bool:
     if not (1 <= len(words) <= max_words):
         return False
     if part.lower() in {
-        "download", "free", "ebook", "book", "pdf", "epub", "kindle",
+        "download", "free", "ebook", "book", "kindle",
+        "azw", "azw3", "cbr", "cbz", "chm", "djv", "djvu", "doc",
+        "docx", "epub", "fb2", "kepub", "kfx", "lit", "lrf", "mobi",
+        "odt", "pdf", "pdb", "prc", "rtf", "txt",
         "كتاب", "رواية", "مجانا", "تحميل",
     }:
         return False

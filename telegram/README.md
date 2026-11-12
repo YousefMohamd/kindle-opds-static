@@ -512,7 +512,9 @@ limits it must follow, so the design is fixed before any code exists:
   (`t.me/<handle>`); anything else is rejected.
 - **Validation before accepting a channel.** The bot checks the channel
   is public and contains book files in Kindle-compatible formats
-  (EPUB, MOBI, AZW3, KFX, PDF, TXT — the same set the indexer counts)
+  (EPUB, MOBI, AZW3, KFX, PDF, TXT — the bot's own validation rule;
+  the indexer itself now counts all 22 book formats in `BOOK_EXTS`,
+  see `tbi/books.py`)
   by sampling the newest posts. A minimum book-file threshold applies;
   below it the channel is rejected with the reason.
 - **Token is a server-side secret.** The bot token is never in the repo,
@@ -549,7 +551,9 @@ title / author / filename / caption:
 
 - `sources` — kind, name, status, oldest/newest post id reached, coverage note.
 - `posts` — one row per post (unique per source + post id).
-- `files` — one row per book file (EPUB, MOBI, AZW3, KFX, PDF, TXT), with
+- `files` — one row per book file (any format in `BOOK_EXTS`: EPUB,
+  MOBI, AZW3, AZW, KFX, KEPUB, PDF, TXT, DOC, DOCX, DJVU, DJV, FB2,
+  CBR, CBZ, RTF, PRC, ODT, CHM, LIT, LRF, PDB), with
   parsed title/author and a dedup key so the same book shared in several
   sources counts once as a book (each share is still listed in search).
 - `priority_requests` — one row per priority request (channel, query,
