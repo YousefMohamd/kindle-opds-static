@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "date": "2026-11-13",
+  "generated_at": "2026-11-12T22:30:11.778877+00:00",
+  "sources": [
+    {
+      "key": "arabJournalism",
+      "label": "الصحافة العربية",
+      "status": "no_preview",
+      "posts_seen": 0,
+      "entries": 0,
+      "detail": "t.me/s/ serves no posts for this channel (redirect to info card); use the API path — API fallback unavailable (no Telegram API credentials in the environment)"
+    },
+    {
+      "key": "joinchat/VGPv_tnlgUJlNjdl",
+      "label": "الصحف اليومية - م.محمد",
+      "status": "unavailable_no_credentials",
+      "posts_seen": 0,
+      "entries": 0,
+      "detail": "no Telegram API credentials in the environment (TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_SESSION_STRING)"
+    },
+    {
+      "key": "+5XWeEDd4wUczZTQ0",
+      "label": "Egyptian Newspapers (الجرائد المصرية)",
+      "status": "unavailable_pending_join",
+      "posts_seen": 0,
+      "entries": 0,
+      "detail": "private channel — the owner's join request is pending; this tool never joins"
+    }
+  ],
+  "egypt": [],
+  "other": [],
+  "countries": [],
+  "empty": true,
+  "unmatched": []
+}

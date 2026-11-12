@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>صحف اليوم حسب البلد — RliBook</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+         max-width: 760px; margin: 0 auto; padding: 1.2rem;
+         line-height: 1.7; color: #1c1c1c; background: #fdfdf8; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.2rem; }
+  h2 { font-size: 1.15rem; margin: 1.2rem 0 0.4rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; background: #fff;
+          padding: 1rem 1.2rem; margin: 1rem 0; }
+  a { color: #0b5cad; }
+  .note { color: #555; font-size: 0.9rem; }
+  ul { margin: 0.3rem 0; }
+</style>
+</head>
+<body>
+<h1>📰 صحف اليوم حسب البلد</h1>
+<p class="note">جرائد اليوم من خارج مصر، قسم لكل بلد — <a href="/#newspapers">جرائد مصر اليوم ←</a></p>
+
+<div class="card" id="newspapers-other">
+  <p class="note">جارٍ تحميل جرائد اليوم…</p>
+</div>
+
+<p class="note">كل جريدة رابط مباشر إلى منشورها على تيليجرام — اضغط عليها تجد
+ملف الجريدة جاهزاً للتحميل من تيليجرام. لا نستضيف أي ملف صحيفة هنا،
+ولا نقدّم تحميلاً مباشراً لأي جريدة. الجرائد المصرية في
+<a href="/#newspapers">الصفحة الرئيسية</a>.</p>
+<p><a href="/">← RliBook — الرئيسية</a></p>
+
+<script>
+(function () {
+  var box = document.getElementById("newspapers-other");
+  function notice(text) {
+    box.textContent = "";
+    var p = document.createElement("p");
+    p.className = "note";
+    p.textContent = text;
+    box.appendChild(p);
+  }
+  function entryItem(e) {
+    var li = document.createElement("li");
+    var a = document.createElement("a");
+    a.href = e.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = e.flag + " " + e.name;
+    li.appendChild(a);
+    var d = document.createElement("span");
+    d.className = "note";
+    d.textContent = " — " + e.country_name + " — " + e.date;
+    li.appendChild(d);
+    return li;
+  }
+  fetch("../newspapers.json")
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (data) {
+      var all = (data.egypt || []).concat(data.other || []);
+      if (!all.length) { notice("لا يوجد جرائد اليوم"); return; }
+      var countries = data.countries || [];
+      box.textContent = "";
+      // Sub-link nav: one link per country, to its section below.
+      var nav = document.createElement("p");
+      nav.className = "note";
+      countries.forEach(function (c, i) {
+        if (i) nav.appendChild(document.createTextNode(" · "));
+        var a = document.createElement("a");
+        a.href = "#country-" + c.code;
+        a.textContent = c.flag + " " + c.name + " (" + c.count + ")";
+        nav.appendChild(a);
+      });
+      box.appendChild(nav);
+      // One section per country, Egypt first (data.countries order).
+      countries.forEach(function (c) {
+        var group = all.filter(function (e) { return e.country === c.code; });
+        if (!group.length) return;
+        var h = document.createElement("h2");
+        h.id = "country-" + c.code;
+        h.textContent = c.flag + " " + c.name;
+        box.appendChild(h);
+        var ul = document.createElement("ul");
+        group.forEach(function (e) { ul.appendChild(entryItem(e)); });
+        box.appendChild(ul);
+      });
+    })
+    .catch(function () { notice("تعذّر تحميل جرائد اليوم الآن — حاول لاحقاً."); });
+})();
+</script>
+</body>
+</html>

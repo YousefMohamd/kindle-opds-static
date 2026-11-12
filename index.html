@@ -20,6 +20,7 @@
          border-radius: 6px; background: #0b5cad; color: #fff;
          text-decoration: none; font-weight: 600; }
   .links a { display: block; padding: 0.35rem 0; }
+  #newspapers-countries a { display: inline; padding: 0; }
   .note { color: #555; font-size: 0.9rem; }
 </style>
 </head>
@@ -47,6 +48,71 @@
   <p class="note">الكتالوج يعمل على Kindle وأي قارئ إلكتروني و iPad وتابلت —
   افتح الرابط في متصفح جهازك وابحث وحمّل مباشرة، من غير تطبيق ولا جيلبريك.</p>
 </div>
+
+<div class="card" id="newspapers">
+  <h2>📰 جرائد اليوم</h2>
+  <div id="newspapers-today"><p class="note">جارٍ تحميل جرائد اليوم…</p></div>
+  <div id="newspapers-countries"></div>
+  <p><a href="/newspapers/">كل صحف اليوم حسب البلد ←</a></p>
+  <p class="note">كل جريدة رابط مباشر إلى منشورها على تيليجرام — اضغط عليها
+  تجد ملف الجريدة جاهزاً للتحميل من تيليجرام. لا نستضيف أي ملف صحيفة هنا،
+  ولا نقدّم تحميلاً مباشراً لأي جريدة.</p>
+</div>
+<script>
+(function () {
+  var box = document.getElementById("newspapers-today");
+  var navBox = document.getElementById("newspapers-countries");
+  function notice(text) {
+    box.textContent = "";
+    var p = document.createElement("p");
+    p.className = "note";
+    p.textContent = text;
+    box.appendChild(p);
+  }
+  function entryItem(e) {
+    var li = document.createElement("li");
+    var a = document.createElement("a");
+    a.href = e.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = e.flag + " " + e.name;
+    li.appendChild(a);
+    var d = document.createElement("span");
+    d.className = "note";
+    d.textContent = " — " + e.date;
+    li.appendChild(d);
+    return li;
+  }
+  fetch("/site/newspapers.json")
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (data) {
+      var list = data.egypt || [];
+      var countries = data.countries || [];
+      // Sub-links: one per non-Egyptian country with papers today,
+      // each to that country's section on the /newspapers/ page.
+      var others = countries.filter(function (c) { return c.code !== "EG"; });
+      if (others.length) {
+        var nav = document.createElement("p");
+        nav.className = "links";
+        others.forEach(function (c, i) {
+          if (i) nav.appendChild(document.createTextNode(" · "));
+          var a = document.createElement("a");
+          a.href = "/newspapers/#country-" + c.code;
+          a.textContent = c.flag + " " + c.name + " (" + c.count + ")";
+          nav.appendChild(a);
+        });
+        navBox.appendChild(nav);
+      }
+      if (data.empty) { notice("لا يوجد جرائد اليوم"); return; }
+      if (!list.length) { notice("لا توجد جرائد مصرية اليوم — جرائد من دول أخرى بالأسفل."); return; }
+      box.textContent = "";
+      var ul = document.createElement("ul");
+      list.forEach(function (e) { ul.appendChild(entryItem(e)); });
+      box.appendChild(ul);
+    })
+    .catch(function () { notice("تعذّر تحميل جرائد اليوم الآن — حاول لاحقاً."); });
+})();
+</script>
 
 <div class="card">
   <h2>بوت RliBook</h2>

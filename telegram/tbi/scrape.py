@@ -83,6 +83,11 @@ class Post:
     url: str = ""  # t.me/<channel>/<id> permalink
     views: Optional[int] = None
     files: List[FileMeta] = field(default_factory=list)
+    # Numeric Telegram channel id (e.g. -1001234567890) when known — from
+    # the API path only. Lets tbi.newspapers build the t.me/c/<id>/<post>
+    # direct link for channels with no public username. The book indexer
+    # never sets or reads this; it is purely additive.
+    channel_id: Optional[int] = None
 
 
 def _parse_views(text: str) -> Optional[int]:
