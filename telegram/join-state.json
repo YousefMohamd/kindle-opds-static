@@ -139,20 +139,20 @@
       "folder": "added"
     },
     "BOOK_HOUSE_INTERNATIONAL": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-12T19:20:45.699431+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "bookjunkieb": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-12T19:23:13.218117+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "bookpdfepub": {
       "status": "pending",
