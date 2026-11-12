@@ -3,9 +3,11 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, a "تحميل" link (the acquisition
-//        URL from the catalog: Drive download, Hindawi EPUB, or DOAB EPUB)
-//        and a search form. No JavaScript, minimal CSS, tiny page —
+//        title, author, library, format, a "📧 أرسل إلى جهازي" send
+//        button (Send-to-Kindle email — the ONLY download path; there
+//        is NO direct-download link: the Kindle browser cannot
+//        download EPUB/PDF) and a search form. No JavaScript, minimal
+//        CSS, tiny page —
 //        built for the Kindle experimental browser.
 //
 // Why this exists: the catalog dictionary links to a book page. The old
@@ -57,11 +59,13 @@
 // EPUB/PDF ("Invalid File Type — Only .AZW, .PRC, .MOBI or .TXT"), and
 // the dialog's ".AZW" does NOT cover ".azw3" (BicBucStriim #287: *.azw3
 // hits the same error, *.mobi downloads). So there is no direct browser
-// download for these books. The "📧 أرسل إلى جهازي" button therefore
-// sends the book by Send-to-Kindle email instead
-// (functions/api/send-to-kindle.js): EPUB by email IS accepted — Amazon
-// converts it to AZW3/KFX on delivery. The old direct-download link
-// stays as a secondary link (PC / USB), and the page says so plainly.
+// download for these books, and the page renders NO direct-download
+// link at all (removed 2026-11-13: device test showed tapping it
+// failed with a white page + error codes 175/101). The "📧 أرسل إلى
+// جهازي" button therefore sends the book by Send-to-Kindle email
+// instead (functions/api/send-to-kindle.js): EPUB by email IS accepted
+// — Amazon converts it to AZW3/KFX on delivery. Email send is the
+// ONLY download path on this page.
 //
 // Free-tier friendly: same cost profile as /opds/search (five static
 // JSON fetches, ~3 MB total, no KV, no D1) + one same-origin
@@ -234,11 +238,7 @@ export async function onRequest(context) {
     const books = await res.json();
     for (const b of books) {
       if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {
-        let href;
-        if (lib.kind === "drive") href = "https://drive.google.com/uc?id=" + b.i + "&export=download";
-        else if (lib.kind === "hindawi") href = "https://www.hindawi.org/books/" + b.i + ".epub";
-        else href = b.i;
-        hits.push({lib, b, href});
+        hits.push({lib, b});
         if (hits.length >= 100) break;
       }
     }
@@ -300,7 +300,7 @@ export async function onRequest(context) {
 
   const shown = hits.length + tg.results.length;
   body += "<p>وجدنا " + shown + " نتيجة لـ «" + esc(q) + "»:</p>\n";
-  for (const {lib, b, href} of hits) {
+  for (const {lib, b} of hits) {
     const sendUrl = "/api/send-to-kindle?lib=" + lib.slug
       + "&amp;id=" + encodeURIComponent(b.i)
       + "&amp;f=" + fmtCode(b)
@@ -309,8 +309,6 @@ export async function onRequest(context) {
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
     body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
-    body += "<p class=\"note\"><a href=\"" + esc(href) + "\">تنزيل مباشر</a> "
-      + "(من متصفح عادي أو USB — متصفح جهازك يرفض EPUB/PDF)</p>\n";
     body += "</div>\n";
   }
 

@@ -7,7 +7,8 @@
 // Function module, and calls onRequest() over HTTP semantics.
 // It asserts the response contract for:
 //   1. the static list renders (titles, author, source/format/date,
-//      t.me link, weekly notice, count + generated date),
+//      t.me link, weekly notice, count + generated date, and NO
+//      direct-download link — email send is the only download path),
 //   2. live KV books are prepended and de-duplicated by URL,
 //   3. missing newest.json + no live books -> the honest fallback
 //      page (no invented books, links to /telegram/ and /book),
@@ -82,6 +83,10 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
   check("1 send button present (lib=tg, handle+post)",
     text.includes("/api/send-to-kindle?lib=tg")
     && text.includes("📧 أرسل إلى جهازي"));
+  check("1 NO direct-download link anywhere (removed from /book 2026-11-13; /new never had one)",
+    !text.includes("تنزيل مباشر")
+    && !text.includes("drive.google.com/uc?id=")
+    && !text.includes("direct download"));
   check("1 source as text under the book info",
     text.includes("المصدر: " + NEWEST.books[0].source));
   check("1 format+date meta present",

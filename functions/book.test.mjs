@@ -130,7 +130,10 @@ tgMode = "throw";
   check("A1 OPDS title: 200", r.status === 200, "status " + r.status);
   check("A1 OPDS title: card + author", r.body.includes("لؤلؤة الحب") && r.body.includes("هربرت جورج ويلز"));
   check("A1 OPDS title: send-to-kindle button", r.body.includes("/api/send-to-kindle?lib=hindawi"));
-  check("A1 OPDS title: direct download link", r.body.includes("https://www.hindawi.org/books/13028368.epub"));
+  check("A1 OPDS title: NO direct-download link (removed 2026-11-13)",
+    !r.body.includes("تنزيل مباشر")
+    && !r.body.includes("https://www.hindawi.org/books/13028368.epub")
+    && !r.body.includes("drive.google.com/uc?id="));
   check("A1 OPDS title: no Telegram section", !r.body.includes("من تيليجرام"));
   check("A1 OPDS title: count line is 1", r.body.includes("وجدنا 1 نتيجة لـ"));
   check("A1 OPDS title: tg-search was called once (attempted, then degraded)",
@@ -199,6 +202,10 @@ tgMode = "ok";
   const tgPos = r.body.indexOf("من تيليجرام");
   check("B2 combined query: OPDS cards before Telegram section",
     opdsPos !== -1 && tgPos !== -1 && opdsPos < tgPos);
+  check("B2 combined query: NO direct-download link on any card (removed 2026-11-13)",
+    !r.body.includes("تنزيل مباشر")
+    && !r.body.includes("drive.google.com/uc?id=")
+    && !r.body.includes("hindawi.org/books/"));
   check("B2 combined query: send footer note present (OPDS half shown)",
     r.body.includes("زر «أرسل إلى جهازي»"));
 }
