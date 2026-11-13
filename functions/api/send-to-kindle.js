@@ -150,20 +150,29 @@ export function magicBytesOk(bytes, fmt) {
   return false;
 }
 
-/** Safe attachment filename. Amazon shows the book by its EPUB/PDF
- *  internal title, not the filename — so a pure-Arabic title, which
- *  has no safe ASCII form, falls back to a generic name and the book
- *  still appears under its real title on the Kindle. */
+/** Safe attachment filename. The book's title IS the filename — kept
+ *  as-is, including Arabic/UTF-8 (Resend and Amazon handle UTF-8
+ *  attachment names; the filename is what the user sees in the
+ *  email/download, and the EPUB's internal title is what the Kindle
+ *  displays). Only filesystem/email-unsafe characters are removed:
+ *  control characters and / \ : ; < > ? * | ". Whitespace runs
+ *  collapse to one space, spaces become underscores, and the stem is
+ *  capped at 100 characters. The file is stamped with our brand and
+ *  its source — "{title}_RliBook_{lib}" — so the user always knows
+ *  it came from RliBook and which library it came from. The generic
+ *  rlibook-{lib}-{shortId} name is used only when the title is empty
+ *  or has no real characters left after sanitization. */
 export function safeFilename(title, lib, id, fmt) {
-  const ascii = (title || "")
-    .replace(/[^\x20-\x7e]/g, "_")
-    .replace(/["/\\:;<>?*|]/g, "_")
+  const clean = (title || "")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .replace(/["/\\:;<>?*|]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[. ]+$/, "");
-  const stem = ascii.replace(/[^A-Za-z0-9 _.-]/g, "_").replace(/_+/g, "_").trim();
-  const clean = stem.replace(/ /g, "_").slice(0, 100).replace(/_+$/, "");
-  if (clean && /[A-Za-z0-9]/.test(clean)) return clean + "." + fmt;
+  const stem = clean.replace(/ /g, "_").slice(0, 100).replace(/_+$/, "");
+  // Brand fingerprint + source, appended to the title.
+  const src = String(lib || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || "lib";
+  if (stem && /[^\s_.]/.test(stem)) return stem + "_RliBook_" + src + "." + fmt;
   const shortId = String(id || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || "book";
   return "rlibook-" + lib + "-" + shortId + "." + fmt;
 }

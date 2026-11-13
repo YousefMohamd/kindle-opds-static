@@ -21,7 +21,7 @@
 //  13. destination daily cap reached -> 429, no send
 //  14. Resend non-2xx -> 502 error page, no crash
 //  15. resolveAcquisitionUrl for drive / hindawi / doab / bad inputs
-//  16. safeFilename: Arabic title -> generic name; Latin title -> kept
+//  16. safeFilename: title kept as-is (Arabic/UTF-8 included); empty or unsafe-only title -> generic name
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production KV, no Resend key, no deploy.
 // All emails / fingerprints below are FAKE test data — never a real address.
@@ -151,8 +151,14 @@ check("resolveAcquisitionUrl doab", resolveAcquisitionUrl("doab", "https://libra
 check("resolveAcquisitionUrl bad lib", resolveAcquisitionUrl("nope", "123") === null);
 check("resolveAcquisitionUrl bad drive id", resolveAcquisitionUrl("khazendar", "a b") === null);
 check("resolveAcquisitionUrl bad hindawi id", resolveAcquisitionUrl("hindawi", "abc") === null);
-check("safeFilename latin title", safeFilename("Yawmiyat Naib", "hindawi", "13028368", "epub") === "Yawmiyat_Naib.epub");
-check("safeFilename arabic title falls back", safeFilename("يوميات نائب في الأرياف", "hindawi", "13028368", "epub") === "rlibook-hindawi-13028368.epub");
+check("safeFilename latin title", safeFilename("Yawmiyat Naib", "hindawi", "13028368", "epub") === "Yawmiyat_Naib_RliBook_hindawi.epub");
+check("safeFilename arabic title kept", safeFilename("يوميات نائب في الأرياف", "hindawi", "13028368", "epub") === "يوميات_نائب_في_الأرياف_RliBook_hindawi.epub");
+check("safeFilename empty title falls back", safeFilename("", "hindawi", "13028368", "epub") === "rlibook-hindawi-13028368.epub");
+check("safeFilename unsafe-only title falls back", safeFilename("///", "hindawi", "13028368", "epub") === "rlibook-hindawi-13028368.epub");
+check("safeFilename slash in title removed", safeFilename("A/B Test", "hindawi", "13028368", "epub") === "AB_Test_RliBook_hindawi.epub");
+check("safeFilename long title truncated to 100 chars", safeFilename("A".repeat(150), "hindawi", "13028368", "epub") === "A".repeat(100) + "_RliBook_hindawi.epub");
+check("safeFilename mixed arabic+latin kept", safeFilename("يوميات Dune", "hindawi", "13028368", "epub") === "يوميات_Dune_RliBook_hindawi.epub");
+check("safeFilename khazendar source stamped", safeFilename("القراءة المثمرة", "khazendar", "12345", "epub") === "القراءة_المثمرة_RliBook_khazendar.epub");
 check("isKindleEmail accepts", isKindleEmail("Name@Kindle.COM") === true);
 check("isKindleEmail rejects gmail", isKindleEmail("a@gmail.com") === false);
 check("magicBytesOk epub PK", magicBytesOk(FAKE_EPUB, "epub") === true);
