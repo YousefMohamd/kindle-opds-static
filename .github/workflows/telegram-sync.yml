@@ -115,6 +115,57 @@ jobs:
       - name: Build the static site (staging)
         run: |
           tbi export-static --db index.db --out ../site/telegram.new --report index-report.md
+          # Job default cwd is telegram/ (see defaults above), so newest
+          # needs PYTHONPATH=.. to find the telegram package at repo root.
+          # Protection layer for newest.json (the /new page's feed):
+          #   1. RETRY — run newest.py, and on failure run it a second
+          #      time before giving up (a transient shard-read failure
+          #      should not cost the day's feed).
+          #   2. VALIDATE — the new file must be valid JSON, have a
+          #      non-empty 'books' list, and be generated TODAY
+          #      (generated_at, UTC — newest.py stamps it at build
+          #      time). The newest BOOK's post date is deliberately
+          #      NOT required to be today: on a quiet day no book was
+          #      posted today, and the newest book is legitimately
+          #      older — requiring it would reject a good file.
+          #   3. FALLBACK — if the new file is missing or invalid,
+          #      restore the PREVIOUS newest.json (live site/telegram/)
+          #      into staging; if no previous file exists, delete the
+          #      bad one so a broken file is never published (/new
+          #      then shows its honest "not published yet" message).
+          # Non-blocking throughout (|| echo / || true): a newest.json
+          # failure must never kill the day's sync — the previous
+          # newest.json stays live instead.
+          PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
+            || PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
+            || echo "newest.json regeneration failed twice — keeping the previous newest.json"
+          python3 - <<'PYEOF' || true
+          import json, shutil
+          from datetime import datetime, timezone
+          from pathlib import Path
+          new = Path("../site/telegram.new/newest.json")
+          prev = Path("../site/telegram/newest.json")
+          today = datetime.now(timezone.utc).date().isoformat()
+          ok = False
+          try:
+              data = json.loads(new.read_text(encoding="utf-8"))
+              books = data.get("books")
+              gen = str(data.get("generated_at", ""))[:10]
+              n = len(books) if isinstance(books, list) else -1
+              ok = isinstance(books, list) and len(books) > 0 and gen == today
+              print(f"newest.json check: books={n}, generated_at={gen!r}, today={today}, valid={ok}")
+          except Exception as exc:
+              print(f"newest.json check FAILED ({exc}) — treating as invalid")
+          if not ok:
+              if prev.is_file():
+                  shutil.copyfile(prev, new)
+                  print("newest.json invalid — restored the previous newest.json into staging")
+              elif new.is_file():
+                  new.unlink()
+                  print("newest.json invalid and no previous file exists — removed the bad file so nothing broken is published")
+              else:
+                  print("newest.json missing and no previous file exists — /new will show its honest empty message")
+          PYEOF
           cp ../site/telegram/index.html ../site/telegram.new/index.html
           ls -la ../site/telegram.new
 

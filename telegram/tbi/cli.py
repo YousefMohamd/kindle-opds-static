@@ -39,7 +39,7 @@ from .api_history import (
     load_api_credentials,
 )
 from .entity_cache import DEFAULT_ENTITY_CACHE, EntityCache, ResolveFloodWait
-from .books import BOOK_EXTS, dedupe_key, parse_title_author
+from .books import BOOK_EXTS, NEW_FORMATS, dedupe_key, parse_title_author
 from .config import load_config
 from .export_static import export_static
 from .exports import is_book_file, parse_export
@@ -74,6 +74,24 @@ def _book_file_dict(
     }
 
 
+def _book_files_for_post(post) -> list[dict]:
+    """Book-file dicts for one post: only files whose ext is in
+    ``BOOK_EXTS``. Shared by the normal consumer and the re-scan, so
+    both write identical rows for the same post."""
+    return [
+        _book_file_dict(
+            f.filename,
+            f.ext,
+            f.size_text,
+            f.size_bytes,
+            post.text,
+            post.url,
+        )
+        for f in post.files
+        if f.ext in BOOK_EXTS
+    ]
+
+
 def _consume_walk(store: Store, sid: int, username: str, posts, state: dict) -> None:
     """Consume one walk iterator into the store.
 
@@ -88,18 +106,7 @@ def _consume_walk(store: Store, sid: int, username: str, posts, state: dict) -> 
         db_pid = store.upsert_post(
             sid, post.post_id, post.date, post.text, post.url
         )
-        book_files = [
-            _book_file_dict(
-                f.filename,
-                f.ext,
-                f.size_text,
-                f.size_bytes,
-                post.text,
-                post.url,
-            )
-            for f in post.files
-            if f.ext in BOOK_EXTS
-        ]
+        book_files = _book_files_for_post(post)
         store.replace_files_for_post(db_pid, book_files)
         state["count"] += 1
         state["files"] += len(book_files)
@@ -125,6 +132,52 @@ def _consume_walk(store: Store, sid: int, username: str, posts, state: dict) -> 
     store.set_progress(sid, state["oldest"], state["newest"])
 
 
+def _consume_rescan(store: Store, sid: int, username: str, posts, state: dict) -> None:
+    """Consume one re-scan iterator into the store (``--rescan-formats``).
+
+    Identical writes to :func:`_consume_walk` — the post is upserted
+    and its files are REPLACED, never appended — so a book indexed
+    before the format expansion keeps exactly one row and a re-run
+    changes nothing. The only difference is accounting: ``state``
+    also gains ``recovered`` (files in the 16 newly-added formats
+    that earlier runs skipped) and ``recovered_posts`` (posts that
+    gained at least one such file), which is what the run reports.
+    """
+    for post in posts:
+        db_pid = store.upsert_post(
+            sid, post.post_id, post.date, post.text, post.url
+        )
+        book_files = _book_files_for_post(post)
+        recovered = [f for f in book_files if f["ext"] in NEW_FORMATS]
+        store.replace_files_for_post(db_pid, book_files)
+        state["count"] += 1
+        state["files"] += len(book_files)
+        state["recovered"] = state.get("recovered", 0) + len(recovered)
+        if recovered:
+            state["recovered_posts"] = state.get("recovered_posts", 0) + 1
+        state["oldest"] = (
+            post.post_id
+            if state["oldest"] is None
+            else min(state["oldest"], post.post_id)
+        )
+        state["newest"] = (
+            post.post_id
+            if state["newest"] is None
+            else max(state["newest"], post.post_id)
+        )
+        if state["count"] % 20 == 0:
+            store.commit()
+            store.set_progress(sid, state["oldest"], state["newest"])
+            print(
+                f"[...] @{username}: {state['count']} posts re-scanned "
+                f"so far, {state.get('recovered', 0)} new-format files "
+                "recovered",
+                flush=True,
+            )
+    store.commit()
+    store.set_progress(sid, state["oldest"], state["newest"])
+
+
 def cmd_index(args: argparse.Namespace) -> int:
     try:
         cfg = load_config(args.config)
@@ -141,7 +194,17 @@ def cmd_index(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.full:
+    if args.rescan_formats and (args.full or args.new_only or args.backfill):
+        print(
+            "Error: --rescan-formats cannot be combined with --full, "
+            "--new-only or --backfill — it re-walks only the "
+            "already-indexed range (oldest..newest) per source.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.rescan_formats:
+        mode = "rescan-formats"
+    elif args.full:
         mode = "full"
     elif args.new_only:
         mode = "new-only"
@@ -235,7 +298,16 @@ def cmd_index(args: argparse.Namespace) -> int:
             )
             new_only = bool(args.new_only and prev_count and prev_newest is not None)
             backfill = bool(args.backfill)
-            if backfill:
+            rescan = bool(args.rescan_formats)
+            if rescan:
+                scope = "rescan-formats"
+                print(
+                    f"[...] @{entry.username}: re-scan — re-walking the "
+                    f"indexed range {prev_oldest}..{prev_newest} to pick "
+                    "up files in the 16 new formats",
+                    flush=True,
+                )
+            elif backfill:
                 scope = "backfill"
                 print(
                     f"[...] @{entry.username}: backfill — one block of "
@@ -264,19 +336,56 @@ def cmd_index(args: argparse.Namespace) -> int:
                     f"[...] @{entry.username}: indexing from the newest post",
                     flush=True,
                 )
-            # Seed the span from the previous run when resuming or
-            # backfilling, so a run that finds nothing new does not
-            # wipe the stored coverage back to NULL.
+            # Seed the span from the previous run when resuming,
+            # backfilling or re-scanning, so a run that finds nothing
+            # new does not wipe the stored coverage back to NULL.
             state = {
                 "count": 0,
                 "files": 0,
-                "oldest": prev_oldest if (resumable or backfill) else None,
-                "newest": prev_newest if (resumable or backfill) else None,
+                "recovered": 0,
+                "recovered_posts": 0,
+                "oldest": prev_oldest
+                if (resumable or backfill or rescan)
+                else None,
+                "newest": prev_newest
+                if (resumable or backfill or rescan)
+                else None,
             }
             backfill_posts = 0
             backfill_complete = False
             try:
-                if backfill:
+                if rescan:
+                    # Re-walk ONLY the already-indexed range, newest
+                    # down to oldest: start_before is exclusive
+                    # (below newest+1 == at newest) and min_id stops
+                    # at/below oldest-1 (so oldest itself is kept).
+                    # Posts outside the range are never fetched.
+                    # A source with no indexed posts yet has no range
+                    # to re-scan — it is skipped, not walked.
+                    if (
+                        prev_count
+                        and prev_oldest is not None
+                        and prev_newest is not None
+                    ):
+                        _consume_rescan(
+                            store,
+                            sid,
+                            entry.username,
+                            walk(
+                                entry.username,
+                                start_before=prev_newest + 1,
+                                min_id=prev_oldest - 1,
+                                delay=cfg.settings.delay_seconds,
+                            ),
+                            state,
+                        )
+                    else:
+                        print(
+                            f"[skip] @{entry.username}: no indexed range "
+                            "yet — index it first, then re-scan",
+                            flush=True,
+                        )
+                elif backfill:
                     # Phase 1: new posts above the stored newest.
                     if prev_count and prev_newest is not None:
                         _consume_walk(
@@ -379,6 +488,8 @@ def cmd_index(args: argparse.Namespace) -> int:
                     )
                 oldest, newest = state["oldest"], state["newest"]
                 count, files = state["count"], state["files"]
+                recovered = state.get("recovered", 0)
+                recovered_posts = state.get("recovered_posts", 0)
                 note = (
                     f"Walked to post {oldest} (oldest reached). "
                     "The preview has a coverage ceiling: reaching the "
@@ -398,17 +509,37 @@ def cmd_index(args: argparse.Namespace) -> int:
                             f"below post {oldest}."
                         )
                     )
+                if rescan:
+                    note = (
+                        f"Re-scan-formats: revisited {count} posts in the "
+                        f"indexed range {prev_oldest}..{prev_newest} and "
+                        f"recovered {recovered} files in the 16 new "
+                        f"formats across {recovered_posts} posts "
+                        "(already-indexed books were re-written "
+                        "identically, never duplicated). DJVU/CBZ/CHM/"
+                        "LIT/LRF/PDB files recovered this way still need "
+                        "conversion before email send. The preview has a "
+                        "coverage ceiling — for the full range including "
+                        "groups, use `tbi api-backfill --rescan-formats`."
+                    )
                 store.set_source_status(
                     sid, "ok", note=note, oldest=oldest, newest=newest,
                     last_indexed=_now_iso(),
                 )
-                print(f"[ok] @{entry.username}: {count} posts, {files} book files")
+                if rescan:
+                    print(
+                        f"[ok] @{entry.username}: re-scanned {count} posts, "
+                        f"recovered {recovered} new-format files in "
+                        f"{recovered_posts} posts"
+                    )
+                else:
+                    print(f"[ok] @{entry.username}: {count} posts, {files} book files")
                 run.channels.append(
                     ChannelRun(
                         username=entry.username,
                         status="ok",
                         posts_new=count,
-                        files_new=files,
+                        files_new=recovered if rescan else files,
                         scope=scope,
                         note=note,
                         backfill_posts=backfill_posts,
@@ -751,6 +882,14 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.rescan_formats and (args.full or args.new_only or args.backfill):
+        print(
+            "Error: --rescan-formats cannot be combined with --full, "
+            "--new-only or --backfill — it re-walks only the "
+            "already-indexed range (oldest..newest) per source.",
+            file=sys.stderr,
+        )
+        return 2
     if args.channel:
         found = find_config_entry(cfg, args.channel)
         if found is None:
@@ -794,7 +933,9 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
     db_path = args.db or cfg.settings.db
     limit = cfg.settings.limit_per_channel or None
     block = args.backfill_block
-    if args.full:
+    if args.rescan_formats:
+        mode = "api-rescan-formats"
+    elif args.full:
         mode = "api-full"
     elif args.new_only:
         mode = "api-new-only"
@@ -831,21 +972,26 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
     stop_after_target = {"resolve_flood_wait": None}
 
     async def _consume_api(store_: Store, sid: int, name: str, state: dict,
-                           **kwargs) -> None:
+                           rescan: bool = False, **kwargs) -> None:
         """Drain one API iterator into the store in batches of 50.
 
         Batches keep memory bounded on a giant's full history; the
         shared ``state`` accumulates across batches (and across the
         new-posts / backfill phases) exactly like ``_consume_walk``.
+        With ``rescan=True`` the batches go through
+        :func:`_consume_rescan` instead, so recovered new-format
+        files are counted (writes are identical — replace, never
+        append).
         """
+        consume = _consume_rescan if rescan else _consume_walk
         batch = []
         async for post in iter_api_posts(client, name, cache=cache, **kwargs):
             batch.append(post)
             if len(batch) >= 50:
-                _consume_walk(store_, sid, name, iter(batch), state)
+                consume(store_, sid, name, iter(batch), state)
                 batch.clear()
         if batch:
-            _consume_walk(store_, sid, name, iter(batch), state)
+            consume(store_, sid, name, iter(batch), state)
 
     async def _target(kind: str, name: str, label: str) -> bool:
         """Index one source. Returns True when the run must stop
@@ -864,7 +1010,10 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
         )
         new_only = bool(args.new_only and prev_count and prev_newest is not None)
         backfill = bool(args.backfill)
-        if backfill:
+        rescan = bool(args.rescan_formats)
+        if rescan:
+            scope = "api-rescan-formats"
+        elif backfill:
             scope = "api-backfill"
         elif new_only:
             scope = "api-new-only"
@@ -877,14 +1026,37 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
         state = {
             "count": 0,
             "files": 0,
-            "oldest": prev_oldest if (resumable or backfill) else None,
-            "newest": prev_newest if (resumable or backfill) else None,
+            "recovered": 0,
+            "recovered_posts": 0,
+            "oldest": prev_oldest if (resumable or backfill or rescan) else None,
+            "newest": prev_newest if (resumable or backfill or rescan) else None,
         }
         backfill_posts = 0
         backfill_complete = False
         print(f"[...] @{name}: API backfill ({scope})", flush=True)
         try:
-            if backfill:
+            if rescan:
+                # Same range rule as the preview re-scan: only the
+                # already-indexed range, newest down to oldest.
+                # The API path is the complete one — it also covers
+                # groups, which the preview cannot see at all.
+                if (
+                    prev_count
+                    and prev_oldest is not None
+                    and prev_newest is not None
+                ):
+                    await _consume_api(
+                        store, sid, name, state, rescan=True,
+                        start_before=prev_newest + 1,
+                        min_id=prev_oldest - 1,
+                    )
+                else:
+                    print(
+                        f"[skip] @{name}: no indexed range yet — index "
+                        "it first, then re-scan",
+                        flush=True,
+                    )
+            elif backfill:
                 if prev_count and prev_newest is not None:
                     await _consume_api(
                         store, sid, name, state, min_id=prev_newest
@@ -913,6 +1085,8 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
                 await _consume_api(store, sid, name, state, limit=limit)
             oldest, newest = state["oldest"], state["newest"]
             count, files = state["count"], state["files"]
+            recovered = state.get("recovered", 0)
+            recovered_posts = state.get("recovered_posts", 0)
             if backfill:
                 note = (
                     f"API backfill block: {backfill_posts} posts; oldest "
@@ -925,6 +1099,17 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
                         f"below post {oldest}."
                     )
                 )
+            elif rescan:
+                note = (
+                    f"API re-scan-formats: revisited {count} posts in the "
+                    f"indexed range {prev_oldest}..{prev_newest} and "
+                    f"recovered {recovered} files in the 16 new formats "
+                    f"across {recovered_posts} posts (already-indexed "
+                    "books were re-written identically, never "
+                    "duplicated). DJVU/CBZ/CHM/LIT/LRF/PDB files "
+                    "recovered this way still need conversion before "
+                    "email send."
+                )
             else:
                 note = (
                     f"API history walked to post {oldest} (oldest "
@@ -936,18 +1121,25 @@ def cmd_api_backfill(args: argparse.Namespace) -> int:
                 sid, "ok", note=note, oldest=oldest, newest=newest,
                 last_indexed=_now_iso(),
             )
-            print(f"[ok] @{name}: {count} posts, {files} book files (API)")
+            if rescan:
+                print(
+                    f"[ok] @{name}: re-scanned {count} posts, recovered "
+                    f"{recovered} new-format files in {recovered_posts} "
+                    "posts (API)"
+                )
+            else:
+                print(f"[ok] @{name}: {count} posts, {files} book files (API)")
             record = (
                 ChannelRun(
                     username=name, status="ok", posts_new=count,
-                    files_new=files, scope=scope, note=note,
+                    files_new=recovered if rescan else files, scope=scope, note=note,
                     backfill_posts=backfill_posts,
                     backfill_complete=backfill_complete,
                 )
                 if kind == "channel"
                 else GroupRun(
                     name=name, status="ok", posts_new=count,
-                    files_new=files, note=note,
+                    files_new=recovered if rescan else files, note=note,
                 )
             )
             if kind == "channel":
@@ -1440,6 +1632,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Posts per backfill block per channel (default: 3000)",
     )
     pi.add_argument(
+        "--rescan-formats", action="store_true",
+        help="Re-walk ONLY the already-indexed range (oldest..newest) "
+        "per channel to pick up files in the 16 formats added by the "
+        "v0.5 expansion (DOC/DOCX, DJVU/DJV, FB2, CBR/CBZ, RTF, AZW, "
+        "PRC, ODT, CHM, LIT, LRF, PDB, KEPUB) that earlier runs "
+        "skipped. Idempotent: already-indexed books are re-written "
+        "identically, never duplicated. The preview has a coverage "
+        "ceiling — for the full range including groups, use "
+        "`tbi api-backfill --rescan-formats`.",
+    )
+    pi.add_argument(
         "--report", default=None,
         help="Where to write index-report.md (default: next to the DB)",
     )
@@ -1520,6 +1723,19 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument(
         "--backfill-block", type=int, default=3000, metavar="N",
         help="Posts per backfill block per channel (default: 3000)",
+    )
+    pa.add_argument(
+        "--rescan-formats", action="store_true",
+        help="Re-walk ONLY the already-indexed range (oldest..newest) "
+        "per channel/group via the API to pick up files in the 16 "
+        "formats added by the v0.5 expansion (DOC/DOCX, DJVU/DJV, "
+        "FB2, CBR/CBZ, RTF, AZW, PRC, ODT, CHM, LIT, LRF, PDB, "
+        "KEPUB) that earlier runs skipped. Idempotent: "
+        "already-indexed books are re-written identically, never "
+        "duplicated. This is the complete re-scan — unlike the "
+        "preview it also covers groups. DJVU/CBZ/CHM/LIT/LRF/PDB "
+        "files recovered this way still need conversion before "
+        "email send.",
     )
     pa.add_argument(
         "--report", default=None,

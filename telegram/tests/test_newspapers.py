@@ -10,6 +10,7 @@ dates) so the tests are deterministic.
 import asyncio
 import json
 import re
+import shutil
 import sys
 from datetime import date
 from pathlib import Path
@@ -336,29 +337,160 @@ def test_build_data_countries_egypt_first_with_counts():
 
 
 # ---------------------------------------------------------------------------
-# Pages: per-country sub-links, empty-day notice, no served PDF links
+# Static pages: the list is baked into the HTML at generation time (no
+# fetch — the Kindle browser has no fetch()), per-country sub-links,
+# empty-day notice, no served PDF links
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def test_pages_render_country_sublinks_and_empty_notice():
+def _sample_data():
+    def ent(name, country, region, url):
+        info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+        return {"name": name, "country": country, "country_name": info["name"],
+                "flag": info["flag"], "region": region, "date": "2026-11-12",
+                "url": url, "source": "arabJournalism"}
+
+    return newspapers.build_data(TODAY, [
+        ent("الأهرام", "EG", "egypt", "https://t.me/arabJournalism/1"),
+        ent("المصري اليوم", "EG", "egypt", "https://t.me/arabJournalism/7"),
+        ent("الرياض", "SA", "gulf", "https://t.me/arabJournalism/3"),
+        ent("الشرق الأوسط", "GB", "london", "https://t.me/arabJournalism/2"),
+    ], [])
+
+
+def test_render_home_static_contains_entries_and_no_fetch():
+    html = newspapers.render_home_section(_sample_data())
+    # The paper names and their direct message links are IN the HTML —
+    # no JavaScript is needed to show them.
+    assert "الأهرام" in html and "المصري اليوم" in html
+    assert 'href="https://t.me/arabJournalism/1"' in html
+    assert "🇪🇬" in html and "2026-11-12" in html
+    assert "fetch(" not in html
+    # Sub-links to the other countries' sections on /newspapers/.
+    assert 'href="/newspapers/#country-SA"' in html
+    assert "🇸🇦 السعودية (1)" in html
+    assert 'href="/newspapers/#country-GB"' in html
+    # Egypt itself gets no sub-link (its papers are on this page).
+    assert "#country-EG" not in html
+
+
+def test_render_home_static_egypt_empty_notice():
+    data = _sample_data()
+    data["egypt"] = []
+    data["empty"] = False
+    html = newspapers.render_home_section(data)
+    assert "لا توجد جرائد مصرية اليوم" in html
+    # The other countries' papers are still reachable from here.
+    assert 'href="/newspapers/#country-SA"' in html
+    assert "fetch(" not in html
+
+
+def test_render_static_empty_day_notice():
+    data = newspapers.build_data(TODAY, [], [])
+    assert data["empty"] is True
+    for html in (newspapers.render_home_section(data),
+                 newspapers.render_other_section(data)):
+        assert "لا يوجد جرائد اليوم" in html
+        assert "fetch(" not in html
+        assert "<ul>" not in html
+
+
+def test_render_other_static_sections_egypt_first():
+    html = newspapers.render_other_section(_sample_data())
+    assert "fetch(" not in html
+    # Sub-link nav with counts, then one anchored section per country.
+    assert 'href="#country-EG"' in html
+    assert "🇪🇬 مصر (2)" in html and "🇸🇦 السعودية (1)" in html
+    eg = html.index('id="country-EG"')
+    sa = html.index('id="country-SA"')
+    gb = html.index('id="country-GB"')
+    assert eg < sa < gb  # Egypt first, then Gulf, then London.
+    # Entries carry country name + date, linked to their post.
+    assert "الأهرام" in html and 'href="https://t.me/arabJournalism/1"' in html
+    assert "مصر — 2026-11-12" in html
+    assert "الشرق الأوسط" in html and "لندن — 2026-11-12" in html
+    assert not re.search(r'href="[^"]*\.pdf', html, re.IGNORECASE)
+
+
+def test_render_static_escapes_names():
+    data = newspapers.build_data(TODAY, [{
+        "name": 'جريدة <script>alert("x")</script>', "country": "EG",
+        "country_name": "مصر", "flag": "🇪🇬", "region": "egypt",
+        "date": "2026-11-12", "url": "https://t.me/arabJournalism/1",
+        "source": "arabJournalism"}], [])
+    html = newspapers.render_home_section(data)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_write_pages_roundtrip_and_idempotent(tmp_path):
+    # Copy the real page templates into a scratch repo root, bake a
+    # day's papers, and check the result renders with JS disabled.
+    shutil.copy(REPO_ROOT / "index.html", tmp_path / "index.html")
+    (tmp_path / "site" / "newspapers").mkdir(parents=True)
+    shutil.copy(REPO_ROOT / "site" / "newspapers" / "index.html",
+                tmp_path / "site" / "newspapers" / "index.html")
+    data = _sample_data()
+    written = newspapers.write_pages(data, tmp_path)
+    assert len(written) == 2
+    front = (tmp_path / "index.html").read_text(encoding="utf-8")
+    other = (tmp_path / "site" / "newspapers" / "index.html").read_text(encoding="utf-8")
+    for html in (front, other):
+        assert "fetch(" not in html
+        assert newspapers.STATIC_BEGIN in html and newspapers.STATIC_END in html
+        assert not re.search(r'href="[^"]*\.pdf', html, re.IGNORECASE)
+    assert "الأهرام" in front and 'href="https://t.me/arabJournalism/1"' in front
+    assert 'id="country-EG"' in other and 'id="country-SA"' in other
+    # Baking twice replaces the fragment instead of duplicating it.
+    newspapers.write_pages(data, tmp_path)
+    front2 = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert front2.count("الأهرام") == front.count("الأهرام")
+    assert front2.count(newspapers.STATIC_BEGIN) == 1
+
+
+def test_write_pages_skips_page_without_markers(tmp_path, capsys):
+    (tmp_path / "index.html").write_text("<html>no markers</html>", encoding="utf-8")
+    (tmp_path / "site" / "newspapers").mkdir(parents=True)
+    (tmp_path / "site" / "newspapers" / "index.html").write_text(
+        "<html>no markers</html>", encoding="utf-8")
+    written = newspapers.write_pages(_sample_data(), tmp_path)
+    assert written == []
+    assert "no static markers" in capsys.readouterr().out
+
+
+def test_main_write_empty_bakes_pages(tmp_path):
+    (tmp_path / "site" / "newspapers").mkdir(parents=True)
+    shutil.copy(REPO_ROOT / "index.html", tmp_path / "index.html")
+    shutil.copy(REPO_ROOT / "site" / "newspapers" / "index.html",
+                tmp_path / "site" / "newspapers" / "index.html")
+    out = tmp_path / "site" / "newspapers.json"
+    rc = newspapers.main(["--out", str(out), "--pages-root", str(tmp_path),
+                          "--date", "2026-11-12", "--write-empty"])
+    assert rc == 0
+    front = (tmp_path / "index.html").read_text(encoding="utf-8")
+    other = (tmp_path / "site" / "newspapers" / "index.html").read_text(encoding="utf-8")
+    assert "لا يوجد جرائد اليوم" in front and "لا يوجد جرائد اليوم" in other
+    assert "fetch(" not in front and "fetch(" not in other
+
+
+def test_committed_pages_are_static_no_fetch():
     front = (REPO_ROOT / "index.html").read_text(encoding="utf-8")
     other = (REPO_ROOT / "site" / "newspapers" / "index.html").read_text(encoding="utf-8")
     for html in (front, other):
-        # Both pages read the per-country list and show the empty-day
-        # notice when nothing is found anywhere.
-        assert "data.countries" in html
-        assert "لا يوجد جرائد اليوم" in html
-        assert "#country-" in html
+        # The list is baked in as plain HTML: no fetch(), no JS at all
+        # is needed for the newspapers list to render.
+        assert "fetch(" not in html
+        assert newspapers.STATIC_BEGIN in html and newspapers.STATIC_END in html
+        # The loading placeholder is gone — the page shows real content
+        # (an empty-day notice, or the paper list) with JS disabled.
+        assert "جارٍ تحميل جرائد اليوم" not in html
+        assert ("لا يوجد جرائد اليوم" in html
+                or "لا توجد جرائد مصرية اليوم" in html
+                or ("<ul>" in html and "t.me/" in html))
         # No PDF link is ever served from our site.
         assert not re.search(r'href="[^"]*\.pdf', html, re.IGNORECASE)
-    # Front page: Egypt first, sub-links to the other countries' sections.
-    assert '"/newspapers/#country-" + c.code' in front
-    assert 'c.code !== "EG"' in front
-    # Other-papers page: one anchored section per country, Egypt first.
-    assert 'h.id = "country-" + c.code' in other
-    assert "data.egypt" in other and "data.other" in other
 
 
 def test_generated_data_has_no_pdf_links(tmp_path):
@@ -424,7 +556,7 @@ def test_collect_preview_ok_writes_file(monkeypatch, tmp_path):
 
 def test_main_write_empty_flag(tmp_path):
     out = tmp_path / "newspapers.json"
-    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12", "--write-empty"])
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12", "--write-empty", "--no-pages"])
     assert rc == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["empty"] is True

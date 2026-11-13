@@ -1,0 +1,96 @@
+# Telegram real-time sync — frequent new-only check (v1.0).
+#
+# Runs `tbi.live_sync` every 5 minutes: checks every configured
+# channel/group for posts newer than the last check (Telegram API,
+# `min_id` — covers groups too, which the public preview cannot see)
+# and writes any new book posts to the Cloudflare KV live-additions
+# key (`live:additions`) immediately. The bot's /resources and the
+# Telegram search endpoint read that key, so a new book is visible
+# within ~5-7 minutes of being posted (cron 5 min + check ~1-2 min +
+# KV write ~instant) — without waiting for the daily 03:00 UTC sync
+# and its Pages deploy.
+#
+# This is the DEPLOYABLE real-time path (no always-on host, no card,
+# $0 — public repo, unlimited Actions minutes). It does NOT meet the
+# strict 1-minute goal: only the Telethon listener (`tbi.listener`,
+# event-driven, ~2 seconds) can do that, and it needs an always-on
+# host (see rlibook-realtime-sync/DESIGN.md — no card-free always-on
+# host exists for it). This check is also the safety net that catches
+# anything the listener missed while it was down.
+#
+# Durability: this workflow does NOT commit index.db (the runner is
+# ephemeral and committing every 5 minutes would flood the repo). The
+# books are in KV immediately (visible) and the daily sync (03:00 UTC)
+# re-discovers the same new posts from the committed index.db and
+# commits them durably. The KV append dedupes by book id, so a book
+# found by both this check and the daily sync is never counted twice.
+# The daily sync resets `live:additions` after it publishes, so the
+# key always holds "books added since the last daily publish".
+#
+# Secrets required (repo Settings -> Secrets and variables -> Actions):
+#   TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
+#     (already configured — same as the api-backfill workflow)
+#   CLOUDFLARE_API_TOKEN  (needs "Workers KV Storage: Edit" on RLIBOOK_KV)
+#   CLOUDFLARE_ACCOUNT_ID (the Cloudflare account id)
+#   RLIBOOK_KV_ID         (the RLIBOOK_KV namespace id)
+# The Cloudflare secrets are NEW — the owner adds them; no token value
+# is ever in the repo.
+name: telegram-realtime
+
+on:
+  schedule:
+    # GitHub Actions cron minimum is 5 minutes.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Two realtime runs must never overlap: they share the KV cursor.
+concurrency:
+  group: kindle-opds-static-telegram-realtime
+  cancel-in-progress: false
+
+jobs:
+  live-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: telegram/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Decompress the seed DB (for the cursor seed)
+        # Same as the daily sync: the repo stores ONLY index.db.gz.
+        # live_sync seeds its KV cursor from the DB's newest_post_id
+        # on the first run (so it catches every post since the last
+        # daily sync). The decompressed DB is never committed here —
+        # this workflow only writes to KV; the daily sync owns the
+        # durable index.db.
+        run: |
+          if [ -f index.db.gz ]; then
+            gunzip -f index.db.gz
+          elif [ -f index.db ]; then
+            echo "No index.db.gz — using the raw index.db."
+          else
+            echo "::warning::telegram/index.db.gz is missing — the cursor will seed from the live newest post instead."
+          fi
+
+      - name: Live sync (new-only -> KV live-additions)
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: python -m tbi.live_sync --config channels.yaml --db index.db

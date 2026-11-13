@@ -12,6 +12,30 @@
 # preview job (.github/workflows/telegram-sync.yml) stays the default
 # and never uses the API.
 #
+# MODES (input `mode`):
+#   backfill (default) / new-only — as before.
+#   rescan-formats — re-walk the already-indexed range of each source
+#   to recover book files in the 16 formats the v0.5 expansion added
+#   (DOCX/DOC/DJVU/CBZ/CHM/LIT/LRF/PDB/...). A full re-scan is ~40+
+#   hours over all 211 sources, so it runs CHUNKED: each dispatch
+#   processes chunk_size sources (default 10, ~2 h) starting at
+#   chunk_index * chunk_size in config order (channels first, then
+#   groups), one `tbi api-backfill --rescan-formats --channel <name>`
+#   per source. Dispatch chunk 0, then 1, 2, ... until a chunk comes
+#   back empty. Resume is by state file: each finished source is
+#   recorded in telegram/rescan-progress.json (committed by the
+#   Publish step, and by the failure step on timeout), and the next
+#   run of the same chunk skips sources already in it — so a timeout
+#   loses at most the in-progress source and re-dispatching the same
+#   chunk resumes instead of redoing it. A --channel input overrides
+#   the chunk (one source only, e.g. to retry a failed one). The
+#   re-scan is idempotent (files are replaced, never appended), so
+#   re-running a source is safe, just slower. When the whole cycle
+#   is done, delete telegram/rescan-progress.json from the repo
+#   before any future re-scan cycle (a stale file would skip
+#   everything). DJVU/CBZ/CHM/LIT/LRF/PDB files recovered this way
+#   still need conversion before email send.
+#
 # SECRETS (hard condition, set by the owner): the API credentials
 # (api_id, api_hash, session string) live ONLY as GitHub Actions
 # secrets — TELEGRAM_API_ID, TELEGRAM_API_HASH,
@@ -49,13 +73,24 @@ on:
         default: ""
         type: string
       mode:
-        description: "Backfill (new posts + one block below oldest) or new-only"
+        description: "Backfill (new posts + one block below oldest), new-only, or rescan-formats (re-walk indexed ranges to recover the 16 new formats)"
         required: false
         default: "backfill"
         type: choice
         options:
           - backfill
           - new-only
+          - rescan-formats
+      chunk_index:
+        description: "Re-scan chunk to run (0-based; only used with mode rescan-formats)"
+        required: false
+        default: "0"
+        type: string
+      chunk_size:
+        description: "Sources per re-scan chunk run (only used with mode rescan-formats)"
+        required: false
+        default: "10"
+        type: string
       backfill_block:
         description: "Posts per backfill block per channel"
         required: false
@@ -137,14 +172,102 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
         run: |
-          ARGS="--backfill --backfill-block ${{ inputs.backfill_block }}"
-          if [ "${{ inputs.mode }}" = "new-only" ]; then
-            ARGS="--new-only"
+          if [ "${{ inputs.mode }}" = "rescan-formats" ]; then
+            # --rescan-formats chunk (see the header comment): one
+            # `tbi api-backfill --rescan-formats --channel <name>`
+            # per source in this chunk, in config order (channels
+            # first, then groups). Each source commits its writes to
+            # index.db as it finishes (replace, never append), so a
+            # timeout loses at most the in-progress source and the
+            # failure step below still saves the DB. A --channel
+            # input overrides the chunk (one source only).
+            CHUNK_INDEX="${{ inputs.chunk_index }}"
+            CHUNK_SIZE="${{ inputs.chunk_size }}"
+            if [ -n "${{ inputs.channel }}" ]; then
+              printf '%s\n' "${{ inputs.channel }}" > /tmp/rescan-chunk.txt
+            else
+              python3 -c "
+          import json
+          import re
+          import sys
+          from pathlib import Path
+          import yaml
+          def normalize(link):
+              link = (link or '').strip()
+              if not link:
+                  return None
+              link = re.sub(r'^https?://', '', link, flags=re.IGNORECASE)
+              link = re.sub(r'^t\.me/(s/)?', '', link, flags=re.IGNORECASE)
+              link = link.lstrip('@').split('/')[0].split('?')[0].strip()
+              return link or None
+          try:
+              chunk_index = int(sys.argv[1])
+              chunk_size = int(sys.argv[2])
+          except ValueError:
+              print('::error::chunk_index and chunk_size must be integers (got ' + repr(sys.argv[1]) + ' and ' + repr(sys.argv[2]) + ').', file=sys.stderr)
+              raise SystemExit(2)
+          if chunk_index < 0 or chunk_size < 1:
+              print('::error::chunk_index must be >= 0 and chunk_size >= 1.', file=sys.stderr)
+              raise SystemExit(2)
+          cfg = yaml.safe_load(Path('channels.yaml').read_text(encoding='utf-8')) or {}
+          sources = []
+          for item in cfg.get('channels') or []:
+              link = item if isinstance(item, str) else str(item.get('link', ''))
+              name = normalize(link)
+              if name:
+                  sources.append(name)
+          for item in cfg.get('groups') or []:
+              name = item.get('name') if isinstance(item, dict) else item
+              if name:
+                  sources.append(str(name))
+          progress = Path('rescan-progress.json')
+          done = set()
+          if progress.exists():
+              done = set(json.loads(progress.read_text(encoding='utf-8')).get('completed', []))
+          start = chunk_index * chunk_size
+          for name in sources[start:start + chunk_size]:
+              if name not in done:
+                  print(name)
+          " "$CHUNK_INDEX" "$CHUNK_SIZE" > /tmp/rescan-chunk.txt
+            fi
+            if [ ! -s /tmp/rescan-chunk.txt ]; then
+              echo "Chunk $CHUNK_INDEX is empty — every source in it is already re-scanned (or it is past the last source). Nothing to do."
+              exit 0
+            fi
+            echo "Re-scanning $(wc -l < /tmp/rescan-chunk.txt) source(s) in chunk $CHUNK_INDEX:"
+            cat /tmp/rescan-chunk.txt
+            while IFS= read -r NAME; do
+              [ -n "$NAME" ] || continue
+              echo "=== re-scanning $NAME ==="
+              if tbi api-backfill --rescan-formats --channel "$NAME" 2>&1 | tee /tmp/rescan-last.log; then
+                python3 -c "
+          import json
+          import sys
+          from pathlib import Path
+          progress = Path('rescan-progress.json')
+          done = json.loads(progress.read_text(encoding='utf-8')) if progress.exists() else {'completed': []}
+          if sys.argv[1] not in done['completed']:
+              done['completed'].append(sys.argv[1])
+          progress.write_text(json.dumps(done, indent=2) + chr(10), encoding='utf-8')
+          " "$NAME"
+              else
+                echo "::warning::re-scan of $NAME failed — continuing with the next source in the chunk."
+                if grep -q "flood-wait" /tmp/rescan-last.log; then
+                  echo "::error::Telegram flood-wait stopped the chunk — re-dispatch it after the wait expires (sources already done are recorded in rescan-progress.json)."
+                  break
+                fi
+              fi
+            done < /tmp/rescan-chunk.txt
+          else
+            ARGS="--backfill --backfill-block ${{ inputs.backfill_block }}"
+            if [ "${{ inputs.mode }}" = "new-only" ]; then
+              ARGS="--new-only"
+            fi
+            if [ -n "${{ inputs.channel }}" ]; then
+              ARGS="$ARGS --channel ${{ inputs.channel }}"
+            fi
+            tbi api-backfill $ARGS
           fi
-          if [ -n "${{ inputs.channel }}" ]; then
-            ARGS="$ARGS --channel ${{ inputs.channel }}"
-          fi
-          tbi api-backfill $ARGS
 
       - name: Build the static site (staging)
         run: |
@@ -177,6 +300,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/
+          # The re-scan progress file (mode rescan-formats): the list
+          # of sources already re-scanned, so the next chunk dispatch
+          # resumes instead of redoing them. Tolerant add: absent on
+          # backfill/new-only runs.
+          git add telegram/rescan-progress.json 2>/dev/null || true
           # The entity cache (v0.4.8): the resolved handles must persist
           # across runs, or every run re-resolves all 211 handles and
           # trips the ResolveUsernameRequest flood wait again. Tolerant
@@ -274,6 +402,10 @@ jobs:
           git add index.db.gz.part-* 2>/dev/null || true
           git rm --cached index.db.gz 2>/dev/null || true
           git add index-report.md 2>/dev/null || true
+          # The re-scan progress file (mode rescan-formats): without
+          # it a timed-out chunk would redo its finished sources on
+          # the next dispatch. Tolerant add, like the seed + report.
+          git add rescan-progress.json 2>/dev/null || true
           # The entity cache (v0.4.8): the failure-save must persist
           # the newly resolved handles too, or the next run resolves
           # them again. Tolerant add, like the seed + report above.

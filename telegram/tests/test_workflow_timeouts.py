@@ -81,6 +81,33 @@ def test_api_backfill_failure_step_saves_progress():
     assert "progress + report saved" in run
 
 
+def test_api_backfill_rescan_formats_mode():
+    """v0.6.2 --rescan-formats: mode choice + chunk inputs, the Index
+    step re-scans one chunk of sources (channels then groups) with
+    per-source `tbi api-backfill --rescan-formats --channel`, records
+    finished sources in rescan-progress.json, and both the Publish
+    and failure-save steps commit that file — so re-dispatching a
+    chunk resumes instead of redoing it."""
+    doc = _load(API)
+    # NOTE: PyYAML (YAML 1.1) parses the `on:` key as boolean True.
+    inputs = doc[True]["workflow_dispatch"]["inputs"]
+    assert inputs["mode"]["options"] == [
+        "backfill", "new-only", "rescan-formats",
+    ]
+    assert inputs["chunk_index"]["default"] == "0"
+    assert inputs["chunk_size"]["default"] == "10"
+    index = _step(doc, "api-backfill", "Index (API backfill)")
+    assert index["timeout-minutes"] == 300
+    run = index["run"]
+    assert "tbi api-backfill --rescan-formats --channel" in run
+    assert "rescan-progress.json" in run
+    assert "--backfill --backfill-block" in run  # non-rescan path unchanged
+    publish = _step(doc, "api-backfill", "Publish atomically")
+    assert "rescan-progress.json" in publish["run"]
+    failure = _step(doc, "api-backfill", "Save progress")
+    assert "rescan-progress.json" in failure["run"]
+
+
 def test_join_groups_workflow():
     """v0.4.6: the slow-join job runs every 12 h (2 groups/run), shares
     the telegram concurrency group, indexes only the newly joined

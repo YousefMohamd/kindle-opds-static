@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body>
+<!--
+  Synthetic t.me/s/ page modeled on the REAL preview structure (same
+  classes tbi.scrape.parse_page reads: .tgme_widget_message_wrap,
+  [data-post], .tgme_widget_message_date time[datetime],
+  .tgme_widget_message_text, .tgme_widget_message_document_wrap /
+  _title / _extra). Dates are fixed to 2026-11-12 so tests can pass
+  --date 2026-11-12: two of today's papers (one Egyptian, one London),
+  one of yesterday's (excluded), one header-only post (no paper).
+-->
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="arabJournalism/249200">
+    <div class="tgme_widget_message_date"><a href="#"><time datetime="2026-11-12T06:30:00+00:00">06:30</time></a></div>
+    <div class="tgme_widget_message_text" dir="auto">الأهرام<br>الخميس 12 نوفمبر 2026</div>
+    <div class="tgme_widget_message_document_wrap">
+      <div class="tgme_widget_message_document_title" dir="auto">الأهرام 12-11-2026.pdf</div>
+      <div class="tgme_widget_message_document_extra">PDF, 8.4 MB</div>
+    </div>
+  </div>
+</div>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="arabJournalism/249199">
+    <div class="tgme_widget_message_date"><a href="#"><time datetime="2026-11-12T06:15:00+00:00">06:15</time></a></div>
+    <div class="tgme_widget_message_text" dir="auto">الشرق الأوسط</div>
+    <div class="tgme_widget_message_document_wrap">
+      <div class="tgme_widget_message_document_title" dir="auto">الشرق الأوسط.pdf</div>
+      <div class="tgme_widget_message_document_extra">PDF, 12.1 MB</div>
+    </div>
+  </div>
+</div>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="arabJournalism/249180">
+    <div class="tgme_widget_message_date"><a href="#"><time datetime="2026-11-11T06:00:00+00:00">06:00</time></a></div>
+    <div class="tgme_widget_message_text" dir="auto">الأهرام<br>الأربعاء 11 نوفمبر 2026</div>
+    <div class="tgme_widget_message_document_wrap">
+      <div class="tgme_widget_message_document_title" dir="auto">الأهرام 11-11-2026.pdf</div>
+      <div class="tgme_widget_message_document_extra">PDF, 8.1 MB</div>
+    </div>
+  </div>
+</div>
+<div class="tgme_widget_message_wrap">
+  <div class="tgme_widget_message" data-post="arabJournalism/249175">
+    <div class="tgme_widget_message_date"><a href="#"><time datetime="2026-11-12T05:50:00+00:00">05:50</time></a></div>
+    <div class="tgme_widget_message_text" dir="auto">جرايد مصر</div>
+  </div>
+</div>
+</body></html>

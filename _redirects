@@ -10,3 +10,6 @@
 # If the rewrite ever stops working, the section is still directly
 # reachable at /site/telegram/.
 /telegram/*  /site/telegram/:splat  200
+# Newspapers (link-out only): /newspapers/ is the "other papers" page;
+# the data file is /site/newspapers.json (fetched by both pages).
+/newspapers/*  /site/newspapers/:splat  200

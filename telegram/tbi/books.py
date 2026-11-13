@@ -29,6 +29,16 @@ BOOK_EXTS = {
     "pdb", "prc", "rtf", "txt",
 }
 
+# The six formats the indexer counted before the v0.5 expansion.
+OLD_BOOK_EXTS = {"epub", "mobi", "azw3", "kfx", "pdf", "txt"}
+
+# The sixteen formats the v0.5 expansion added. A --rescan-formats run
+# re-walks the already-indexed range (oldest..newest) per source and
+# recovers files in these formats that earlier runs skipped; files in
+# OLD_BOOK_EXTS are re-written identically (replace, never append),
+# so re-running a re-scan never duplicates a book.
+NEW_FORMATS = BOOK_EXTS - OLD_BOOK_EXTS
+
 # Noise removed from filenames/captions before parsing.
 # In every alternation the longer form comes first where one extension
 # is a prefix of another (azw3/azw, docx/doc, djvu/djv, kepub/epub),

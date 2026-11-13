@@ -69,6 +69,21 @@ written. If no source yields a paper for the day, the file is still
 written — with empty lists and ``"empty": true`` — and the pages show
 "لا يوجد جرائد اليوم" instead of rendering broken or stale papers.
 
+Static pages (Kindle browser): the home page's newspapers card
+(``index.html``) and the per-country page (``site/newspapers/index.html``)
+do NOT fetch ``newspapers.json`` with JavaScript — the Kindle's
+built-in browser has no ``fetch`` (old WebKit) and the fetch-based
+pages failed with error 175 and showed nothing. Instead the generator
+bakes the day's list directly into both pages as plain HTML at
+generation time (see :func:`write_pages`): the pages carry
+``<!-- NEWSPAPERS-STATIC-BEGIN -->`` / ``<!-- NEWSPAPERS-STATIC-END -->``
+markers and only the content between them is replaced, so the rest of
+each page is never touched. The JSON file is still written (other uses),
+but no page depends on it. The daily workflow regenerates the pages
+every morning, so the baked content stays fresh; it must commit the
+two HTML pages alongside the JSON (see
+``.github/workflows/telegram-newspapers.yml``).
+
 Classification: a paper is Egyptian only when its name is in
 :data:`KNOWN_PAPERS` as EG, a country hint in the post says Egypt, or
 the source itself is the Egyptian-only channel. Ambiguous names
@@ -94,6 +109,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import html
 import json
 import os
 import re
@@ -823,6 +839,146 @@ def empty_data(today: date, detail: str = "") -> dict:
     return build_data(today, [], reports)
 
 
+# ---------------------------------------------------------------------------
+# Static page rendering (no JavaScript, no fetch — Kindle browser)
+#
+# The two pages carry NEWSPAPERS-STATIC-BEGIN / -END markers; only the
+# fragment between them is replaced, so the rest of each page (head,
+# styles, other cards, footer) is never touched. The fragment is plain
+# HTML: paper name + country flag + date + the direct message link.
+# Design preserved from the old fetch-based pages: Egypt first / in
+# front, per-country anchored sections on /newspapers/, sub-link nav
+# with counts, the 'لا يوجد جرائد اليوم' notice for empty days, and
+# the distinct 'لا توجد جرائد مصرية اليوم' notice when Egypt is empty
+# but other countries have papers.
+# ---------------------------------------------------------------------------
+
+STATIC_BEGIN = "<!-- NEWSPAPERS-STATIC-BEGIN -->"
+STATIC_END = "<!-- NEWSPAPERS-STATIC-END -->"
+
+
+def _entry_li(entry: dict, detail: str) -> str:
+    """One paper as a static list item: flag + name linked to its post."""
+    return (
+        '<li><a href="{url}" target="_blank" rel="noopener">{flag} {name}</a>'
+        ' <span class="note"> — {detail}</span></li>'
+    ).format(
+        url=html.escape(entry["url"], quote=True),
+        flag=html.escape(entry["flag"]),
+        name=html.escape(entry["name"]),
+        detail=html.escape(detail),
+    )
+
+
+def render_home_section(data: dict) -> str:
+    """Static fragment for the home page's newspapers card: Egypt's
+    papers in front, plus sub-links to the other countries' sections
+    on /newspapers/. No JavaScript, no fetch — the list is in the HTML."""
+    parts: list[str] = []
+    egypt = data.get("egypt") or []
+    if data.get("empty"):
+        parts.append('<p class="note">لا يوجد جرائد اليوم</p>')
+    elif not egypt:
+        parts.append('<p class="note">لا توجد جرائد مصرية اليوم — جرائد من دول أخرى بالأسفل.</p>')
+    else:
+        items = "".join(_entry_li(e, e["date"]) for e in egypt)
+        parts.append(f"<ul>{items}</ul>")
+    others = [c for c in (data.get("countries") or []) if c["code"] != "EG"]
+    if others:
+        links = " · ".join(
+            '<a href="/newspapers/#country-{code}">{flag} {name} ({count})</a>'.format(
+                code=html.escape(c["code"], quote=True),
+                flag=html.escape(c["flag"]),
+                name=html.escape(c["name"]),
+                count=c["count"],
+            )
+            for c in others
+        )
+        parts.append(f'<p class="links">{links}</p>')
+    return "\n".join(parts)
+
+
+def render_other_section(data: dict) -> str:
+    """Static fragment for /newspapers/: sub-link nav with counts, then
+    one anchored section per country, Egypt first. No JavaScript."""
+    all_entries = (data.get("egypt") or []) + (data.get("other") or [])
+    if not all_entries:
+        return '<p class="note">لا يوجد جرائد اليوم</p>'
+    countries = data.get("countries") or []
+    parts: list[str] = []
+    nav = " · ".join(
+        '<a href="#country-{code}">{flag} {name} ({count})</a>'.format(
+            code=html.escape(c["code"], quote=True),
+            flag=html.escape(c["flag"]),
+            name=html.escape(c["name"]),
+            count=c["count"],
+        )
+        for c in countries
+    )
+    parts.append(f'<p class="note">{nav}</p>')
+    for c in countries:
+        group = [e for e in all_entries if e["country"] == c["code"]]
+        if not group:
+            continue
+        parts.append(
+            '<h2 id="country-{code}">{flag} {name}</h2>'.format(
+                code=html.escape(c["code"], quote=True),
+                flag=html.escape(c["flag"]),
+                name=html.escape(c["name"]),
+            )
+        )
+        items = "".join(_entry_li(e, f'{e["country_name"]} — {e["date"]}') for e in group)
+        parts.append(f"<ul>{items}</ul>")
+    return "\n".join(parts)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text atomically (tmp + replace), like :func:`write_data`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_pages(data: dict, pages_root, *, warn=print) -> list[Path]:
+    """Bake the day's papers into the two HTML pages as static HTML.
+
+    ``pages_root`` is the repo root (``index.html`` at its top,
+    ``site/newspapers/index.html`` under it). Each page must carry the
+    STATIC_BEGIN / STATIC_END markers; only the fragment between them
+    is replaced. A page that is missing or has no markers is skipped
+    with a warning — the JSON output is unaffected. Returns the pages
+    actually written.
+    """
+    root = Path(pages_root)
+    targets = [
+        (root / "index.html", render_home_section(data)),
+        (root / "site" / "newspapers" / "index.html", render_other_section(data)),
+    ]
+    written: list[Path] = []
+    for path, fragment in targets:
+        if not path.exists():
+            warn(f"newspapers pages: {path} not found — skipped")
+            continue
+        text = path.read_text(encoding="utf-8")
+        if STATIC_BEGIN not in text or STATIC_END not in text:
+            warn(f"newspapers pages: {path} has no static markers — skipped")
+            continue
+        start = text.index(STATIC_BEGIN) + len(STATIC_BEGIN)
+        end = text.index(STATIC_END)
+        _atomic_write_text(path, text[:start] + "\n" + fragment + "\n" + text[end:])
+        written.append(path)
+    return written
+
+
 def _parse_date_arg(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -832,7 +988,8 @@ def _parse_date_arg(value: str) -> date:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate site/newspapers.json — today's newspapers, link-out only (no PDFs stored)."
+        description="Generate site/newspapers.json and bake the day's papers as static HTML "
+                    "into index.html and site/newspapers/index.html (no fetch — Kindle browser)."
     )
     parser.add_argument("--out", default=None,
                         help="output file (default: <repo-root>/site/newspapers.json)")
@@ -844,10 +1001,16 @@ def main(argv=None) -> int:
                         help="preview pages to walk per username source (default 3)")
     parser.add_argument("--write-empty", action="store_true",
                         help="write an empty-day file without reading any source (workflow fallback)")
+    parser.add_argument("--pages-root", default=None,
+                        help="repo root holding index.html and site/newspapers/index.html "
+                             "(default: the repo root this module lives in)")
+    parser.add_argument("--no-pages", action="store_true",
+                        help="do not bake the static HTML pages (JSON only)")
     args = parser.parse_args(argv)
 
     repo_root = Path(__file__).resolve().parent.parent.parent
     out = Path(args.out) if args.out else repo_root / "site" / "newspapers.json"
+    pages_root = Path(args.pages_root) if args.pages_root else repo_root
     today = args.date or datetime.now(CAIRO_TZ).date()
 
     if args.write_empty:
@@ -855,6 +1018,10 @@ def main(argv=None) -> int:
     else:
         data = collect(today, use_api=not args.no_api, max_pages=args.max_pages)
     write_data(data, out)
+    if not args.no_pages:
+        written = write_pages(data, pages_root)
+        for path in written:
+            print(f"baked static page {path}")
     n_eg = len(data["egypt"])
     n_other = len(data["other"])
     print(f"newspapers {data['date']}: {n_eg} Egyptian, {n_other} other"
