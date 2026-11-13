@@ -1,12 +1,12 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-12T19:23:18.919313+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
+**Date:** 2026-11-13T04:13:40.524891+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 2s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **892973 posts, 442248 book files** (323325 distinct books)
+- **Channels with data: 51 of 51 walkable** — **893802 posts, 442408 book files** (323467 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
@@ -17,7 +17,7 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| bookjunkieb (group) | 0 | 0 | export |
+| bookspsychology101 (group) | 17 | 6 | export |
 
 ## Indexed channels (51)
 
@@ -164,10 +164,10 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 - bookforbooks — 1136 posts, 148 book files (ok)
 - BoOkJuiCe — 3626 posts, 1624 book files (ok)
 - bookjunkieb — 4397 posts, 3024 book files (ok)
-- bookpdfepub — 1652 posts, 317 book files (ok)
+- bookpdfepub — 2464 posts, 471 book files (ok)
 - books2023 — 6000 posts, 5865 book files (ok)
 - booksforarabs — 5404 posts, 3277 book files (ok)
-- bookspsychology101 — 2561 posts, 1516 book files (ok)
+- bookspsychology101 — 2578 posts, 1522 book files (ok)
 - BROKAREEMANDME — 6006 posts, 2011 book files (ok)
 - cambridge_library — 261 posts, 78 book files (ok)
 - Comics_gate — 6000 posts, 5575 book files (ok)
