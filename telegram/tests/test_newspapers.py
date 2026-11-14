@@ -368,6 +368,10 @@ def test_render_home_static_contains_entries_and_no_fetch():
     assert 'href="https://t.me/arabJournalism/1"' in html
     assert "🇪🇬" in html and "2026-11-12" in html
     assert "fetch(" not in html
+    # The Egyptian list sits under an unmistakable "مصر" heading —
+    # a non-Egyptian paper can never appear under it.
+    assert "<h3>🇪🇬 مصر</h3>" in html
+    assert html.index("🇪🇬 مصر") < html.index("الأهرام</a>")
     # Sub-links to the other countries' sections on /newspapers/.
     assert 'href="/newspapers/#country-SA"' in html
     assert "🇸🇦 السعودية (1)" in html
@@ -382,6 +386,8 @@ def test_render_home_static_egypt_empty_notice():
     data["empty"] = False
     html = newspapers.render_home_section(data)
     assert "لا توجد جرائد مصرية اليوم" in html
+    # No "مصر" section heading when there are no Egyptian papers.
+    assert "<h3>🇪🇬 مصر</h3>" not in html
     # The other countries' papers are still reachable from here.
     assert 'href="/newspapers/#country-SA"' in html
     assert "fetch(" not in html
@@ -679,3 +685,394 @@ def test_api_pending_join_source_never_touches_the_client():
     posts, report = _run(newspapers.collect_api_client(client, TODAY, EG_CHANNEL))
     assert posts == []
     assert report["status"] == "unavailable_pending_join"
+
+
+# ---------------------------------------------------------------------------
+# Title cleaning + country classification fixes (live data 2026-11-14:
+# 18 EG / 50 other / 33 XX, incl. a UUID, an invite URL, bare dates,
+# ALL-CAPS Latin names, and country-prefixed names the old code
+# misread — "الأردن الدستور" came out Egyptian, "الإمارات الفجر"
+# came out Egyptian, "الأردن الرأي" came out XX).
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_arabic_nfc_combining_hamza():
+    # The hub posts combining hamza (alef + U+0654), not precomposed أ:
+    # without NFC, "الأردن" never matched "الأردن" in the maps.
+    assert newspapers.normalize_arabic("الا\u0654ردن") == newspapers.normalize_arabic("الأردن")
+    assert newspapers.normalize_arabic("الا\u0655مارات") == newspapers.normalize_arabic("الإمارات")
+    assert newspapers.normalize_arabic("الرأي") == newspapers.normalize_arabic("الرأي")
+    # NOTE: normalize_arabic folds أ into ا, so "الرأي" (Jordan) and
+    # "الراي" (Kuwait) normalize to the SAME string — exact matching
+    # must not use it (see _norm_exact). classify() still tells them
+    # apart, and the country prefix saves the qualified form.
+    assert newspapers.classify("الرأي") == ("الرأي", "JO")
+    assert newspapers.classify("الراي") == ("الراي", "KW")
+
+
+def test_parse_explicit_date_english_months():
+    assert newspapers.parse_explicit_date("14 Nov 2026") == date(2026, 11, 14)
+    assert newspapers.parse_explicit_date("14 November 2026") == date(2026, 11, 14)
+    assert newspapers.parse_explicit_date("Nov 14, 2026") == date(2026, 11, 14)
+    assert newspapers.parse_explicit_date("QATAR GT 14 Nov 2026") == date(2026, 11, 14)
+    assert newspapers.parse_explicit_date("14 Nov 26") is None  # two-digit year: no
+
+
+def test_clean_filename_english_dates_and_trailing_numbers():
+    # clean_filename only title-cases; the canonical "Qatar GT" form
+    # comes from classify()'s display map (tested below).
+    assert newspapers.clean_filename("QATAR GT 14 Nov 2026") == "Qatar Gt"
+    assert newspapers.clean_filename("Saudi Gazette 14 Nov 2026") == "Saudi Gazette"
+    assert newspapers.clean_filename("Arab News 14 Nov 2026") == "Arab News"
+    assert newspapers.clean_filename("الجزيرة 13") == "الجزيرة"
+    assert newspapers.clean_filename("الرياض 13") == "الرياض"
+    assert newspapers.clean_filename("MASA 121338") == "Masa"
+    assert newspapers.clean_filename("AL ahram 14 11") == "AL ahram"
+    assert newspapers.clean_filename("Al Ahram m") == "Al Ahram"
+
+
+def test_clean_filename_arabic_dates_weekdays_and_filler():
+    assert newspapers.clean_filename("البوابة عدد 14 نوفمبر") == "البوابة"
+    assert newspapers.clean_filename("عدد الشروق ليوم السبت 🤲") == "الشروق"
+    assert newspapers.clean_filename("مصر الأهرام (ط2)") == "مصر الأهرام"
+    assert newspapers.clean_filename("😄😁😄 صحف مصر 😄😁😄") == "صحف مصر"
+    assert newspapers.clean_filename("الشرق الأوسط 14 نوفمبر") == "الشرق الأوسط"
+
+
+def test_clean_filename_invisible_chars_and_urls():
+    assert newspapers.clean_filename("\u200eالجمهورية") == "الجمهورية"
+    assert newspapers.clean_filename("https://t me/joinchat/VGPv tnlgUJlNjdl") == ""
+    assert newspapers.clean_filename("https://t.me/joinchat/VGPv_tnlgUJlNjdl") == ""
+
+
+def test_clean_filename_caps_normalization():
+    assert newspapers.clean_filename("AKHBAR ELYOUM") == "Akhbar Elyoum"
+    assert newspapers.clean_filename("alwafd") == "Alwafd"
+    # Mixed case is left alone — classify() canonicalizes it.
+    assert newspapers.clean_filename("Saudi Gazette") == "Saudi Gazette"
+
+
+def test_junk_reason():
+    assert newspapers.junk_reason("598a3cda a423 4645 b72d 3e29882a7f8b") == "uuid"
+    assert newspapers.junk_reason("598a3cda-a423-4645-b72d-3e29882a7f8b") == "uuid"
+    assert newspapers.junk_reason("https://t me/joinchat/VGPv tnlgUJlNjdl") == "url"
+    assert newspapers.junk_reason("14 Nov 2026") == "bare_date"
+    assert newspapers.junk_reason("14 نوفمبر 2026") == "bare_date"
+    assert newspapers.junk_reason("🇪🇬") == "flag_or_emoji_only"
+    assert newspapers.junk_reason("🇵🇸") == "flag_or_emoji_only"
+    assert newspapers.junk_reason("😄😁😄 صحف اليوم السبت 14 11 26 😄😁😄") == "header"
+    assert newspapers.junk_reason("😄😁😄 صحف مصر 😄😁😄") == "header"
+    assert newspapers.junk_reason("مصر") == "country_only"
+    # Real papers — even unclassifiable ones — are NEVER junk.
+    assert newspapers.junk_reason("الأهرام") is None
+    assert newspapers.junk_reason("كبسولة") is None
+    assert newspapers.junk_reason("اليوم") is None
+    assert newspapers.junk_reason("AKHBAR ELYOUM") is None
+
+
+def test_extract_names_drops_junk_and_records_it():
+    flag_post = _post(1, "2026-11-12T06:30:00+00:00", text="🇪🇬")
+    dropped: list = []
+    assert newspapers.extract_names(flag_post, dropped=dropped) == []
+    assert dropped == [{"name": "🇪🇬", "reason": "flag_or_emoji_only"}]
+    uuid_post = _post(2, "2026-11-12T06:30:00+00:00",
+                      files=[_doc("598a3cda a423 4645 b72d 3e29882a7f8b.pdf")])
+    dropped = []
+    assert newspapers.extract_names(uuid_post, dropped=dropped) == []
+    assert dropped[0]["reason"] == "uuid"
+
+
+def test_classify_country_prefix_wins_over_paper_map():
+    # The hub's "COUNTRY PAPER" format: the prefix is the country, even
+    # when the short paper name maps elsewhere.
+    assert newspapers.classify("الأردن الدستور") == ("الدستور", "JO")
+    assert newspapers.classify("الإمارات الفجر") == ("الفجر", "AE")
+    assert newspapers.classify("مصر الأخبار") == ("الأخبار", "EG")
+    assert newspapers.classify("فلسطين الأيام") == ("الأيام", "PS")
+    assert newspapers.classify("فلسطين الحياة الجديدة") == ("الحياة الجديدة", "PS")
+    assert newspapers.classify("لندن الشرق الأوسط") == ("الشرق الأوسط", "GB")
+    assert newspapers.classify("البحرين الوطن") == ("الوطن", "BH")
+    assert newspapers.classify("البحرين أخبار الخليج") == ("أخبار الخليج", "BH")
+    assert newspapers.classify("عُمان عُمان") == ("عُمان", "OM")
+    assert newspapers.classify("السعودية الرياض") == ("الرياض", "SA")
+    assert newspapers.classify("مصر صوت الأزهر") == ("صوت الأزهر", "EG")
+    assert newspapers.classify("لندن العربي الجديد") == ("العربي الجديد", "GB")
+
+
+def test_classify_whole_known_name_is_never_stripped():
+    # "الإمارات اليوم" IS the paper — the leading country word is part
+    # of its name, not a prefix to remove.
+    assert newspapers.classify("الإمارات اليوم") == ("الإمارات اليوم", "AE")
+    assert newspapers.classify("الإمارات الإمارات اليوم") == ("الإمارات اليوم", "AE")
+    assert newspapers.classify("الشرق الأوسط") == ("الشرق الأوسط", "GB")
+
+
+def test_classify_combining_hamza_titles():
+    # Live titles with combining hamza (alef + U+0654/U+0655).
+    assert newspapers.classify("الا\u0654ردن الرا\u0654ي") == ("الرأي", "JO")
+    assert newspapers.classify("الا\u0655مارات الاتحاد") == ("الاتحاد", "AE")
+    assert newspapers.classify("مصر الا\u0654هرام") == ("الأهرام", "EG")
+
+
+def test_classify_english_and_transliterated_names():
+    assert newspapers.classify("Saudi Gazette 14 Nov 2026") == ("Saudi Gazette", "SA")
+    assert newspapers.classify("Arab News 14 Nov 2026") == ("Arab News", "SA")
+    assert newspapers.classify("QATAR GT 14 Nov 2026") == ("Qatar GT", "QA")
+    assert newspapers.classify("AKHBAR ELYOUM") == ("Akhbar Elyoum", "EG")
+    assert newspapers.classify("alwafd") == ("Al Wafd", "EG")
+    assert newspapers.classify("AL ahram 14 11") == ("Al Ahram", "EG")
+    assert newspapers.classify("Al Ahram m") == ("Al Ahram", "EG")
+    assert newspapers.classify("MASA 121338") == ("Masa", "EG")
+    # A Latin paper whose name starts with a country word keeps its
+    # full name (the country is the section, not a prefix to strip).
+    assert newspapers.classify("Qatar Tribune") == ("Qatar Tribune", "QA")
+
+
+def test_classify_unclassifiable_stays_xx_and_is_kept():
+    # Supplements / section names, not newspapers with a known country
+    # — kept in the listing under XX, recorded in "unmatched", never
+    # guessed and never dropped.
+    for name in ("كبسولة", "اليوم", "الرحلة", "الكأس"):
+        assert newspapers.classify(name)[1] == "XX"
+
+
+# ---------------------------------------------------------------------------
+# Evening editions: "مسائي" marks an evening edition — it is grouped
+# separately, never mixed into the morning list of the same paper.
+# ---------------------------------------------------------------------------
+
+
+def test_is_evening_edition():
+    assert newspapers.is_evening_edition("الأهرام المسائي") is True
+    assert newspapers.is_evening_edition("مصر الأهرام المسائي") is True
+    assert newspapers.is_evening_edition("Evening Standard") is True
+    assert newspapers.is_evening_edition("الأهرام") is False
+    # "المساء" on its own is a paper name, not an evening marker.
+    assert newspapers.is_evening_edition("المساء") is False
+    assert newspapers.is_evening_edition("مصر المساء") is False
+
+
+def test_entry_evening_edition_is_separate_from_morning():
+    morning = _post(1, "2026-11-12T06:30:00+00:00", text="الأهرام",
+                    files=[_doc("الأهرام 12-11-2026.pdf")])
+    evening = _post(2, "2026-11-12T18:30:00+00:00", text="الأهرام المسائي",
+                    files=[_doc("الأهرام المسائي 12-11-2026.pdf")])
+    m = newspapers.entry_for_date(morning, "الأهرام", TODAY, HUB)
+    e = newspapers.entry_for_date(evening, "الأهرام المسائي", TODAY, HUB)
+    assert m is not None and m["edition"] == "morning"
+    assert e is not None and e["edition"] == "evening"
+    assert e["name"] == "الأهرام المسائي" and e["country"] == "EG"
+    # Morning and evening are different entries — the evening one does
+    # not dedup away against the morning one.
+    data = newspapers.build_data(TODAY, [m, e], [])
+    assert len(data["egypt"]) == 2
+
+
+def test_build_data_dedup_is_country_aware():
+    def ent(name, country, region, url):
+        info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+        return {"name": name, "country": country, "country_name": info["name"],
+                "flag": info["flag"], "region": region, "date": "2026-11-12",
+                "url": url, "source": "arabJournalism"}
+
+    # "الأيام" in Bahrain AND Palestine: same name, two papers.
+    data = newspapers.build_data(TODAY, [
+        ent("الأيام", "BH", "gulf", "https://t.me/arabJournalism/1"),
+        ent("الأيام", "PS", "arab", "https://t.me/arabJournalism/2"),
+        ent("الأيام", "BH", "gulf", "https://t.me/arabJournalism/3"),  # dup
+    ], [])
+    assert len(data["other"]) == 2
+    assert {e["country"] for e in data["other"]} == {"BH", "PS"}
+
+
+def test_build_data_records_dropped():
+    data = newspapers.build_data(TODAY, [], [], dropped=[
+        {"name": "598a3cda a423 4645 b72d 3e29882a7f8b", "reason": "uuid",
+         "source": "arabJournalism"},
+        {"name": "🇪🇬", "reason": "flag_or_emoji_only", "source": "arabJournalism"},
+        {"name": "🇪🇬", "reason": "flag_or_emoji_only", "source": "arabJournalism"},
+    ])
+    assert data["dropped"] == [
+        {"name": "598a3cda a423 4645 b72d 3e29882a7f8b", "reason": "uuid",
+         "source": "arabJournalism"},
+        {"name": "🇪🇬", "reason": "flag_or_emoji_only", "source": "arabJournalism"},
+    ]
+    assert newspapers.build_data(TODAY, [], [])["dropped"] == []
+
+
+def test_render_evening_is_a_separate_group():
+    def ent(name, country, region, url, edition="morning"):
+        info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+        return {"name": name, "country": country, "country_name": info["name"],
+                "flag": info["flag"], "region": region, "edition": edition,
+                "date": "2026-11-12", "url": url, "source": "arabJournalism"}
+
+    data = newspapers.build_data(TODAY, [
+        ent("الأهرام", "EG", "egypt", "https://t.me/arabJournalism/1"),
+        ent("الأهرام المسائي", "EG", "egypt", "https://t.me/arabJournalism/2", "evening"),
+        ent("الرياض", "SA", "gulf", "https://t.me/arabJournalism/3"),
+    ], [])
+    home = newspapers.render_home_section(data)
+    assert "🌙 المسائية" in home
+    assert "<h3>🇪🇬 مصر</h3>" in home
+    assert home.index("🇪🇬 مصر") < home.index("الأهرام</a>") < home.index("المسائية")
+    assert home.index("المسائية") < home.index("الأهرام المسائي")
+    other = newspapers.render_other_section(data)
+    assert "🌙 المسائية" in other
+    assert other.index('id="country-EG"') < other.index("المسائية")
+    assert other.index("المسائية") < other.index("الأهرام المسائي")
+
+
+# ---------------------------------------------------------------------------
+# Live-data replay (2026-11-14 titles, embedded — no network): the exact
+# titles the user flagged, with the expected cleaned result.
+# ---------------------------------------------------------------------------
+
+LIVE_TITLES = [
+    # (raw title, expected display, expected country, expected edition)
+    ("الأردن الدستور", "الدستور", "JO", "morning"),
+    ("الإمارات الفجر", "الفجر", "AE", "morning"),
+    ("البوابة عدد 14 نوفمبر", "البوابة", "EG", "morning"),
+    ("عدد الشروق ليوم السبت 🤲", "الشروق", "EG", "morning"),
+    ("مصر الأخبار", "الأخبار", "EG", "morning"),
+    ("مصر الأهرام", "الأهرام", "EG", "morning"),
+    ("مصر الأهرام (ط2)", "الأهرام", "EG", "morning"),
+    ("مصر الأهرام المسائي", "الأهرام المسائي", "EG", "evening"),
+    ("مصر البوابة", "البوابة", "EG", "morning"),
+    ("مصر الجمهورية", "الجمهورية", "EG", "morning"),
+    ("مصر الشروق", "الشروق", "EG", "morning"),
+    ("مصر المساء", "المساء", "EG", "morning"),
+    ("مصر المصري اليوم", "المصري اليوم", "EG", "morning"),
+    ("مصر النشرة اليومية مهرجان القاهرة", "النشرة اليومية مهرجان القاهرة", "EG", "morning"),
+    ("مصر الوفد", "الوفد", "EG", "morning"),
+    ("مصر صوت الأزهر", "صوت الأزهر", "EG", "morning"),
+    ("\u200eالجمهورية", "الجمهورية", "EG", "morning"),
+    ("الإمارات الاتحاد", "الاتحاد", "AE", "morning"),
+    ("الإمارات البيان", "البيان", "AE", "morning"),
+    ("البحرين الأيام", "الأيام", "BH", "morning"),
+    ("البحرين البلاد", "البلاد", "BH", "morning"),
+    ("البحرين الوطن", "الوطن", "BH", "morning"),
+    ("البحرين أخبار الخليج", "أخبار الخليج", "BH", "morning"),
+    ("الجزيرة 13", "الجزيرة", "SA", "morning"),
+    ("الرياض 13", "الرياض", "SA", "morning"),
+    ("عكاظ 13", "عكاظ", "SA", "morning"),
+    ("الرياضية", "الرياضية", "SA", "morning"),
+    ("عُمان عُمان", "عُمان", "OM", "morning"),
+    ("قطر الراية", "الراية", "QA", "morning"),
+    ("لندن الشرق الأوسط", "الشرق الأوسط", "GB", "morning"),
+    ("لندن العرب", "العرب", "GB", "morning"),
+    ("لندن العربي الجديد", "العربي الجديد", "GB", "morning"),
+    ("لندن القدس العربي", "القدس العربي", "GB", "morning"),
+    ("الأردن الغد", "الغد", "JO", "morning"),
+    ("الأردن الرأي", "الرأي", "JO", "morning"),
+    ("الإمارات الإمارات اليوم", "الإمارات اليوم", "AE", "morning"),
+    ("الإمارات الخليج", "الخليج", "AE", "morning"),
+    ("الإمارات الخليج الاقتصادي", "الخليج الاقتصادي", "AE", "morning"),
+    ("الإمارات الوحدة", "الوحدة", "AE", "morning"),
+    ("الإمارات الوطن", "الوطن", "AE", "morning"),
+    ("فلسطين الأيام", "الأيام", "PS", "morning"),
+    ("فلسطين الحياة الجديدة", "الحياة الجديدة", "PS", "morning"),
+    ("AKHBAR ELYOUM", "Akhbar Elyoum", "EG", "morning"),
+    ("AL ahram 14 11", "Al Ahram", "EG", "morning"),
+    ("Al Ahram m", "Al Ahram", "EG", "morning"),
+    ("Arab News 14 Nov 2026", "Arab News", "SA", "morning"),
+    ("MASA 121338", "Masa", "EG", "morning"),
+    ("QATAR GT 14 Nov 2026", "Qatar GT", "QA", "morning"),
+    ("Saudi Gazette 14 Nov 2026", "Saudi Gazette", "SA", "morning"),
+    ("alwafd", "Al Wafd", "EG", "morning"),
+    ("كبسولة", "كبسولة", "XX", "morning"),
+    ("اليوم", "اليوم", "XX", "morning"),
+    ("الرحلة", "الرحلة", "XX", "morning"),
+    ("الكأس", "الكأس", "XX", "morning"),
+]
+
+LIVE_DROPPED = [
+    "598a3cda a423 4645 b72d 3e29882a7f8b",
+    "https://t me/joinchat/VGPv tnlgUJlNjdl",
+    "14 Nov 2026",
+    "🇦🇪", "🇧🇭", "🇪🇬", "🇬🇧", "🇯🇴", "🇴🇲", "🇵🇸", "🇶🇦", "🇸🇦",
+    "😄😁😄 صحف مصر 😄😁😄",
+    "😄😁😄 صحف اليوم السبت 14 11 26 😄😁😄",
+]
+
+
+@pytest.mark.parametrize("raw,display,code,edition", LIVE_TITLES)
+def test_live_titles_replay(raw, display, code, edition):
+    assert newspapers.junk_reason(raw) is None, raw
+    name, got_code = newspapers.classify(raw)
+    assert (name, got_code) == (display, code), raw
+    assert ("evening" if newspapers.is_evening_edition(name) else "morning") == edition
+
+
+@pytest.mark.parametrize("raw", LIVE_DROPPED)
+def test_live_junk_titles_are_dropped(raw):
+    assert newspapers.junk_reason(raw) is not None, raw
+
+
+# ---------------------------------------------------------------------------
+# "مصر" label (user addition 2026-11-14 ~21:33): the Egyptian section
+# must carry an unmistakable "مصر" label, and no non-Egyptian paper
+# may ever appear under it. Labelling is on OUR side only (data +
+# website) — nothing is posted to the @arabJournalism channel.
+# ---------------------------------------------------------------------------
+
+
+def test_egypt_entries_always_carry_eg_and_masr():
+    # Data guarantee: every entry in the "egypt" list has country EG,
+    # country_name مصر and the 🇪🇬 flag — explicit, never blank or XX.
+    def ent(name, country, region, url):
+        info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+        return {"name": name, "country": country, "country_name": info["name"],
+                "flag": info["flag"], "region": region, "date": "2026-11-12",
+                "url": url, "source": "arabJournalism"}
+
+    data = newspapers.build_data(TODAY, [
+        ent("الأهرام", "EG", "egypt", "https://t.me/arabJournalism/1"),
+        ent("المصري اليوم", "EG", "egypt", "https://t.me/arabJournalism/7"),
+        ent("الرياض", "SA", "gulf", "https://t.me/arabJournalism/3"),
+        ent("جريدة مجهولة", "XX", "other", "https://t.me/arabJournalism/4"),
+    ], [])
+    assert all(e["country"] == "EG" for e in data["egypt"])
+    assert all(e["country_name"] == "مصر" for e in data["egypt"])
+    assert all(e["flag"] == "🇪🇬" for e in data["egypt"])
+    assert all(e["country"] != "EG" for e in data["other"])
+
+
+def test_country_sections_never_mix():
+    # Each country is its own anchored section with its own header;
+    # the unknown-country papers sit under a labelled "غير محدد"
+    # section of their own — never under مصر or any other country.
+    def ent(name, country, region, url):
+        info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+        return {"name": name, "country": country, "country_name": info["name"],
+                "flag": info["flag"], "region": region, "date": "2026-11-12",
+                "url": url, "source": "arabJournalism"}
+
+    data = newspapers.build_data(TODAY, [
+        ent("الأهرام", "EG", "egypt", "https://t.me/arabJournalism/1"),
+        ent("الرياض", "SA", "gulf", "https://t.me/arabJournalism/3"),
+        ent("جريدة مجهولة", "XX", "other", "https://t.me/arabJournalism/4"),
+    ], [])
+    html = newspapers.render_other_section(data)
+    assert '<h2 id="country-EG">🇪🇬 مصر</h2>' in html
+    assert '<h2 id="country-SA">🇸🇦 السعودية</h2>' in html
+    assert '<h2 id="country-XX">🌍 غير محدد</h2>' in html
+    eg = html.index('id="country-EG"')
+    sa = html.index('id="country-SA"')
+    xx = html.index('id="country-XX"')
+    assert eg < html.index("الأهرام</a>") < sa
+    assert sa < html.index("الرياض</a>") < xx
+    assert xx < html.index("جريدة مجهولة</a>")
+    # And the home page never shows a non-Egyptian paper at all.
+    home = newspapers.render_home_section(data)
+    assert "الأهرام" in home and "الرياض" not in home and "جريدة مجهولة" not in home
+
+
+def test_newspapers_page_intro_names_egypt_first():
+    # The /newspapers/ page's own intro (outside the baked fragment)
+    # must not claim the page is "from outside Egypt" — Egypt has its
+    # own section on this page, first.
+    text = (REPO_ROOT / "site" / "newspapers" / "index.html").read_text(encoding="utf-8")
+    assert "من خارج مصر" not in text
+    assert "مصر أولاً" in text
+    assert newspapers.STATIC_BEGIN in text and newspapers.STATIC_END in text

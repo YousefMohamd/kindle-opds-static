@@ -85,9 +85,11 @@ const GB_ARABIC = {
   ],
 };
 
-let mode = "gb-dune"; // gb-dune | gb-no-rating | gb-fail | gb-empty
+let mode = "gb-dune"; // gb-dune | gb-no-rating | gb-fail | gb-empty | gb-429
 let lastOlUrl = "";
+let fetchCalls = 0;
 function stubFetch(u) {
+  fetchCalls++;
   const url = new URL(u);
   const jsonRes = (obj, status = 200) =>
     new Response(JSON.stringify(obj), {
@@ -96,6 +98,7 @@ function stubFetch(u) {
     });
   if (url.hostname.includes("googleapis.com")) {
     if (mode === "gb-fail") throw new Error("network down");
+    if (mode === "gb-429") return jsonRes({ error: { message: "rate limited" } }, 429);
     if (mode === "gb-no-rating") return jsonRes(GB_NO_RATING);
     if (mode === "gb-empty") return jsonRes({ items: [] });
     if (url.searchParams.get("q") && url.searchParams.get("q").includes("Obscure")) {
@@ -115,16 +118,25 @@ function stubFetch(u) {
   throw new Error("unexpected fetch: " + u);
 }
 
-async function getRatings(title, author = "") {
+async function getRatings(title, author = "", env = {}) {
   const res = await onRequest({
     request: new Request(
       "https://rlibook.tech/api/ratings?title=" + encodeURIComponent(title)
       + (author ? "&author=" + encodeURIComponent(author) : ""),
     ),
-    env: {},
+    env,
   });
   // onRequest uses global fetch; point it at the stub for this test.
   return { status: res.status, body: await res.text() };
+}
+
+function makeKv() {
+  const map = new Map();
+  return {
+    map,
+    get: async (k) => (map.has(k) ? map.get(k) : null),
+    put: async (k, v) => { map.set(k, String(v)); },
+  };
 }
 
 // onRequest calls the global fetch, so swap it for the stub.
@@ -225,6 +237,75 @@ console.log("G. Empty title:");
   const b = JSON.parse(r.body);
   check("G1 empty title -> 200, nulls", r.status === 200 && b.rating === null
     && b.description === null);
+}
+
+console.log("H. Review fixes (Area 2): method, title cap, 429 fallback, KV cache:");
+{
+  // Non-GET is 405 (the endpoint is a read-only lookup).
+  const res = await onRequest({
+    request: new Request("https://rlibook.tech/api/ratings?title=Dune", { method: "POST" }),
+    env: {},
+  });
+  check("H1 POST -> 405", res.status === 405, `status=${res.status}`);
+}
+{
+  const r = await getRatings("x".repeat(201));
+  const b = JSON.parse(r.body);
+  check("H2 title >200 chars -> 400", r.status === 400 && b.ok === false, `status=${r.status}`);
+}
+{
+  // Google Books 429 (the live failure from this VM, no key): the
+  // Open Library fallback must still answer — a 429 is not "no rating".
+  mode = "gb-429";
+  const r = await getRatings("Obscure Book", "Obscure Author");
+  const b = JSON.parse(r.body);
+  check("H3 Google 429 -> Open Library fallback answers (7.6/10)",
+    r.status === 200 && b.rating && b.rating.value === 7.6
+    && b.rating.source === "Open Library",
+    JSON.stringify(b.rating));
+  mode = "gb-dune";
+}
+{
+  // KV read-through cache: the second identical request costs no
+  // upstream fetch at all (and a cached "no rating" is cached too).
+  mode = "gb-dune";
+  const kv = makeKv();
+  fetchCalls = 0;
+  const r1 = await getRatings("Dune", "Frank Herbert", { RLIBOOK_KV: kv });
+  const callsAfterFirst = fetchCalls;
+  const b1 = JSON.parse(r1.body);
+  const r2 = await getRatings("Dune", "Frank Herbert", { RLIBOOK_KV: kv });
+  const b2 = JSON.parse(r2.body);
+  check("H4 first call hits the upstream", callsAfterFirst >= 1, `calls=${callsAfterFirst}`);
+  check("H4 second identical call makes NO upstream fetch (cache hit)",
+    fetchCalls === callsAfterFirst, `calls=${fetchCalls} after first=${callsAfterFirst}`);
+  check("H4 cached answer is the same rating",
+    b2.rating && b2.rating.value === 8.4 && b2.rating.source === "Google Books",
+    JSON.stringify(b2.rating));
+  check("H4 cache holds one key (title+author, hashed)",
+    kv.map.size === 1 && [...kv.map.keys()][0].startsWith("ratings:")
+    && ![...kv.map.keys()][0].includes("Dune"),
+    JSON.stringify([...kv.map.keys()]));
+  // A miss (no rating anywhere) is cached too — the next identical
+  // query must not re-query both upstreams.
+  mode = "gb-empty";
+  fetchCalls = 0;
+  await getRatings("A Book That Does Not Exist Anywhere", "", { RLIBOOK_KV: kv });
+  const missCalls = fetchCalls;
+  await getRatings("A Book That Does Not Exist Anywhere", "", { RLIBOOK_KV: kv });
+  check("H4 cached miss: second identical miss makes no upstream fetch",
+    fetchCalls === missCalls, `calls=${fetchCalls} after first=${missCalls}`);
+  mode = "gb-dune";
+}
+{
+  // Without the KV binding the endpoint works exactly as before
+  // (cache skipped, upstream called every time).
+  fetchCalls = 0;
+  await getRatings("Dune", "Frank Herbert", {});
+  const c1 = fetchCalls;
+  await getRatings("Dune", "Frank Herbert", {});
+  check("H5 no KV binding -> no cache, upstream called twice",
+    fetchCalls === c1 * 2, `calls=${fetchCalls} first=${c1}`);
 }
 
 globalThis.fetch = realFetch;

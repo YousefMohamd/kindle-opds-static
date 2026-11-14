@@ -48,10 +48,42 @@ export function rewriteKindleLinks(html) {
   return html.split(WORKER_KINDLE).join(PUBLIC_KINDLE);
 }
 
+// A small HTML error page (Arabic, with a next step) instead of a
+// bare error line: the proxy serves the Kindle browser, and a plain
+// "Catalog unavailable" gives the user nothing to tap.
+function errorPage(title, message, status) {
+  const body = "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
+    + "<meta charset=\"utf-8\">\n"
+    + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+    + "<title>" + title + " — RliBook</title>\n"
+    + "<style>body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
+    + "margin:0 auto;padding:1rem;line-height:1.7;color:#1c1c1c;background:#fdfdf8}"
+    + "a{color:#0b5cad}</style>\n</head>\n<body>\n"
+    + "<h1>RliBook</h1>\n<p>" + message + "</p>\n"
+    + "<p><a href=\"/\">← الرئيسية</a> · "
+    + "<a href=\"/telegram/\">فهرس تيليجرام</a></p>\n</body></html>";
+  return new Response(body, {
+    status,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+// Rewrite a Worker redirect target to the public domain, so a Worker
+// 302 never jumps the user back to workers.dev (same "different
+// website" problem the link rewrite fixes for HTML bodies). A
+// relative Location, or one to any other host, passes through as-is.
+export function rewriteLocation(location) {
+  if (typeof location !== "string") return location;
+  if (location.startsWith(WORKER_BASE)) {
+    return PUBLIC_ORIGIN + location.slice(WORKER_BASE.length);
+  }
+  return location;
+}
+
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "GET") {
-    return new Response("Method not allowed", { status: 405 });
+    return errorPage("خطأ", "هذه الصفحة تعمل برابط GET فقط.", 405);
   }
   const url = new URL(request.url);
   const target = WORKER_BASE + url.pathname + url.search;
@@ -61,13 +93,17 @@ export async function onRequest(context) {
       headers: { "x-rlibook-origin": PUBLIC_ORIGIN },
     });
   } catch {
-    return new Response("Catalog unavailable — try again later.", {
-      status: 502,
-    });
+    return errorPage("الكتالوج غير متاح",
+      "تعذّر الوصول إلى الكتالوج الآن — تحقق من الواي فاي وحاول مجدداً بعد دقيقة.",
+      502);
   }
   const headers = new Headers();
   const contentType = res.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
+  // A redirect without its Location header is a blank page: forward
+  // it (rewritten to the public domain), so the browser can follow it.
+  const location = res.headers.get("location");
+  if (location) headers.set("location", rewriteLocation(location));
   if (contentType && contentType.includes("text/html")) {
     return new Response(rewriteKindleLinks(await res.text()), {
       status: res.status,

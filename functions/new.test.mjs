@@ -82,7 +82,9 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
     !text.includes(NEWEST.books[0].url) && !text.includes("المصدر في تليجرام"));
   check("1 send button present (lib=tg, handle+post)",
     text.includes("/api/send-to-kindle?lib=tg")
-    && text.includes("📧 أرسل إلى جهازي"));
+    && text.includes("أرسل إلى جهازي"));
+  check("1 no colour emoji on the page (F3: old Kindle shows tofu)",
+    !text.includes("📧") && !text.includes("📚") && !text.includes("⚑") && !text.includes("🆕"));
   check("1 NO direct-download link anywhere (removed from /book 2026-11-13; /new never had one)",
     !text.includes("تنزيل مباشر")
     && !text.includes("drive.google.com/uc?id=")
@@ -184,7 +186,8 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
     },
   };
   const { text } = await get("/new", null, NEWEST, kv);
-  check("7 flagged: ⚑ marker on the flagged book", text.includes("⚑ تجاري"));
+  check("7 flagged: تجاري marker on the flagged book (F3: the word, no glyph)",
+    text.includes("تجاري") && !text.includes("⚑"));
   check("7 flagged: NO send button for the flagged book", !text.includes("p=11692"));
   check("7 flagged: one-line bot explanation, no reading",
     text.includes("هذا الكتاب تجاري (عليه علامة)")

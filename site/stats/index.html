@@ -23,7 +23,7 @@
 <header class="rl-header">
   <img class="rl-logo" src="/site/assets/logo-256.jpg" alt="RliBook — طائر أزرق يحمل كتاباً" width="256" height="210">
   <p class="rl-wordmark"><a href="/">RliBook</a></p>
-  <p class="rl-slogan">Reply. Read. Fly. — ردّ. اقرأ. حلّق.</p>
+  <p class="rl-slogan">Reply. Read. Fly. — رد. اقرأ. حلّق.</p>
   <h1>التقارير والإحصاءات</h1>
   <p class="note">أرقام حيّة من مصادرها — كل رقم مكتوب تحته مصدره ووقته. لا رقم مخترَع هنا.</p>
 </header>
@@ -177,7 +177,10 @@ if (typeof fetch === "undefined") {
     var shown = books.length > 10 ? 10 : books.length;
     for (var j = 0; j < shown; j++) {
       var b = books[j];
-      items += "<li><div class=\"title\">" + esc(b.title) + "</div>" +
+      // The title links to the book page (/book), so a new book is
+      // openable — read online or send to the device — not a dead end.
+      items += "<li><div class=\"title\"><a href=\"/book?q=" +
+        encodeURIComponent(b.title || "") + "\">" + esc(b.title) + "</a></div>" +
         "<div class=\"meta\">" + esc(b.author || "") +
         (b.author ? " — " : "") + esc(b.source) + " • " + esc(b.format) +
         (b.date ? " • " + esc(b.date) : "") + "</div>" +

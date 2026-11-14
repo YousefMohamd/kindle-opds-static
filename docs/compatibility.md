@@ -78,6 +78,49 @@ Nothing in this document invents a link, a token, or a number: every
 file:line reference was read from the repo on 2026-11-14, and the
 live-site check (`curl`, all 200) is in the Block 11c report.
 
+## Status after the Area 2 review (2026-11-14)
+
+- **F2 (functions/book.js) — APPLIED 2026-11-14:** `📚` dropped from
+  the `<h1>`, `📧` dropped from both send buttons, `⚑ تجاري` →
+  `تجاري` and `⚑ هذا الكتاب تجاري` → `هذا الكتاب تجاري`. The text
+  labels were already complete, so nothing lost meaning. Verified:
+  `grep` for `📚|📧|⚑|📰|🆕` in `functions/book.js` returns nothing,
+  and `functions/book.test.mjs` pins the new rendering (104/104).
+- **F3 (functions/new.js) — APPLIED 2026-11-14:** same treatment —
+  `📚` from the `<h1>`, `🆕` from both `<h2>` headings (same C8
+  class as the listed emoji, though the original F3 text did not
+  name it), `📧` from the send button, `⚑ تجاري` → `تجاري`,
+  `⚑ هذا الكتاب تجاري` → `هذا الكتاب تجاري`, `الكتب التجارية (⚑)`
+  → `الكتب التجارية`. Verified by grep + `functions/new.test.mjs`
+  (39/39).
+- **F1 (index.html) — PARTLY DONE already, one line left:** the
+  `📚` in the `<h1>` is already gone from the current file (the
+  line numbers in the audit above are stale — the page was
+  rewritten since). Remaining, for the index.html owner:
+  `index.html:89` — old: `<h2>📰 جرائد اليوم</h2>` — new:
+  `<h2>جرائد اليوم</h2>`.
+- **F4 (site/newspapers/index.html) — NOT APPLIED, owner: the
+  newspapers-page agent:** `site/newspapers/index.html:22` — old:
+  `<h1>📰 صحف اليوم حسب البلد</h1>` — new:
+  `<h1>صحف اليوم حسب البلد</h1>`.
+- **F5 + F6 (site/telegram/index.html) — NOT APPLIED, owner: the
+  HTML-pages agent.** The exact changes are in the Area 2 review
+  report (file + current line + old → new for each construct);
+  summary: rewrite the script in ES5 style (`var`/`function`,
+  `.then(onDone, onDone)` instead of `.finally`, guard
+  `normalize`, XHR fallback when `fetch` is undefined, no
+  `Map`/`Set`/spread/`String.includes`/arrow functions — current
+  lines: `:75` normalize, `:87` `Set`, `:140–141` `map`/`includes`,
+  `:148` `filter`, `:153–154` arrows + `fetch`, `:157` `.then`,
+  `:161` `.finally`, `:176` `Map`, `:181` `Map`/`Set`, `:195`
+  spread, `:210` `includes`, `:241–242` arrows + spread,
+  `:257` `.then`/`.catch`, `:262` `fetch`, `:265` `.then`,
+  `:292` `.catch`); then F6: add
+  `<link rel="stylesheet" href="/site/assets/rlibook.css">` and drop
+  the duplicated inline rules. The structural half of F5 (search
+  through `GET /api/tg-search` instead of downloading all shards)
+  still needs its own block and a fully populated D1.
+
 ## How to re-check (after the fixes land)
 1. `node functions/api/stats.test.mjs` and the other `.test.mjs` files — all must pass.
 2. `curl -s -o /dev/null -w "%{http_code}" https://rlibook.tech/` (and `/telegram/`, `/newspapers/`, `/book?q=test`, `/new`, `/stats/`) — all 200.

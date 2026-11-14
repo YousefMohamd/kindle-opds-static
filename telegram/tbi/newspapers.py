@@ -84,14 +84,34 @@ every morning, so the baked content stays fresh; it must commit the
 two HTML pages alongside the JSON (see
 ``.github/workflows/telegram-newspapers.yml``).
 
-Classification: a paper is Egyptian only when its name is in
-:data:`KNOWN_PAPERS` as EG, a country hint in the post says Egypt, or
-the source itself is the Egyptian-only channel. Ambiguous names
-(``الأخبار`` — Egypt AND Lebanon; ``الوطن`` — Qatar AND Egypt;
-``النهار`` is mapped LB, ``الشروق`` is mapped EG) are NEVER guessed:
-with no hint they land in ``other`` with country ``XX`` (🌍) and are
-listed in ``unmatched`` in the output so the map can grow from real
-posts instead of guesses.
+Classification (Arab-wide, grouped by country — user decision
+2026-11-14: ALL Arab papers are kept, Egyptian-only was rejected):
+a paper's country comes first from an explicit country prefix in its
+title (``الأردن الدستور`` → Jordan, ``الإمارات الفجر`` → UAE,
+``مصر الأهرام`` → Egypt) — the hub's own ``COUNTRY PAPER`` format —
+then from :data:`KNOWN_PAPERS`, then from a country hint in the post,
+then from the source's default country. The prefix wins over the
+paper map on purpose: ``الدستور`` alone is Egyptian, but ``الأردن
+الدستور`` is Jordan's paper. Ambiguous names (``الأخبار`` — Egypt AND
+Lebanon; ``الوطن`` — Qatar AND Egypt; ``النهار`` is mapped LB,
+``الشروق`` is mapped EG) are NEVER guessed: with no hint they land in
+``other`` with country ``XX`` (🌍) and are listed in ``unmatched`` in
+the output so the map can grow from real posts instead of guesses.
+Titles are cleaned first (see :func:`clean_filename`): dates (Arabic,
+English, numeric), trailing numbers, emojis, section headers and
+invisible characters are stripped, Latin all-caps / all-lowercase
+titles are title-cased, and titles that are only a URL, a UUID, a
+bare date, a flag emoji or a country name are dropped — they name no
+paper — and recorded in the output's ``dropped`` list with a reason.
+Names are NFC-normalized before matching (the hub posts combining
+hamza U+0654/U+0655, which otherwise breaks every Arabic match).
+
+Evening editions: a title containing ``مسائي`` / ``المسائي`` (or
+``evening``) is an evening edition of that paper, NOT a morning one:
+the entry carries ``"edition": "evening"`` and the pages render
+evening papers in a separate ``المسائية`` group inside the same
+country section, never mixed into the morning list. (``المساء`` on
+its own is a paper name, not an evening marker.)
 
 Run from the repo root (or pass ``--out``)::
 
@@ -115,6 +135,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -178,6 +199,8 @@ COUNTRIES = {
     "TN": {"name": "تونس", "flag": "🇹🇳", "region": "arab"},
     "DZ": {"name": "الجزائر", "flag": "🇩🇿", "region": "arab"},
     "MA": {"name": "المغرب", "flag": "🇲🇦", "region": "arab"},
+    "PS": {"name": "فلسطين", "flag": "🇵🇸", "region": "arab"},
+    "MR": {"name": "موريتانيا", "flag": "🇲🇷", "region": "arab"},
     "GB": {"name": "لندن", "flag": "🇬🇧", "region": "london"},
 }
 UNKNOWN_COUNTRY = {"name": "غير محدد", "flag": "🌍", "region": "other"}
@@ -196,7 +219,8 @@ REGION_LABELS = {
 # (Saudi, UAE, Qatar, Kuwait, Bahrain, Oman), then London, then the
 # other Arab countries, then unknown (XX) last.
 COUNTRY_ORDER = ["EG", "SA", "AE", "QA", "KW", "BH", "OM", "GB",
-                 "LB", "JO", "IQ", "SY", "YE", "SD", "LY", "TN", "DZ", "MA"]
+                 "LB", "JO", "IQ", "SY", "YE", "SD", "LY", "TN", "DZ", "MA",
+                 "PS", "MR"]
 
 
 def message_url_for_post(post: Post):
@@ -283,6 +307,40 @@ KNOWN_PAPERS = {
     "الغد": "JO",
     "المدى": "IQ",
     "الشروق التونسية": "TN",
+    "الحياة الجديدة": "PS",
+    # English / transliterated names, as the hub posts them (matched
+    # case-insensitively — see normalize_arabic). Observed live
+    # 2026-11-14 on the Arabic_News_Papers posts: "AKHBAR ELYOUM",
+    # "alwafd", "AL ahram 14 11", "MASA 121338", "Saudi Gazette",
+    # "Arab News", "QATAR GT".
+    "al ahram": "EG",
+    "alwafd": "EG",
+    "al wafd": "EG",
+    "akhbar elyoum": "EG",
+    "akhbar al youm": "EG",
+    "akhbar alyoum": "EG",
+    "masa": "EG",
+    "saudi gazette": "SA",
+    "arab news": "SA",
+    "gulf times": "QA",
+    "qatar gt": "QA",
+}
+
+# Canonical display form for the English / transliterated names above
+# (keyed by normalized name): title-casing alone would give "Alwafd"
+# or "Qatar Gt", so the known form wins for display.
+ENGLISH_DISPLAY = {
+    "al ahram": "Al Ahram",
+    "alwafd": "Al Wafd",
+    "al wafd": "Al Wafd",
+    "akhbar elyoum": "Akhbar Elyoum",
+    "akhbar al youm": "Akhbar Elyoum",
+    "akhbar alyoum": "Akhbar Elyoum",
+    "masa": "Masa",
+    "saudi gazette": "Saudi Gazette",
+    "arab news": "Arab News",
+    "gulf times": "Gulf Times",
+    "qatar gt": "Qatar GT",
 }
 
 # Country hint words in a post's text/filename -> country. Checked only
@@ -323,8 +381,101 @@ COUNTRY_HINTS = [
     ("الجزائر", "DZ"),
     ("المغرب", "MA"),
     ("الرباط", "MA"),
+    ("فلسطين", "PS"),
+    ("القدس", "PS"),
+    ("غزة", "PS"),
+    ("رام الله", "PS"),
+    ("موريتانيا", "MR"),
+    ("نواكشوط", "MR"),
     ("لندن", "GB"),
+    # English hint words (matched on the lower-cased normalized text).
+    ("egypt", "EG"),
+    ("egyptian", "EG"),
+    ("saudi", "SA"),
+    ("emirates", "AE"),
+    ("uae", "AE"),
+    ("qatar", "QA"),
+    ("kuwait", "KW"),
+    ("bahrain", "BH"),
+    ("oman", "OM"),
+    ("lebanon", "LB"),
+    ("jordan", "JO"),
+    ("iraq", "IQ"),
+    ("syria", "SY"),
+    ("yemen", "YE"),
+    ("sudan", "SD"),
+    ("libya", "LY"),
+    ("tunisia", "TN"),
+    ("algeria", "DZ"),
+    ("morocco", "MA"),
+    ("palestine", "PS"),
+    ("mauritania", "MR"),
+    ("london", "GB"),
 ]
+
+# Country-name prefix of a title -> country. The hub posts papers as
+# "COUNTRY PAPER" ("مصر الأهرام", "الأردن الدستور", "الإمارات الفجر",
+# "QATAR GT", "Saudi Gazette"): a leading country word is the
+# strongest signal and is checked BEFORE the paper-name map, so a
+# qualified name is never misread through its short form ("الدستور"
+# alone is Egyptian, "الأردن الدستور" is Jordanian). Keys are
+# NORMALIZED forms (see normalize_arabic: "الإمارات" -> "الامارات",
+# "عُمان" -> "عمان", lower-cased Latin) and are matched at the start
+# of the title on a word boundary. Multi-word forms ("saudi arabia")
+# are tried longest-first.
+COUNTRY_PREFIXES = [
+    ("السعوديه", "SA"),
+    ("الامارات", "AE"),
+    ("الكويت", "KW"),
+    ("البحرين", "BH"),
+    ("السودان", "SD"),
+    ("الجزاير", "DZ"),
+    ("المغرب", "MA"),
+    ("فلسطين", "PS"),
+    ("موريتانيا", "MR"),
+    ("الاردن", "JO"),
+    ("العراق", "IQ"),
+    ("سوريا", "SY"),
+    ("اليمن", "YE"),
+    ("ليبيا", "LY"),
+    ("تونس", "TN"),
+    ("لبنان", "LB"),
+    ("عمان", "OM"),
+    ("قطر", "QA"),
+    ("مصر", "EG"),
+    ("لندن", "GB"),
+    ("saudi arabia", "SA"),
+    ("egyptian", "EG"),
+    ("emirates", "AE"),
+    ("palestine", "PS"),
+    ("mauritania", "MR"),
+    ("algeria", "DZ"),
+    ("morocco", "MA"),
+    ("lebanon", "LB"),
+    ("jordan", "JO"),
+    ("tunisia", "TN"),
+    ("bahrain", "BH"),
+    ("egypt", "EG"),
+    ("saudi", "SA"),
+    ("qatar", "QA"),
+    ("kuwait", "KW"),
+    ("oman", "OM"),
+    ("iraq", "IQ"),
+    ("syria", "SY"),
+    ("yemen", "YE"),
+    ("sudan", "SD"),
+    ("libya", "LY"),
+    ("uae", "AE"),
+    ("london", "GB"),
+]
+
+# Every normalized country word (for the "title is only a country
+# name" junk check): a bare "مصر" / "Qatar" names no paper.
+_COUNTRY_WORDS = frozenset(word for word, _ in COUNTRY_PREFIXES)
+
+# Words that mark an EVENING edition of a paper ("الأهرام المسائي").
+# "المساء" on its own is a paper name, not a marker — it is NOT here.
+EVENING_WORDS = ("المسائي", "مسائي", "evening")
 
 # Lines that are section headers, not paper names (the fallback channel
 # posts "جرايد مصر" and then the files follow).
@@ -336,6 +487,7 @@ HEADER_LINES = (
     "صحف",
     "الصحف",
     "صحف اليوم",
+    "صحف مصر",
     "جرائد اليوم",
 )
 
@@ -357,26 +509,96 @@ _ARABIC_MONTHS = {
     "نوفمبر": 11,
     "ديسمبر": 12,
 }
+_EN_MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+_EN_MONTH_NAMES = "|".join(sorted(_EN_MONTHS, key=len, reverse=True))
+_ARABIC_WEEKDAYS = (
+    "السبت", "الأحد", "الاحد", "الاثنين", "الإثنين", "الثلاثاء",
+    "الأربعاء", "الاربعاء", "الخميس", "الجمعة",
+)
+_EN_WEEKDAYS = (
+    "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri",
+)
 _DATE_NUM_RE = re.compile(
     r"(\d{1,2})[\s/\-.]+(\d{1,2})[\s/\-.]+(\d{4})"
 )
 _DATE_AR_RE = re.compile(
     r"(\d{1,2})\s+(" + "|".join(_ARABIC_MONTHS) + r")\s+(\d{4})"
 )
-_DIACRITICS_RE = re.compile(r"[\u064b-\u0652\u0640]")
+_DATE_EN_RE = re.compile(
+    r"(\d{1,2})\s+(" + _EN_MONTH_NAMES + r")\s+(\d{4})", re.IGNORECASE
+)
+_DATE_EN_RE2 = re.compile(
+    r"(" + _EN_MONTH_NAMES + r")\s+(\d{1,2}),?\s+(\d{4})", re.IGNORECASE
+)
+# Day + month with NO year ("14 نوفمبر", "14 Nov") — not a paper date,
+# so only used for stripping in clean_filename, never for dating.
+_DATE_AR_SHORT_RE = re.compile(
+    r"(\d{1,2})\s+(" + "|".join(_ARABIC_MONTHS) + r")(?!\s*\d)", re.IGNORECASE
+)
+_DATE_EN_SHORT_RE = re.compile(
+    r"(\d{1,2})\s+(" + _EN_MONTH_NAMES + r")\b", re.IGNORECASE
+)
+_DATE_EN_SHORT_RE2 = re.compile(
+    r"\b(" + _EN_MONTH_NAMES + r")\s+(\d{1,2})\b", re.IGNORECASE
+)
+_WEEKDAY_RE = re.compile(
+    r"(?<!\S)(?:" + "|".join(_ARABIC_WEEKDAYS + _EN_WEEKDAYS) + r")(?!\S)",
+    re.IGNORECASE,
+)
+# Combining marks the hub actually posts (U+0654 hamza above, U+0655
+# hamza below — "الأردن" is alef + U+0654, not precomposed "أ"):
+# NFC composes them, the regex below strips any that survive.
+_DIACRITICS_RE = re.compile(r"[\u064b-\u0655\u0640]")
+_INVISIBLE_RE = re.compile(r"[\u200b-\u200f\ufeff\u00ad]")
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u2190-\u21FF"
+    "\u2300-\u23FF\u203C\u2049\u00A9\u00AE\u3030\u303D\uFE0F\u200D]"
+)
+_URL_RE = re.compile(r"(https?://|www\.|t\.me|\bt\s+me\b|joinchat)", re.IGNORECASE)
+_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}[ \-]?[0-9a-fA-F]{4}[ \-]?[0-9a-fA-F]{4}"
+    r"[ \-]?[0-9a-fA-F]{4}[ \-]?[0-9a-fA-F]{12}\b"
+)
+_EVENING_RE = re.compile(
+    r"(?<!\S)(?:المسائي|مسائي|evening)(?!\S)", re.IGNORECASE
+)
 
 
 def _norm_digits(text: str) -> str:
     return (text or "").translate(_ARABIC_DIGITS)
 
 
+def _strip_invisible(text: str) -> str:
+    """NFC-compose (alef + combining hamza -> precomposed أ/إ) and drop
+    invisible characters (LRM/RLM, zero-width, BOM)."""
+    text = unicodedata.normalize("NFC", text or "")
+    return _INVISIBLE_RE.sub("", text)
+
+
 def normalize_arabic(text: str) -> str:
-    """Normalize Arabic for name matching: digits, alef forms, diacritics."""
-    text = _norm_digits(text or "")
+    """Normalize Arabic for name matching: NFC, digits, alef forms,
+    diacritics, lower-cased Latin (so "AKHBAR ELYOUM" matches
+    "akhbar elyoum")."""
+    text = _strip_invisible(text or "")
+    text = _norm_digits(text)
     text = _DIACRITICS_RE.sub("", text)
     text = re.sub(r"[أإآٱ]", "ا", text)
     text = text.replace("ة", "ه")
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip().lower()
     return text
 
 
@@ -384,8 +606,9 @@ def parse_explicit_date(text: str):
     """A date written IN the post/filename -> datetime.date, or None.
 
     Accepts ``12/11/2026``, ``12-11-2026``, ``12.11.2026`` (day first —
-    the Arabic convention) and ``12 نوفمبر 2026`` (Arabic month names,
-    incl. Arabic-Indic digits). Two-digit years are not accepted.
+    the Arabic convention), ``12 نوفمبر 2026`` (Arabic month names,
+    incl. Arabic-Indic digits), and ``14 Nov 2026`` / ``Nov 14, 2026``
+    (English month names). Two-digit years are not accepted.
     """
     if not text:
         return None
@@ -400,6 +623,18 @@ def parse_explicit_date(text: str):
     if m:
         try:
             return date(int(m.group(3)), _ARABIC_MONTHS[m.group(2)], int(m.group(1)))
+        except ValueError:
+            return None
+    m = _DATE_EN_RE.search(text)
+    if m:
+        try:
+            return date(int(m.group(3)), _EN_MONTHS[m.group(2).lower()], int(m.group(1)))
+        except ValueError:
+            return None
+    m = _DATE_EN_RE2.search(text)
+    if m:
+        try:
+            return date(int(m.group(3)), _EN_MONTHS[m.group(1).lower()], int(m.group(2)))
         except ValueError:
             return None
     return None
@@ -418,23 +653,106 @@ def post_cairo_date(post: Post):
     return dt.astimezone(CAIRO_TZ).date()
 
 
+def _title_case_latin(name: str) -> str:
+    """Uniform-case Latin titles -> Title Case: "AKHBAR ELYOUM" ->
+    "Akhbar Elyoum", "alwafd" -> "Alwafd". Mixed-case titles ("Saudi
+    Gazette", "AL ahram") are left alone — the known-name display map
+    in :func:`classify` canonicalizes those."""
+    ascii_letters = [c for c in name if c.isascii() and c.isalpha()]
+    if not ascii_letters:
+        return name
+    if all(c.isupper() for c in ascii_letters) or all(c.islower() for c in ascii_letters):
+        return name.title()
+    return name
+
+
 def clean_filename(filename: str) -> str:
-    """'الأهرام 12-11-2026.pdf' -> 'الأهرام' (name candidate, no date/ext)."""
-    name = filename or ""
+    """'الأهرام 12-11-2026.pdf' -> 'الأهرام' (name candidate, no date/ext).
+
+    Also strips what the hub actually posts around names (observed
+    live 2026-11-14): English dates ("14 Nov 2026"), trailing number
+    runs ("الجزيرة 13", "MASA 121338", "AL ahram 14 11"), weekday
+    names, "عدد" / "ليوم" filler words, edition markers in
+    parentheses ("(ط2)"), emojis, a trailing single Latin letter
+    ("Al Ahram m"), and invisible characters. A title that is only a
+    URL is not a name at all and cleans to "" (see
+    :func:`junk_reason`)."""
+    name = _strip_invisible(filename or "")
     name = re.sub(r"\.[A-Za-z0-9]{2,5}$", "", name.strip())
+    if _URL_RE.search(name):
+        return ""
+    name = _EMOJI_RE.sub(" ", name)
     name = _norm_digits(name)
     # Separators first: "12_11_2026" must become "12 11 2026" BEFORE the
     # date patterns run, or the date is never recognised as a date.
     name = re.sub(r"[_\-\.]+", " ", name)
     name = _DATE_NUM_RE.sub(" ", name)
     name = _DATE_AR_RE.sub(" ", name)
+    name = _DATE_EN_RE.sub(" ", name)
+    name = _DATE_EN_RE2.sub(" ", name)
+    name = _DATE_AR_SHORT_RE.sub(" ", name)
+    name = _DATE_EN_SHORT_RE.sub(" ", name)
+    name = _DATE_EN_SHORT_RE2.sub(" ", name)
     name = re.sub(r"\b(pdf|PDF)\b", " ", name)
+    # Filler words that are never part of a paper name.
+    name = re.sub(r"(?<!\S)(?:عدد|ليوم)(?!\S)", " ", name)
+    name = _WEEKDAY_RE.sub(" ", name)
+    name = re.sub(r"\([^)]*\)", " ", name)
     name = re.sub(r"\s+", " ", name).strip()
+    # Leading/trailing pure-number tokens ("13", "14 11", "121338").
+    tokens = name.split(" ") if name else []
+    while tokens and tokens[0].isdigit():
+        tokens.pop(0)
+    while tokens and tokens[-1].isdigit():
+        tokens.pop()
+    # Trailing single Latin letter ("Al Ahram m").
+    if tokens and re.fullmatch(r"[A-Za-z]", tokens[-1]):
+        tokens.pop()
+    name = " ".join(tokens)
     for prefix in ("صحيفة ", "جريدة ", "جريده ", "صحيفه "):
         if name.startswith(prefix):
             name = name[len(prefix):].strip()
             break
-    return name
+    name = re.sub(r"\s+", " ", name).strip(" -–—•·")
+    return _title_case_latin(name)
+
+
+def junk_reason(raw_name: str):
+    """(raw title) -> None when it can name a paper, else a short
+    reason it must be dropped: "url" (invite/Telegram link),
+    "uuid" (a bare UUID), "bare_date" (only a date), "header" (a
+    section header like "صحف اليوم", incl. the emoji-decorated ones),
+    "flag_or_emoji_only" (a lone flag emoji — the hub's per-country
+    section marker), "country_only" (a bare country name), "empty".
+    Anything this is unsure about returns None — the title is kept
+    and recorded in ``unmatched`` instead of dropped."""
+    raw = _strip_invisible(raw_name or "")
+    if not raw.strip():
+        return "empty"
+    if _URL_RE.search(raw):
+        return "url"
+    if _UUID_RE.search(raw) or re.fullmatch(
+            r"[0-9a-fA-F]{32}", re.sub(r"[\s\-]", "", raw.strip())):
+        return "uuid"
+    cleaned = clean_filename(raw)
+    if not cleaned:
+        if parse_explicit_date(raw) is not None:
+            return "bare_date"
+        if not _EMOJI_RE.sub("", raw).strip(" \t\r\n-–—•*·"):
+            return "flag_or_emoji_only"
+        return "empty"
+    if _is_header_line(cleaned):
+        return "header"
+    if normalize_arabic(cleaned) in _COUNTRY_WORDS:
+        return "country_only"
+    return None
+
+
+def is_evening_edition(display: str) -> bool:
+    """True when the title marks an EVENING edition ("الأهرام
+    المسائي", "evening"). "المساء" on its own is a paper name, not a
+    marker, and does not match."""
+    return bool(_EVENING_RE.search(normalize_arabic(display or "")))
 
 
 def _is_header_line(line: str) -> bool:
@@ -442,17 +760,26 @@ def _is_header_line(line: str) -> bool:
     return any(norm == normalize_arabic(h) or norm.startswith(normalize_arabic(h) + " ") for h in HEADER_LINES)
 
 
-def extract_names(post: Post) -> list[str]:
+def extract_names(post: Post, dropped: list | None = None) -> list[str]:
     """Paper-name candidates from one post, best first.
 
     Document filenames first (the hub puts the paper name on the file),
     then the post text's first content line. Header-only lines
-    ("جرايد مصر") are skipped — they name no paper. A post with no
-    file and no name line yields no candidate.
+    ("جرايد مصر") are skipped — they name no paper. Junk titles (a
+    URL, a UUID, a bare date, a lone flag emoji, a section header) are
+    skipped and, when ``dropped`` is given, recorded there as
+    ``{"name": raw, "reason": ...}`` so the run report shows what was
+    dropped instead of silently losing it. A post with no file and no
+    name line yields no candidate.
     """
     names: list[str] = []
     for f in post.files:
         if f.kind != "document":
+            continue
+        reason = junk_reason(f.filename)
+        if reason is not None:
+            if dropped is not None:
+                dropped.append({"name": f.filename, "reason": reason})
             continue
         cleaned = clean_filename(f.filename)
         if cleaned and cleaned not in names:
@@ -460,6 +787,11 @@ def extract_names(post: Post) -> list[str]:
     for line in (post.text or "").splitlines():
         line = line.strip(" \t\r\n-–—•*")
         if not line or _is_header_line(line):
+            continue
+        reason = junk_reason(line)
+        if reason is not None:
+            if dropped is not None:
+                dropped.append({"name": line, "reason": reason})
             continue
         # First content line only: later lines are usually the date,
         # a caption, or a link — not the paper name.
@@ -470,23 +802,76 @@ def extract_names(post: Post) -> list[str]:
     return names
 
 
+def _drop_first_word(display: str) -> str:
+    parts = display.split(" ", 1)
+    return parts[1].strip() if len(parts) == 2 else display
+
+
+def _strip_country_prefix(display: str, prefix_word: str, remainder_norm: str) -> str:
+    """Drop the leading country word from the display name: the country
+    is shown by the section the paper sits in, so "الأردن الدستور" ->
+    "الدستور", "عُمان عُمان" -> "عُمان", "الإمارات الإمارات اليوم" ->
+    "الإمارات اليوم", "لندن العربي الجديد" -> "العربي الجديد". Kept
+    only when the remainder is Latin-only ("Qatar Tribune" — the
+    paper's full name includes the country), so no real name is ever
+    shortened by guessing. (Whole-title known names such as "الإمارات
+    اليوم" never reach this function — the exact match in
+    :func:`classify` runs first.)"""
+    if not remainder_norm:
+        return display
+    has_arabic = any("\u0600" <= c <= "\u06FF" for c in remainder_norm)
+    if has_arabic or remainder_norm == prefix_word:
+        return _drop_first_word(display)
+    return display
+
+
+def _norm_exact(text: str) -> str:
+    """Light normalization for EXACT name matching: NFC + strip +
+    lower-case only — alef forms are NOT folded, so "الرأي" (Jordan)
+    and "الراي" (Kuwait), which differ only in أ vs ا, stay distinct.
+    (normalize_arabic folds them together, so it cannot be used for
+    exact matches of those two names.)"""
+    return _strip_invisible(text or "").strip().lower()
+
+
 def classify(raw_name: str, context_text: str = "", default_country=None):
     """(raw_name) -> (display name, country code).
 
-    Order: KNOWN_PAPERS (longest match first) -> country hint in the
-    name/context -> source default country -> unknown ("XX"). A hint
-    never overrides a mapped name.
+    Order: exact known name (the WHOLE title is the paper, so a
+    country word inside it is never stripped) -> leading country
+    prefix ("الأردن الدستور" -> JO — the prefix wins over the paper
+    map) -> known name contained in the title (longest first) ->
+    country hint in the name/context -> source default country ->
+    unknown ("XX"). A hint never overrides a mapped name, and a
+    prefix never overrides an exact known name ("الإمارات اليوم" stays
+    the UAE paper, it does not become "اليوم").
     """
     display = clean_filename(raw_name) or raw_name.strip()
+    display = _strip_invisible(display)
+    canonical = ENGLISH_DISPLAY.get(normalize_arabic(display))
+    if canonical:
+        display = canonical
     norm = normalize_arabic(display)
-    # Longest match first: "الشرق الأوسط" must win over "الشرق", and
-    # "الشروق التونسية" over "الشروق". Only a known name CONTAINED in
-    # the raw name counts — never the reverse (a short raw name like
-    # "الشرق" is Qatar's paper, not a substring-match for London's
-    # "الشرق الأوسط").
+    # 1. Exact known name (NFC-only comparison, so "الرأي" Jordan and
+    #    "الراي" Kuwait stay distinct — see _norm_exact).
+    exact = _norm_exact(display)
+    for known, code in KNOWN_PAPERS.items():
+        if _norm_exact(known) == exact:
+            return display, code
+    # 2. Leading country prefix (longest form first: "saudi arabia"
+    #    before "saudi").
+    for word, code in sorted(COUNTRY_PREFIXES, key=lambda wc: -len(wc[0])):
+        if norm.startswith(word + " "):
+            remainder = norm[len(word) + 1:]
+            return _strip_country_prefix(display, word, remainder), code
+    # 3. Known name contained in the title (longest first: "الشرق
+    #    الأوسط" must win over "الشرق", "الشروق التونسية" over
+    #    "الشروق"). Only a known name CONTAINED in the raw name counts
+    #    — never the reverse.
     for known in sorted(KNOWN_PAPERS, key=len, reverse=True):
         if normalize_arabic(known) in norm:
             return display, KNOWN_PAPERS[known]
+    # 4. Country hint in the name/context.
     haystack = normalize_arabic(display + " " + (context_text or ""))
     for word, code in COUNTRY_HINTS:
         if normalize_arabic(word) in haystack:
@@ -531,6 +916,7 @@ def entry_for_date(post: Post, raw_name: str, today: date, source: dict):
         "country_name": info["name"],
         "flag": info["flag"],
         "region": info["region"],
+        "edition": "evening" if is_evening_edition(name) else "morning",
         "date": paper_date.isoformat(),
         "url": url,
         "handle": handle,
@@ -539,23 +925,28 @@ def entry_for_date(post: Post, raw_name: str, today: date, source: dict):
     }
 
 
-def build_data(today: date, entries: list[dict], source_reports: list[dict], generated_at=None) -> dict:
+def build_data(today: date, entries: list[dict], source_reports: list[dict], generated_at=None, dropped: list[dict] | None = None) -> dict:
     """Assemble the output file: Egypt first, others grouped by region.
 
-    De-duplicates on (name, date) — the same paper posted twice (hub +
-    fallback) keeps its first (newest) link. Unmatched names (country
-    XX) are kept in the listing AND in ``unmatched`` so the name map
-    can grow from real posts. ``countries`` lists every country with at
-    least one paper today (Egypt first, then Gulf, London, other Arab,
-    unknown last) with its flag, Arabic name and count — the pages
-    render one sub-link / section per country from it.
+    De-duplicates on (name, country, date, edition) — the same paper
+    posted twice (hub + fallback) keeps its first (newest) link, but
+    the same name in two countries ("الأيام" in Bahrain AND Palestine)
+    stays two entries. Unmatched names (country XX) are kept in the
+    listing AND in ``unmatched`` so the name map can grow from real
+    posts. ``dropped`` records junk titles skipped during extraction
+    (URL / UUID / bare date / header / flag-only) with their reason,
+    so nothing disappears silently. ``countries`` lists every country
+    with at least one paper today (Egypt first, then Gulf, London,
+    other Arab, unknown last) with its flag, Arabic name and count —
+    the pages render one sub-link / section per country from it.
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     egypt: list[dict] = []
     other: list[dict] = []
     unmatched: list[str] = []
     for entry in entries:
-        key = (normalize_arabic(entry["name"]), entry["date"])
+        key = (normalize_arabic(entry["name"]), entry["country"], entry["date"],
+               entry.get("edition", "morning"))
         if key in seen:
             continue
         seen.add(key)
@@ -580,6 +971,14 @@ def build_data(today: date, entries: list[dict], source_reports: list[dict], gen
          "count": counts[code]}
         for code in sorted(counts, key=_country_rank)
     ]
+    dropped_out: list[dict] = []
+    seen_dropped: set[tuple] = set()
+    for d in dropped or []:
+        dkey = (d.get("name"), d.get("reason"))
+        if dkey in seen_dropped:
+            continue
+        seen_dropped.add(dkey)
+        dropped_out.append(d)
     return {
         "version": 2,
         "date": today.isoformat(),
@@ -590,17 +989,24 @@ def build_data(today: date, entries: list[dict], source_reports: list[dict], gen
         "countries": countries,
         "empty": not egypt and not other,
         "unmatched": unmatched,
+        "dropped": dropped_out,
     }
 
 
-def entries_from_posts(posts: list[Post], today: date, source: dict) -> list[dict]:
-    """All of today's entries from one source's recent posts."""
+def entries_from_posts(posts: list[Post], today: date, source: dict, dropped: list | None = None) -> list[dict]:
+    """All of today's entries from one source's recent posts. Junk
+    titles skipped during extraction are appended to ``dropped`` (when
+    given) with their source, for the run report."""
     entries: list[dict] = []
     for post in posts:
-        for raw_name in extract_names(post):
+        post_dropped: list[dict] = []
+        for raw_name in extract_names(post, dropped=post_dropped):
             entry = entry_for_date(post, raw_name, today, source)
             if entry is not None:
                 entries.append(entry)
+        if dropped is not None:
+            for d in post_dropped:
+                dropped.append({**d, "source": source["key"]})
     return entries
 
 
@@ -753,6 +1159,7 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
     """
     entries: list[dict] = []
     reports: list[dict] = []
+    dropped: list[dict] = []
     api_needed: list[dict] = []
 
     def _report(report: dict) -> None:
@@ -767,7 +1174,7 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
                 api_needed.append(source)
                 _report(report)  # replaced below if the API succeeds
             else:
-                found = entries_from_posts(posts, today, source)
+                found = entries_from_posts(posts, today, source, dropped=dropped)
                 report["entries"] = len(found)
                 entries.extend(found)
                 _report(report)
@@ -794,7 +1201,7 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
             api_results = asyncio.run(_collect_api_all(today, api_needed))
             for source in api_needed:
                 posts, api_report = api_results[source["key"]]
-                found = entries_from_posts(posts, today, source)
+                found = entries_from_posts(posts, today, source, dropped=dropped)
                 api_report["entries"] = len(found)
                 entries.extend(found)
                 _report(api_report)
@@ -806,7 +1213,7 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
     # Keep reports in SOURCES order.
     order = {s["key"]: i for i, s in enumerate(SOURCES)}
     reports.sort(key=lambda r: order.get(r["key"], 99))
-    return build_data(today, entries, reports)
+    return build_data(today, entries, reports, dropped=dropped)
 
 
 def write_data(data: dict, out: Path) -> Path:
@@ -870,10 +1277,27 @@ def _entry_li(entry: dict, detail: str) -> str:
     )
 
 
+def _split_editions(entries: list[dict]):
+    """(morning, evening) — evening editions are never mixed into the
+    morning list; they get their own "المسائية" group."""
+    morning = [e for e in entries if e.get("edition", "morning") != "evening"]
+    evening = [e for e in entries if e.get("edition", "morning") == "evening"]
+    return morning, evening
+
+
+def _entries_ul(entries: list[dict], detail_fn) -> str:
+    items = "".join(_entry_li(e, detail_fn(e)) for e in entries)
+    return f"<ul>{items}</ul>"
+
+
 def render_home_section(data: dict) -> str:
     """Static fragment for the home page's newspapers card: Egypt's
-    papers in front, plus sub-links to the other countries' sections
-    on /newspapers/. No JavaScript, no fetch — the list is in the HTML."""
+    papers in front, under an unmistakable "🇪🇬 مصر" heading, plus
+    sub-links to the other countries' sections on /newspapers/.
+    Evening editions get their own "المسائية" group below the morning
+    list. A paper with no country never appears here — it goes under
+    the labelled "غير محدد" section on /newspapers/. No JavaScript,
+    no fetch — the list is in the HTML."""
     parts: list[str] = []
     egypt = data.get("egypt") or []
     if data.get("empty"):
@@ -881,8 +1305,13 @@ def render_home_section(data: dict) -> str:
     elif not egypt:
         parts.append('<p class="note">لا توجد جرائد مصرية اليوم — جرائد من دول أخرى بالأسفل.</p>')
     else:
-        items = "".join(_entry_li(e, e["date"]) for e in egypt)
-        parts.append(f"<ul>{items}</ul>")
+        parts.append("<h3>🇪🇬 مصر</h3>")
+        morning, evening = _split_editions(egypt)
+        if morning:
+            parts.append(_entries_ul(morning, lambda e: e["date"]))
+        if evening:
+            parts.append("<h3>🌙 المسائية</h3>")
+            parts.append(_entries_ul(evening, lambda e: e["date"]))
     others = [c for c in (data.get("countries") or []) if c["code"] != "EG"]
     if others:
         links = " · ".join(
@@ -900,7 +1329,12 @@ def render_home_section(data: dict) -> str:
 
 def render_other_section(data: dict) -> str:
     """Static fragment for /newspapers/: sub-link nav with counts, then
-    one anchored section per country, Egypt first. No JavaScript."""
+    one anchored section per country, Egypt first, each under its own
+    unmistakable country header ("🇪🇬 مصر", "🇸🇦 السعودية", ...), each
+    split into a morning list and — when present — a separate
+    "المسائية" group. Papers with no country go under their own
+    labelled "🌍 غير محدد" section, never mixed into مصر or any other
+    country. No JavaScript."""
     all_entries = (data.get("egypt") or []) + (data.get("other") or [])
     if not all_entries:
         return '<p class="note">لا يوجد جرائد اليوم</p>'
@@ -927,8 +1361,12 @@ def render_other_section(data: dict) -> str:
                 name=html.escape(c["name"]),
             )
         )
-        items = "".join(_entry_li(e, f'{e["country_name"]} — {e["date"]}') for e in group)
-        parts.append(f"<ul>{items}</ul>")
+        morning, evening = _split_editions(group)
+        if morning:
+            parts.append(_entries_ul(morning, lambda e: f'{e["country_name"]} — {e["date"]}'))
+        if evening:
+            parts.append("<h3>🌙 المسائية</h3>")
+            parts.append(_entries_ul(evening, lambda e: f'{e["country_name"]} — {e["date"]}'))
     return "\n".join(parts)
 
 
@@ -1031,6 +1469,9 @@ def main(argv=None) -> int:
               + (f" — {rep['detail']}" if rep.get("detail") else ""))
     if data["unmatched"]:
         print(f"  unmatched names (country unknown, listed under 'other'): {', '.join(data['unmatched'])}")
+    if data.get("dropped"):
+        print(f"  dropped junk titles ({len(data['dropped'])}): "
+              + ", ".join(f"{d['name']} ({d['reason']})" for d in data["dropped"]))
     print(f"wrote {out}")
     return 0
 

@@ -198,5 +198,30 @@ const D1 = mockD1(db);
   check("7g unknown source -> 0 results", bodyNone.total === 0 && bodyNone.results.length === 0);
 }
 
+// 8. Review fixes (Area 2): input validation + sanitized D1 errors.
+{
+  const { status, body } = await call({ TG_D1: D1 }, "/api/tg-search?q=test&source=BAD HANDLE!");
+  check("8a bad source -> 400, not a D1 query", status === 400 && body.ok === false, `status=${status}`);
+  const bad2 = await call({ TG_D1: D1 }, "/api/tg-search?q=test&source=ok_handle-1");
+  check("8b source with a dash -> 400 (handles are letters/digits/underscore)",
+    bad2.status === 400, `status=${bad2.status}`);
+  const longQ = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("x".repeat(201)));
+  check("8c query >200 chars -> 400", longQ.status === 400 && longQ.body.ok === false, `status=${longQ.status}`);
+  const okQ = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("x".repeat(200)));
+  check("8d query of exactly 200 chars -> searched, not rejected",
+    okQ.status === 200, `status=${okQ.status}`);
+  // A D1 failure is a generic 500: the database error (which can name
+  // tables/columns) must never reach the caller.
+  const brokenD1 = { prepare() { throw new Error("D1 boom: no such table books_secret"); } };
+  const broken = await call({ TG_D1: brokenD1 }, "/api/tg-search?q=test");
+  check("8e D1 failure -> 500 with a generic message",
+    broken.status === 500 && broken.body.ok === false
+    && broken.body.error === "search failed — try again later",
+    `status=${broken.status} body=${JSON.stringify(broken.body)}`);
+  check("8f D1 failure leaks no internals",
+    !JSON.stringify(broken.body).includes("books_secret")
+    && !JSON.stringify(broken.body).includes("boom"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

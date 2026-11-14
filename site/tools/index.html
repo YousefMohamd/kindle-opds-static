@@ -60,7 +60,7 @@
   <p>حوّل مجلد صور أو ملف CBZ/CBR/PDF إلى EPUB مضبوط على مقاس كيندلك أو كوبو — مع تقسيم تلقائي للملفات الكبيرة.</p>
   <p class="steps-title">الخطوات:</p>
   <ol>
-    <li>ثبّت Go، ثم ثبّت الأداة: <code>go install github.com/celogeek/go-comic-converter/v3</code></li>
+    <li>ثبّت Go — حمّله من <a href="https://go.dev/dl/">go.dev/dl</a> — ثم ثبّت الأداة: <code>go install github.com/celogeek/go-comic-converter/v3</code></li>
     <li>حوّل ملفك (مثال: بروفايل SR لكيندل عادي): <code>go-comic-converter -profile SR -input ~/Download/MyComic.cbz</code></li>
     <li>ستجد الناتج <code>MyComic.epub</code> بجانب الملف الأصلي — أرسله إلى كيندلك (حدّ الإيميل 50MB، والموقع 200MB؛ الأداة تقسّم الملف تلقائياً كل 200MB).</li>
   </ol>
@@ -74,7 +74,7 @@
   <ol>
     <li>حمّل ملفّي اللغة <a href="https://github.com/tesseract-ocr/tessdata_fast/raw/main/ara.traineddata">ara.traineddata</a> و <a href="https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata">eng.traineddata</a> (بيانات Tesseract 5، من مستودع tessdata_fast الرسمي).</li>
     <li>انسخهما بالـ USB إلى مجلد <code>koreader/data/tessdata</code> على القارئ.</li>
-    <li>في ملف <code>koreader/defaults.custom.lua</code> أضف السطر: <code>DKOPTREADER_CONFIG_DOC_LANGS_CODE = {"ara", "eng"}</code></li>
+    <li>في ملف <code>koreader/defaults.custom.lua</code> أضف السطر: <code>DKOPTREADER_CONFIG_DOC_LANGS_CODE = {"ara", "eng"}</code> — إن لم يكن الملف موجوداً، أنشئ ملفاً جديداً بهذا الاسم.</li>
     <li>افتح الـ PDF الممسوح في KOReader — البحث في الصفحة والبحث في القاموس سيعملان الآن عبر OCR.</li>
   </ol>
   <p class="steps-title">ب) على الكمبيوتر قبل النقل (أفضل للكتب الكبيرة):</p>
@@ -90,14 +90,12 @@
   <h2>📖 القرآن الكريم <span class="badge badge-reader">📖 القارئ</span></h2>
   <p>القرآن في RliBook له صفحة مستقلة — اختر المصحف والرواية والتفسير الذي تحبه.</p>
   <p><a class="btn" href="/qurans/">تصفّح المصاحف ←</a></p>
-  <p class="note">هذه الصفحة لا تعيد بناء القرآن — فقط تحيل إليه.</p>
 </div>
 
 <div class="card">
   <h2>♟️ الشطرنج <span class="badge badge-web">🌐 المتصفح</span></h2>
-  <p>الشطرنج في المتصفح — العب ضد الكمبيوتر أو ضد صديق، من عمل البلوك 14 (الألعاب — Chess.js).</p>
+  <p>الشطرنج في المتصفح — العب ضد الكمبيوتر أو ضد صديق.</p>
   <p><a class="btn" href="/games/chess.html">العب الشطرنج ←</a> <a href="/games/">كل الألعاب ←</a></p>
-  <p class="note">هذه الصفحة لا تعيد بناء الشطرنج — فقط تحيل إليه.</p>
 </div>
 
 <p class="note">RliBook — أدوات مجانية ومفتوحة المصدر فقط، لمساعدتك على القراءة. لا نستضيف أي ملف كتاب أو أداة هنا.</p>

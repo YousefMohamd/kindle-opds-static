@@ -40,8 +40,12 @@
 <h1>فهرس كتب تيليجرام</h1>
 <p class="sub">Telegram Book Index — فهرس ميتاداتا فقط: عنوان الكتاب ومؤلفه
 والصيغ المتاحة له. دوس على زر الصيغة (EPUB / PDF / MOBI / AZW3 / KFX /
-TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة. لا ملفات كتب مستضافة هنا؛
+TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة — زر الصيغة يفتح الكتاب في
+<b>تطبيق تيليجرام</b>، فثبّت التطبيق أولاً إن لم يفتح الزر. لا ملفات كتب مستضافة هنا؛
 المصادر قانونية فقط (كتب قديمة / مرخّصة / ملفات شخصية).</p>
+<p class="sub">لقراءة كتاب أونلاين أو إرساله إلى جهازك: ابحث عن اسمه في
+<a href="/">الصفحة الرئيسية</a> — صفحة الكتاب فيها «📖 اقرأ أونلاين»
+و«📧 أرسل إلى جهازي».</p>
 
 <p id="srcbanner" class="notfound" hidden></p>
 <input type="search" id="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="بحث">
@@ -58,7 +62,7 @@ TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة. لا
   <p><a href="libraries.html">كل مكتبات تلجرام</a> •
   <a href="index-report.md">تقرير الفهرسة</a> •
   <a href="https://github.com/YousefMohamd/kindle-opds-static">المشروع على GitHub</a> •
-  <a href="../">← المكتبات (الكتالوج الرئيسي)</a></p>
+  <a href="/">← RliBook — الرئيسية</a></p>
 </footer>
 
 <script>
@@ -98,6 +102,16 @@ function esc(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// A failed index load leaves the user with an error and no next step —
+// always offer "reload the page" as the way out.
+function loadError(msg) {
+  countEl.textContent = msg + " — ";
+  var a = document.createElement("a");
+  a.href = location.pathname + location.search;
+  a.textContent = "أعد تحميل الصفحة";
+  countEl.appendChild(a);
 }
 
 // A shard stores books as compact arrays:
@@ -211,8 +225,9 @@ function renderList() {
       "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
       "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
       "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
-      "بوت تيليجرام: البوت بيدوّر في القناة مباشرة ويرجع لك الرابط " +
-      "فورًا لو لقاه، ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
+      "بوت تيليجرام: <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — " +
+      "البوت بيدوّر في القناة مباشرة ويرجع لك الرابط فورًا لو لقاه، " +
+      "ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
     } else {
       // A library with no indexed books yet (0 files in the manifest).
       notfoundEl.innerHTML = "مكتبة «" + esc(SRC) + "» لسه ما فيها كتب " +
@@ -240,7 +255,7 @@ function renderList() {
 function render() {
   if (!MANIFEST) return;
   loadNeeded().then(renderList).catch(err => {
-    countEl.textContent = "تعذّر تحميل الفهرس: " + err.message;
+    loadError("تعذّر تحميل الفهرس: " + err.message);
   });
 }
 
@@ -275,7 +290,7 @@ fetch("index.json").then(r => {
   countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   render();
 }).catch(err => {
-  countEl.textContent = "تعذّر تحميل الفهرس: " + err.message;
+  loadError("تعذّر تحميل الفهرس: " + err.message);
 });
 
 qEl.addEventListener("input", render);

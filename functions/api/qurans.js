@@ -28,6 +28,12 @@ import {
 } from "./qurans-data.js";
 
 export function onRequest(context) {
+  if (context.request.method !== "GET") {
+    return new Response(JSON.stringify({ ok: false, error: "method not allowed" }), {
+      status: 405,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
   const url = new URL(context.request.url);
   const q = url.searchParams;
   const lang = (q.get("lang") || "").trim().toLowerCase();

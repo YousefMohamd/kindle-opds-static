@@ -63,6 +63,10 @@
 //                   128 MB memory). Send-to-Kindle itself caps at 50 MB.
 //   DAILY_PER_DEST  5 sends/day per destination address.
 //   DAILY_PER_IP    20 sends/day per client IP.
+//   A send that FAILS after the counters were taken gives the counts
+//   back (refund in failPage), so a failed book fetch never burns the
+//   daily quota. KV has no atomic increment: two requests in the same
+//   millisecond can both pass the check — the caps bound the damage.
 //   Only EPUB / PDF / DOC / DOCX / TXT are sent (Send-to-Kindle's list).
 //   MOBI/AZW are REFUSED here — Amazon rejects them by email now —
 //   with a page that says so and points at the direct-download link.
@@ -129,7 +133,8 @@ export function resolveAcquisitionUrl(lib, id) {
     return "https://www.hindawi.org/books/" + id + ".epub";
   }
   // doab: the id IS the full file URL (from the search index).
-  if (!/^https:\/\/[^\s]+$/.test(id)) return null;
+  // Bounded: a URL longer than 2048 chars is not a real file link.
+  if (id.length > 2048 || !/^https:\/\/[^\s]+$/.test(id)) return null;
   return id;
 }
 
@@ -251,19 +256,43 @@ function emailForm(lib, id, fmt, title, note, extraHidden = "") {
   return page("أرسل إلى جهازي", emailFormHtml(lib, id, fmt, title, note, extraHidden));
 }
 
-/** One rate-limit counter: returns true if the caller is over the limit
- *  (and does NOT increment), false if under (and increments by 1).
- *  Exact-repeat protection is NOT this function's job — the dedupe key
- *  in onRequest (W4) handles that before this is called, so a repeat
- *  tap never reaches here and never burns quota. */
+/** One rate-limit counter: returns { over, counted }. over=true
+ *  means the caller is over the limit (and the counter was NOT
+ *  incremented); counted=true means this call took one count, so a
+ *  later failure in the same request can give it back (see
+ *  refundCounter). A corrupt stored value is treated as 0 instead of
+ *  failing open without counting. Exact-repeat protection is NOT
+ *  this function's job — the dedupe key in onRequest (W4) handles
+ *  that before this is called, so a repeat tap never reaches here
+ *  and never burns quota. KV has no atomic increment, so two
+ *  requests landing in the same millisecond can both pass the check
+ *  — the daily caps bound the damage. */
+function counterKey(key) {
+  return "stk:" + key + ":" + new Date().toISOString().slice(0, 10);
+}
+
 async function overLimit(kv, key, limit) {
-  const day = new Date().toISOString().slice(0, 10);
-  const fullKey = "stk:" + key + ":" + day;
-  const cur = Number((await kv.get(fullKey)) || "0");
-  if (!Number.isFinite(cur)) return false;
-  if (cur >= limit) return true;
+  const fullKey = counterKey(key);
+  let cur = Number((await kv.get(fullKey)) || "0");
+  if (!Number.isFinite(cur) || cur < 0) cur = 0;
+  if (cur >= limit) return { over: true, counted: false };
   await kv.put(fullKey, String(cur + 1), { expirationTtl: 86400 });
-  return false;
+  return { over: false, counted: true };
+}
+
+/** Give back one count this request took. A send that FAILS after
+ *  the counters were taken (book fetch, Resend) must not burn the
+ *  daily quota — otherwise five failed fetches lock the user out for
+ *  the day. Best-effort; a race with another request can leave the
+ *  count off by one (same KV limitation as the counter itself). */
+async function refundCounter(kv, key) {
+  try {
+    const fullKey = counterKey(key);
+    const cur = Number((await kv.get(fullKey)) || "0");
+    if (Number.isFinite(cur) && cur > 0) {
+      await kv.put(fullKey, String(cur - 1), { expirationTtl: 86400 });
+    }
+  } catch { /* best-effort */ }
 }
 
 /** Build the signed proxy download URL for one Telegram book, or null
@@ -328,21 +357,26 @@ export async function onRequest(context) {
   }
   if (!env.RLIBOOK_KV) {
     return page("الخدمة غير جاهزة",
-      "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد ربط KV).</p>", 503);
+      "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد ربط KV).</p>\n"
+      + "<p><a href=\"/\">← الرئيسية</a></p>", 503);
   }
   const apiKey = (env.RESEND_API_KEY || "").trim();
   if (!apiKey) {
     return page("الخدمة غير جاهزة",
-      "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد مفتاح بريد).</p>", 503);
+      "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد مفتاح بريد).</p>\n"
+      + "<p><a href=\"/\">← الرئيسية</a></p>", 503);
   }
 
   // ---- resolve the destination Kindle email -------------------------
   let kindleEmail = null;
   let emailSource = null;
   if (fp) {
+    // A fingerprint is 22 chars; a longer value can never match and
+    // would make an oversized KV key — skip the lookup, same result
+    // (not found) without touching KV.
     let rec = null;
     try {
-      rec = await env.RLIBOOK_KV.get("fp:" + fp, "json");
+      rec = fp.length <= 128 ? await env.RLIBOOK_KV.get("fp:" + fp, "json") : null;
     } catch { rec = null; }
     const tgId = rec && Number.isSafeInteger(rec.tg_id) ? rec.tg_id : null;
     if (tgId) {
@@ -416,13 +450,29 @@ export async function onRequest(context) {
   const bookIdentity = isTg ? "tg:" + tgHandle + ":" + tgPostId : lib + ":" + id;
   const dedupeKey = await dedupeKeyFor(kindleEmail, bookIdentity, fmt);
   let dedupeClaimed = false;
+  // Rate-limit counts taken by THIS request (set in the rate-limit
+  // block below). failPage gives them back when the send fails, so a
+  // failed send never burns the daily quota.
+  let countedDest = false;
+  let countedIp = false;
+  let destKey = "";
+  let ipKey = "";
   // failPage: an error page AFTER the dedupe claim — release the key
   // so the user can retry this same book (a failed send must not
-  // poison the idempotency window).
+  // poison the idempotency window), and refund any rate-limit counts
+  // this request took.
   const failPage = async (title, bodyHtml, status) => {
     if (dedupeClaimed) {
       try { await env.RLIBOOK_KV.delete(dedupeKey); } catch { /* best-effort */ }
       dedupeClaimed = false;
+    }
+    if (countedDest) {
+      await refundCounter(env.RLIBOOK_KV, destKey);
+      countedDest = false;
+    }
+    if (countedIp) {
+      await refundCounter(env.RLIBOOK_KV, ipKey);
+      countedIp = false;
     }
     return page(title, bodyHtml, status);
   };
@@ -440,17 +490,23 @@ export async function onRequest(context) {
   } catch { /* KV hiccup: fail open, the send proceeds without dedupe */ }
 
   // ---- rate limits (per destination, then per IP) --------------------
-  const destKey = "dest:" + (await sha256hex(kindleEmail));
-  if (await overLimit(env.RLIBOOK_KV, destKey, DAILY_PER_DEST)) {
+  destKey = "dest:" + (await sha256hex(kindleEmail));
+  const destCheck = await overLimit(env.RLIBOOK_KV, destKey, DAILY_PER_DEST);
+  if (destCheck.over) {
     return await failPage("تم تجاوز الحد اليومي",
       "<p>أُرسلت 5 كتب اليوم إلى هذا الميل — جرّب مجدداً غداً.</p>\n"
       + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى صفحة الكتاب</a></p>", 429);
   }
+  countedDest = destCheck.counted;
   const ip = (request.headers.get("cf-connecting-ip") || "unknown").trim().slice(0, 64);
-  if (await overLimit(env.RLIBOOK_KV, "ip:" + ip.replace(/[^A-Za-z0-9.:-]/g, "_"), DAILY_PER_IP)) {
+  ipKey = "ip:" + ip.replace(/[^A-Za-z0-9.:-]/g, "_");
+  const ipCheck = await overLimit(env.RLIBOOK_KV, ipKey, DAILY_PER_IP);
+  if (ipCheck.over) {
     return await failPage("تم تجاوز الحد اليومي",
-      "<p>أُرسلت كتب كثيرة اليوم من هذا الاتصال — جرّب مجدداً غداً.</p>", 429);
+      "<p>أُرسلت كتب كثيرة اليوم من هذا الاتصال — جرّب مجدداً غداً.</p>\n"
+      + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى صفحة الكتاب</a></p>", 429);
   }
+  countedIp = ipCheck.counted;
 
   // ---- fetch the book file ------------------------------------------
   // OPDS books: the acquisition URL (Drive / Hindawi / DOAB). Telegram

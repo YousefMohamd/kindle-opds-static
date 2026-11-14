@@ -39,6 +39,7 @@
 </style>
 </head>
 <body>
+<p><a href="/">← RliBook — الرئيسية</a></p>
 <h1>📖 المصاحف الإلكترونية</h1>
 <p>المصحف كاملاً على جهازك — عربي، أو عربي مع ترجمة بلغتك، مع التفسير الذي تختاره.
 كل الملفات من مشروع مفتوح المصدر (zeeyado/quran-ebook — GPL-3.0)،
@@ -64,7 +65,8 @@
 <p class="note">اضغط الزر وافتح البوت: اختر اللغة والصيغة والرواية والتفسير،
 والبوت يرسل لك المصحف بالإيميل (للكيندل/بوكيت بوك) أو يرشدك للنقل بـ USB.
 <em>ملاحظة: استبيان اختيار المصحف داخل البوت يصل في التحديث القادم (v4.8.43) —
-حتى ذلك الحين يمكنك التحميل مباشرة من الجدول أدناه.</em></p>
+حتى ذلك الحين، إن لم تجد زراً مخصصاً للمصحف، اكتب في البوت رسالة تطلب فيها
+المصحف (اللغة والرواية) — أو حمّل مباشرة من الجدول أدناه.</em></p>
 <p>أو حمّل مباشرة من
 <a href="https://github.com/zeeyado/quran-ebook/releases/latest">صفحة الإصدارات (أحدث إصدار v0.10.0)</a>
 ثم انقل الملف إلى جهازك بـ USB.</p>
@@ -120,6 +122,7 @@
 </p>
 <p class="note">٤٩ إصداراً في ١٠ لغات (المشروع كله يغطي ٤٢ لغة —
 <a href="https://github.com/zeeyado/quran-ebook/releases/latest">القائمة الكاملة في صفحة الإصدارات</a>).</p>
+<p class="note" id="no-qurans" hidden>لا يوجد مصحف بهذه المواصفات — جرّب تغيير اللغة أو الصيغة أو الرواية، أو حمّل من <a href="https://github.com/zeeyado/quran-ebook/releases/latest">صفحة الإصدارات الكاملة</a>.</p>
 <h3>العربية (Arabic)</h3>
   <table>
     <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
@@ -318,6 +321,8 @@
       var h = t.previousElementSibling;
       if (h && h.tagName === "H3") h.style.display = anyVisible ? "" : "none";
     });
+    // No match at all: say so and point at the next step, never a blank page.
+    document.getElementById("no-qurans").hidden = shown > 0;
   }
   [lang, fmt, nar].forEach(function (s) { s.addEventListener("change", apply); });
 })();

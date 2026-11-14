@@ -29,12 +29,18 @@
 // never 500s because enrichment failed.
 //
 // Free-tier friendly: two external fetches at most (Open Library is
-// only called when Google Books yields nothing usable), no KV, no D1.
-// The response is cacheable for an hour (ratings change slowly).
+// only called when Google Books yields nothing usable), no D1 — and
+// a KV read-through cache (optional RLIBOOK_KV binding, 24 h): the
+// /book page asks for the same titles over and over, so a cached
+// answer costs one KV read instead of two upstream fetches. Without
+// the binding the endpoint simply skips the cache. The response is
+// cacheable for an hour (ratings change slowly).
 
 const GB_URL = "https://www.googleapis.com/books/v1/volumes";
 const OL_URL = "https://openlibrary.org/search.json";
 const DESC_MAX_CHARS = 400;
+const MAX_TITLE_LEN = 200; // Longer than any real title; a 400, not a query
+const CACHE_TTL_SECONDS = 86400; // 24 h: ratings change slowly
 
 // Same normalization as functions/api/tg-search.js normalizeArabic +
 // stripAl: NFKC, strip tashkeel/tatweel, unify alef/hamza/yeh forms,
@@ -235,6 +241,13 @@ export async function enrich(title, author, fetchImpl = fetch) {
 }
 
 export async function onRequest(context) {
+  const { request, env } = context;
+  if (request.method !== "GET") {
+    return new Response(JSON.stringify({ ok: false, error: "method not allowed" }), {
+      status: 405,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
   const url = new URL(context.request.url);
   const title = (url.searchParams.get("title") || "").trim();
   const author = (url.searchParams.get("author") || "").trim();
@@ -249,6 +262,58 @@ export async function onRequest(context) {
   if (!title) {
     return json({ ok: true, title: "", rating: null, description: null });
   }
+  if (title.length > MAX_TITLE_LEN) {
+    return json({ ok: false, error: "title too long (max 200 characters)" }, 400);
+  }
+  // KV read-through cache (optional binding — missing KV just skips
+  // it). A cached answer — including a cached "no rating" — costs one
+  // KV read instead of two upstream fetches.
+  const cacheKey = await ratingsCacheKey(title, author);
+  const cached = await cacheGet(env, cacheKey);
+  if (cached) {
+    return json({ ok: true, title, rating: cached.rating, description: cached.description });
+  }
   const found = await enrich(title, author);
+  await cachePut(env, cacheKey, found);
   return json({ ok: true, title, rating: found.rating, description: found.description });
+}
+
+// Cache key for one (title, author): the identity is hashed, so no
+// title text ever appears in a KV key. Exported for tests.
+export async function ratingsCacheKey(title, author) {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      String(title || "").trim().toLowerCase() + "\n" + String(author || "").trim().toLowerCase(),
+    ),
+  );
+  const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return "ratings:" + hex;
+}
+
+// Read one cached enrichment, or null (missing binding, missing key,
+// malformed value — all mean "not cached", never an error).
+async function cacheGet(env, key) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const raw = await kv.get(key);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (!v || !("rating" in v) || !("description" in v)) return null;
+    return { rating: v.rating, description: v.description };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Store one enrichment (best-effort: a KV failure never fails the request).
+async function cachePut(env, key, value) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.put !== "function") return;
+  try {
+    await kv.put(key, JSON.stringify(value), { expirationTtl: CACHE_TTL_SECONDS });
+  } catch (e) {
+    // Best-effort only.
+  }
 }

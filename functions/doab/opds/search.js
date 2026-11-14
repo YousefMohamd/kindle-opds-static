@@ -8,6 +8,9 @@
 // No Drive write, no Mac server involved.
 export async function onRequest(context) {
   const url = new URL(context.request.url);
+  if (context.request.method !== "GET") {
+    return new Response("Method not allowed", {status: 405});
+  }
   const q = (url.searchParams.get("q") || "").trim();
   const lib = "doab";
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -15,9 +18,18 @@ export async function onRequest(context) {
     return new Response('<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog"><title>Search ' + lib + '</title><id>urn:search:' + lib + '</id><updated>2026-11-05T00:00:00Z</updated></feed>', {headers: {"content-type": "application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8"}});
   }
   const idxUrl = new URL("/" + lib + "/search-index.json", url.origin);
-  const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
-  if (!res.ok) return new Response("search index not found", {status: 500});
-  const books = await res.json();
+  // A missing or malformed index is a 500 naming the problem — never an
+  // uncaught throw (a bare 500 from the runtime) and never partial
+  // results presented as complete.
+  let books;
+  try {
+    const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
+    if (!res.ok) return new Response("search index not found", {status: 500});
+    books = await res.json();
+    if (!Array.isArray(books)) return new Response("search index not found", {status: 500});
+  } catch (e) {
+    return new Response("search index not found", {status: 500});
+  }
   const needle = q.toLowerCase();
   const hits = [];
   for (const b of books) {

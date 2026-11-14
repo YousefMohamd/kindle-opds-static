@@ -18,7 +18,7 @@
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production Worker, no deploy.
 
-import { onRequest, rewriteKindleLinks } from "./[[...path]].js";
+import { onRequest, rewriteKindleLinks, rewriteLocation } from "./[[...path]].js";
 
 let pass = 0;
 let fail = 0;
@@ -89,19 +89,27 @@ async function call(method, path) {
   );
 }
 
-// 3. Non-GET is 405 (and does not call the Worker).
+// 3. Non-GET is 405 (and does not call the Worker) — an HTML page
+// with a next step, not a bare error line.
 {
   lastCall = null;
   const res = await call("POST", "/kindle/menu?fp=abc123");
   check("3a POST -> 405", res.status === 405, `status=${res.status}`);
   check("3b Worker not called on POST", lastCall === null);
+  check("3c 405 is an HTML page with a home link",
+    (await res.text()).includes('href="/"'));
 }
 
-// 4. Worker fetch failure is 502.
+// 4. Worker fetch failure is 502 — an HTML page with a next step.
 {
   mockMode = "throw";
   const res = await call("GET", "/kindle/menu?fp=abc123");
   check("4a Worker down -> 502", res.status === 502, `status=${res.status}`);
+  const body = await res.text();
+  check("4b 502 is an HTML page, not a bare line",
+    body.includes("<!DOCTYPE html>") && body.includes("الكتالوج غير متاح"));
+  check("4c 502 has a home link (a next step)",
+    body.includes('href="/"') && body.includes('href="/telegram/"'));
   mockMode = "ok";
 }
 
@@ -132,6 +140,43 @@ async function call(method, path) {
     (await res.text()) ===
       '<a href="https://rlibook.tech/kindle/libraries">Libs</a>',
   );
+}
+
+// 6. Redirects + non-HTML passthrough (Area 2 review).
+{
+  // A Worker 302 must keep its Location header — without it the
+  // browser gets a redirect status with nowhere to go (blank page) —
+  // and a workers.dev target must be rewritten to rlibook.tech.
+  globalThis.fetch = async (url, opts) => {
+    lastCall = { url, headers: opts?.headers || {} };
+    return new Response(null, {
+      status: 302,
+      headers: { location: WORKER + "/kindle/menu?fp=abc123" },
+    });
+  };
+  const res = await call("GET", "/kindle");
+  check("6a Worker 302 keeps its Location header",
+    res.headers.get("location") === SITE + "/kindle/menu?fp=abc123",
+    `location=${res.headers.get("location")}`);
+  check("6b rewriteLocation leaves relative targets alone",
+    rewriteLocation("/kindle/menu") === "/kindle/menu");
+  check("6c rewriteLocation leaves other hosts alone",
+    rewriteLocation("https://example.com/x") === "https://example.com/x");
+  check("6d rewriteLocation rewrites the Worker origin only",
+    rewriteLocation(WORKER + "/kindle/x") === SITE + "/kindle/x");
+  // Non-HTML responses pass through unchanged (body + content-type).
+  globalThis.fetch = async (url, opts) => {
+    lastCall = { url, headers: opts?.headers || {} };
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  };
+  const res2 = await call("GET", "/kindle/data");
+  check("6e non-HTML body passes through unchanged",
+    (await res2.text()) === '{"ok":true}');
+  check("6f non-HTML content-type passes through",
+    res2.headers.get("content-type") === "application/json; charset=utf-8");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

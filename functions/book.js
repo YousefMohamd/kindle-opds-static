@@ -3,7 +3,7 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, a "📧 أرسل إلى جهازي" send
+//        title, author, library, format, a "أرسل إلى جهازي" send
 //        button (Send-to-Kindle email — the ONLY download path; there
 //        is NO direct-download link: the Kindle browser cannot
 //        download EPUB/PDF) and a search form. No JavaScript, minimal
@@ -36,13 +36,13 @@
 // cards appear with no further change to this file.
 //
 // Telegram cards are NORMAL cards (title, author, source, format)
-// with the SAME "📧 أرسل إلى جهازي" send button as OPDS cards —
+// with the SAME "أرسل إلى جهازي" send button as OPDS cards —
 // the button sends the book by email via functions/api/send-to-
 // kindle.js (lib=tg), which fetches the file from the Block 2 proxy
 // first. The source (library/channel name) is plain TEXT under the
 // book info, never the button label and never a t.me link: tapping
 // a source link opened the Telegram website, which is not a download.
-// Flagged (commercial) Telegram books show a ⚑ marker and NO send
+// Flagged (commercial) Telegram books show a "تجاري" marker and NO send
 // button and NO reading on the website, per the website rule that
 // flagged books are flagged but not readable/downloadable on the
 // site — they point at the bot instead, which enforces the 3/day cap.
@@ -62,8 +62,9 @@
 // { available, total, results } — a throw, a non-200 status, a
 // { ok: false } body, or malformed results all yield
 // available:false + no results, and /book falls back to OPDS-only.
-// OPDS failures keep their existing behaviour (500 naming the
-// failed index) — unchanged by this work.
+// OPDS failures return a 500 HTML page naming the failed index, with
+// links to /telegram/ and the home page — never a bare error line
+// and never partial results presented as complete.
 //
 // Download honesty: the Kindle's built-in browser REFUSES to download
 // EPUB/PDF ("Invalid File Type — Only .AZW, .PRC, .MOBI or .TXT"), and
@@ -71,7 +72,7 @@
 // hits the same error, *.mobi downloads). So there is no direct browser
 // download for these books, and the page renders NO direct-download
 // link at all (removed 2026-11-13: device test showed tapping it
-// failed with a white page + error codes 175/101). The "📧 أرسل إلى
+// failed with a white page + error codes 175/101). The "أرسل إلى
 // جهازي" button therefore sends the book by Send-to-Kindle email
 // instead (functions/api/send-to-kindle.js): EPUB by email IS accepted
 // — Amazon converts it to AZW3/KFX on delivery. Email send is the
@@ -84,6 +85,7 @@
 // limit; /book's own CPU grows by only the ~0.02 ms to parse it.
 
 const TG_LIMIT = 10; // Telegram cards per page (OPDS stays capped at 100)
+const MAX_Q_LEN = 200; // A title/author query longer than this is a 400 page, not a search
 
 // Query the Telegram catalog via the /api/tg-search endpoint.
 // NEVER throws and NEVER returns a partial/untrusted result: any
@@ -261,7 +263,7 @@ export async function onRequest(context) {
     ? "<input type=\"hidden\" name=\"fp\" value=\"" + esc(fp) + "\"> "
     : "";
 
-  const head = (title) => "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
+  const head = (title, qVal = q) => "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
     + "<meta charset=\"utf-8\">\n"
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
@@ -276,9 +278,9 @@ export async function onRequest(context) {
     + ".src{color:#555;font-size:.85rem}"
     + ".note{color:#555;font-size:.9rem}input[type=search]{font-size:1rem;padding:.4rem;width:70%}"
     + "input[type=submit]{font-size:1rem;padding:.4rem .8rem}</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n"
+    + "<h1>RliBook</h1>\n"
     + "<form method=\"get\" action=\"/book\">"
-    + "<input type=\"search\" name=\"q\" value=\"" + esc(q) + "\" "
+    + "<input type=\"search\" name=\"q\" value=\"" + esc(qVal) + "\" "
     + "placeholder=\"ابحث بالعنوان أو المؤلف…\" aria-label=\"بحث\"> "
     + fpHidden
     + "<input type=\"submit\" value=\"بحث\"></form>\n";
@@ -300,6 +302,15 @@ export async function onRequest(context) {
       "cache-control": "public, max-age=0, must-revalidate"}});
   }
 
+  if (q.length > MAX_Q_LEN) {
+    const body = head("بحث", q.slice(0, MAX_Q_LEN))
+      + "<p>كلمة البحث طويلة جداً — جرّب كلمة أقصر من العنوان أو اسم المؤلف.</p>\n"
+      + foot;
+    return new Response(body, {status: 400, headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=0, must-revalidate"}});
+  }
+
   const LIBS = [
     {slug: "khazendar", label: "خازندار", kind: "drive"},
     {slug: "sahwa", label: "مكتبة صحوه", kind: "drive"},
@@ -315,15 +326,33 @@ export async function onRequest(context) {
   // rejection from the Telegram half.
   const tgPromise = fetchTelegramResults(url.origin, q)
     .catch(() => ({available: false, total: 0, results: []}));
+  // An OPDS index that cannot be read (missing file, bad JSON) is a
+  // 500 — but a 500 the user can act on: a full page naming the
+  // library, with links to the Telegram index and home, never a bare
+  // error line and never partial results presented as complete.
+  const opdsFail = (lib) => {
+    const body = head("خطأ")
+      + "<p>تعذّر تحميل فهرس مكتبة " + esc(lib.label)
+      + " الآن — حاول مجدداً بعد دقيقة.</p>\n"
+      + "<p>إلى ذلك الحين: ابحث في <a href=\"/telegram/\">فهرس تيليجرام</a>"
+      + " أو عُد إلى <a href=\"/\">الرئيسية</a>.</p>\n"
+      + foot;
+    return new Response(body, {status: 500, headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=0, must-revalidate"}});
+  };
   const hits = [];
   for (const lib of LIBS) {
-    const idxUrl = new URL("/" + lib.slug + "/search-index.json", url.origin);
-    const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
-    if (!res.ok) {
-      return new Response("search index not found: /" + lib.slug + "/search-index.json",
-        {status: 500, headers: {"content-type": "text/plain; charset=utf-8"}});
+    let books;
+    try {
+      const idxUrl = new URL("/" + lib.slug + "/search-index.json", url.origin);
+      const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
+      if (!res.ok) return opdsFail(lib);
+      books = await res.json();
+      if (!Array.isArray(books)) return opdsFail(lib);
+    } catch (e) {
+      return opdsFail(lib);
     }
-    const books = await res.json();
     for (const b of books) {
       if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {
         hits.push({lib, b});
@@ -389,10 +418,19 @@ export async function onRequest(context) {
   const shown = hits.length + tg.results.length;
   body += "<p>وجدنا " + shown + " نتيجة لـ «" + esc(q) + "»:</p>\n";
   for (const {lib, b} of hits) {
-    const sendUrl = "/api/send-to-kindle?lib=" + lib.slug
-      + "&amp;id=" + encodeURIComponent(b.i)
-      + "&amp;f=" + fmtCode(b)
-      + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ;
+    // Send by email only works for the formats Send-to-Kindle accepts
+    // (epub/pdf/doc/docx/txt). A MOBI/AZW3 book gets NO send button —
+    // the endpoint would refuse it — and a note pointing at the bot
+    // instead, so the page never shows a button that is certain to fail.
+    // (No MOBI/AZW3 book is in the five indexes today, 2026-11-14, so
+    // this is defensive: a future catalog rebuild may add one.)
+    const sendable = TG_SENDABLE_FORMATS.has(fmtCode(b));
+    const sendUrl = sendable
+      ? "/api/send-to-kindle?lib=" + lib.slug
+        + "&amp;id=" + encodeURIComponent(b.i)
+        + "&amp;f=" + fmtCode(b)
+        + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ
+      : null;
     // "Read online" (Block 11b reader): EPUB only — the reader opens
     // EPUB books, so a PDF/DOC/MOBI book gets no button (its honest
     // page lives in the reader itself). Same URL contract as
@@ -407,7 +445,13 @@ export async function onRequest(context) {
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
     if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
-    body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
+    if (sendUrl) {
+      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
+    } else {
+      body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
+        + "اطلبه من البوت "
+        + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
+    }
     body += "</div>\n";
   }
 
@@ -418,7 +462,7 @@ export async function onRequest(context) {
   // t.me link — tapping a source link opened the Telegram website,
   // which is not a download. Flagged (commercial) books get NO send
   // button and NO reading on the website, per the website rule
-  // (flagged = shown with a ⚑ marker, reachable via the bot, which
+  // (flagged = shown with a "تجاري" marker, reachable via the bot, which
   // enforces the 3/day cap); a book that cannot be sent (private
   // group, no usable format, MOBI/AZW3/KFX) gets a note instead.
   if (tg.results.length > 0) {
@@ -470,11 +514,11 @@ export async function onRequest(context) {
       }
       body += "<p>تيليجرام"
         + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
-        + (r.flagged ? " · ⚑ تجاري" : "")
+        + (r.flagged ? " · تجاري" : "")
         + "</p>\n";
       body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
       if (r.flagged) {
-        body += "<p class=\"note\">⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
+        body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
           + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
       } else {
@@ -484,7 +528,7 @@ export async function onRequest(context) {
         if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
         const sendUrl = telegramSendUrl(r, fpQ);
         if (sendUrl) {
-          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
+          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
         } else {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "
@@ -500,7 +544,7 @@ export async function onRequest(context) {
   // Footer note whenever ANY send button is on the page (OPDS cards,
   // or a sendable non-flagged Telegram card) — a page with no send
   // button must not promise one.
-  const anySend = hits.length > 0
+  const anySend = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
     || tg.results.some((r) => telegramSendUrl(r, fpQ) !== null);
   if (anySend) {
     body += "<p class=\"note\">متصفح جهازك لا ينزّل EPUB/PDF — زر «أرسل إلى جهازي» يرسل الكتاب "

@@ -36,6 +36,7 @@ import {
   proxyDownloadUrl,
   MAX_FILE_BYTES,
   DAILY_PER_DEST,
+  DAILY_PER_IP,
   DEDUPE_TTL_SECONDS,
   RESEND_API_URL,
 } from "./send-to-kindle.js";
@@ -151,6 +152,8 @@ check("resolveAcquisitionUrl doab", resolveAcquisitionUrl("doab", "https://libra
 check("resolveAcquisitionUrl bad lib", resolveAcquisitionUrl("nope", "123") === null);
 check("resolveAcquisitionUrl bad drive id", resolveAcquisitionUrl("khazendar", "a b") === null);
 check("resolveAcquisitionUrl bad hindawi id", resolveAcquisitionUrl("hindawi", "abc") === null);
+check("resolveAcquisitionUrl doab id over 2048 chars -> null",
+  resolveAcquisitionUrl("doab", "https://example.com/" + "x".repeat(2040) + ".epub") === null);
 check("safeFilename latin title", safeFilename("Yawmiyat Naib", "hindawi", "13028368", "epub") === "Yawmiyat_Naib_RliBook_hindawi.epub");
 check("safeFilename arabic title kept", safeFilename("يوميات نائب في الأرياف", "hindawi", "13028368", "epub") === "يوميات_نائب_في_الأرياف_RliBook_hindawi.epub");
 check("safeFilename empty title falls back", safeFilename("", "hindawi", "13028368", "epub") === "rlibook-hindawi-13028368.epub");
@@ -569,6 +572,87 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   check("29 tg form: hidden h + p inputs present",
     body.includes('name="h" value="kotobkhana"') && body.includes('name="p" value="7559"'));
   check("29 tg form: nothing sent", calls.resend.length === 0 && calls.book.length === 0);
+}
+
+// --- 30. Review fixes (Area 2): failed sends refund the quota --------
+// --- 30. failed send (Resend 403) gives both daily counts back --------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 403 });
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  check("30 refund: failed send is 502", res.status === 502, `status=${res.status}`);
+  check("30 refund: nothing sent", calls.resend.length === 1 && calls.book.length === 1);
+  const day = new Date().toISOString().slice(0, 10);
+  const { createHash } = await import("node:crypto");
+  const destHash = createHash("sha256").update(KINDLE_EMAIL).digest("hex");
+  const destCount = kv.map.get(`stk:dest:${destHash}:${day}`);
+  const ipCount = kv.map.get(`stk:ip:1.2.3.4:${day}`);
+  check("30 refund: destination count given back (0 or absent)",
+    destCount === undefined || destCount === "0", `dest=${destCount}`);
+  check("30 refund: IP count given back (0 or absent)",
+    ipCount === undefined || ipCount === "0", `ip=${ipCount}`);
+}
+
+// --- 31. corrupt counter value is treated as 0, not fail-open -----------
+{
+  const day = new Date().toISOString().slice(0, 10);
+  const { createHash } = await import("node:crypto");
+  const destHash = createHash("sha256").update(KINDLE_EMAIL).digest("hex");
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+    [`stk:dest:${destHash}:${day}`]: "garbage",
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  check("31 corrupt counter: send proceeds (200)", res.status === 200, `status=${res.status}`);
+  check("31 corrupt counter: count is now 1 (not unlimited, not stuck)",
+    kv.map.get(`stk:dest:${destHash}:${day}`) === "1",
+    `counter=${kv.map.get(`stk:dest:${destHash}:${day}`)}`);
+}
+
+// --- 32. IP daily cap -> 429 with a next step, dest count refunded -------
+{
+  const day = new Date().toISOString().slice(0, 10);
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+    [`stk:ip:1.2.3.4:${day}`]: String(DAILY_PER_IP),
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("32 IP cap: 429", res.status === 429, `status=${res.status}`);
+  check("32 IP cap: next step — back link to the book page",
+    body.includes("رجوع إلى صفحة الكتاب"));
+  check("32 IP cap: nothing sent", calls.resend.length === 0 && calls.book.length === 0);
+  const { createHash } = await import("node:crypto");
+  const destHash = createHash("sha256").update(KINDLE_EMAIL).digest("hex");
+  const destCount = kv.map.get(`stk:dest:${destHash}:${day}`);
+  check("32 IP cap: destination count refunded (the dest check passed first)",
+    destCount === undefined || destCount === "0", `dest=${destCount}`);
+}
+
+// --- 33. over-long fingerprint -> 400, no send, no KV lookup ------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: "x".repeat(200) } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("33 long fp: 400 not-found page", res.status === 400 && body.includes("لم نجد بريد جهاز"), `status=${res.status}`);
+  check("33 long fp: nothing sent", calls.resend.length === 0 && calls.book.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

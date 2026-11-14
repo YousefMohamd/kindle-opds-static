@@ -333,6 +333,11 @@ export async function onRequest(context) {
   // (specific routes precede catch-alls). If it ever lands here the
   // router misbehaved — never treat "search" as a fingerprint.
   if (fp === "search") return new Response("Not found", { status: 404 });
+  // Same guard for /opds/qurans (functions/opds/qurans.js): "qurans"
+  // is 6 chars, so it could never be a valid 22-char fingerprint —
+  // but without this guard a misroute would serve the fingerprint
+  // nav feed with a "not valid" notice instead of the Qurans feed.
+  if (fp === "qurans") return new Response("Not found", { status: 404 });
 
   const sub = segs[1] || "";
   if (segs.length > 2) return new Response("Not found", { status: 404 });

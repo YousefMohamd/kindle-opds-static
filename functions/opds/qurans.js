@@ -24,6 +24,9 @@ const esc = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export function onRequest(context) {
+  if (context.request.method !== "GET") {
+    return new Response("Method not allowed", { status: 405 });
+  }
   const url = new URL(context.request.url);
   const lang = (url.searchParams.get("lang") || "").trim().toLowerCase();
   let list = QURANS;

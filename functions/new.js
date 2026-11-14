@@ -4,13 +4,13 @@
 //   GET /new
 //     -> 200 text/html — the newest 30 books added to the catalog:
 //        title, author, source (as TEXT under the book info), format,
-//        post date, and a "📧 أرسل إلى جهازي" send button (the button
+//        post date, and a "أرسل إلى جهازي" send button (the button
 //        is the send action, via /api/send-to-kindle?lib=tg, which
 //        fetches the file from the Block 2 proxy first). No JavaScript,
 //        minimal CSS, tiny page — built for the Kindle experimental
 //        browser. Same style as functions/book.js.
 //
-// Flagged (commercial) books: a ⚑ marker, NO send button, NO
+// Flagged (commercial) books: a "تجاري" marker, NO send button, NO
 // reading on the website — with a one-line explanation that the book
 // can be reached via Telegram (the bot). The flag lives in KV as
 // flag:<handle>:<post_id>, the same denylist functions/api/tg-search.js
@@ -180,7 +180,7 @@ export async function onRequest(context) {
     + "border-radius:6px;background:#0b5cad;color:#fff;text-decoration:none;font-weight:600}"
     + ".card{border:1px solid #ccc;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
     + ".note{color:#555;font-size:.9rem}</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n";
+    + "<h1>RliBook</h1>\n";
 
   const foot = "<p class=\"note\"><a href=\"/\">الرئيسية</a> · "
     + "<a href=\"/book\">بحث</a> · "
@@ -240,7 +240,7 @@ export async function onRequest(context) {
 
   if (books.length === 0) {
     const body = head("أحدث الكتب")
-      + "<h2>🆕 أحدث الكتب</h2>\n"
+      + "<h2>أحدث الكتب</h2>\n"
       + "<p>" + esc(WEEKLY_NOTICE) + "</p>\n"
       + "<p>قائمة أحدث الكتب لم تُنشر بعد — تُبنى مع كل تحديث أسبوعي "
       + "للقاموس، وستظهر هنا فور نشرها.</p>\n"
@@ -251,7 +251,7 @@ export async function onRequest(context) {
   }
 
   let body = head("أحدث الكتب")
-    + "<h2>🆕 أحدث الكتب</h2>\n"
+    + "<h2>أحدث الكتب</h2>\n"
     + "<p>" + esc(WEEKLY_NOTICE) + "</p>\n"
     + "<p>أحدث " + books.length + " كتاب أُضيفت إلى الكتالوج"
     + (generatedAt ? " — آخر تحديث " + esc(generatedAt.slice(0, 10)) : "")
@@ -263,17 +263,17 @@ export async function onRequest(context) {
     if (b.author) body += "<p>المؤلف: " + esc(b.author) + "</p>\n";
     const meta = [b.format, b.date].filter(Boolean).join(" · ");
     if (meta || isFlag) {
-      body += "<p>" + esc(meta) + (isFlag ? (meta ? " · " : "") + "⚑ تجاري" : "") + "</p>\n";
+      body += "<p>" + esc(meta) + (isFlag ? (meta ? " · " : "") + "تجاري" : "") + "</p>\n";
     }
     if (b.source) body += "<p>المصدر: " + esc(b.source) + "</p>\n";
     if (isFlag) {
-      body += "<p class=\"note\">⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
+      body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
         + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
     } else {
       const sendUrl = telegramSendUrl(b, fpQ);
       if (sendUrl) {
-        body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
+        body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
       } else {
         body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
           + "اطلبه من البوت "
@@ -283,7 +283,7 @@ export async function onRequest(context) {
     body += "</div>\n";
   }
   body += "<p class=\"note\">زر «أرسل إلى جهازي» يجلب الكتاب من تيليجرام "
-    + "ثم يرسله إلى بريد جهازك. الكتب التجارية (⚑) تُطلب من البوت.</p>\n"
+    + "ثم يرسله إلى بريد جهازك. الكتب التجارية تُطلب من البوت.</p>\n"
     + foot;
   return new Response(body, { headers });
 }

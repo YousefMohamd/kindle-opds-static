@@ -207,14 +207,16 @@ tgMode = "ok";
   check("B1 TG-only title: TG send button present (lib=tg, handle+post)",
     r.body.includes("/api/send-to-kindle?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
-    && r.body.includes("📧 أرسل إلى جهازي"));
+    && r.body.includes("أرسل إلى جهازي"));
+  check("B1 TG-only title: no colour emoji on the page (F2: old Kindle shows tofu)",
+    !r.body.includes("📧") && !r.body.includes("📚") && !r.body.includes("⚑"));
   check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
     r.body.includes("/site/reader/?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
     && r.body.includes("📖 اقرأ أونلاين"));
   check("B1 TG-only title: Read online comes before Send (read first)",
-    r.body.indexOf("📖 اقرأ أونلاين") !== -1
-    && r.body.indexOf("📖 اقرأ أونلاين") < r.body.indexOf("📧 أرسل إلى جهازي"));
+    r.body.indexOf("اقرأ أونلاين") !== -1
+    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسل إلى جهازي"));
   check("B1 TG-only title: send footer note present (TG cards have send buttons)",
     r.body.includes("زر «أرسل إلى جهازي»"));
   check("B1 TG-only title: telegram note explains the send button fetches from Telegram",
@@ -242,14 +244,15 @@ tgMode = "ok";
   check("B2 combined query: send footer note present (OPDS half shown)",
     r.body.includes("زر «أرسل إلى جهازي»"));
   check("B2 combined query: OPDS EPUB cards have a Read online button",
-    r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("📖 اقرأ أونلاين"));
+    r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("اقرأ أونلاين"));
   check("B2 combined query: Read online comes before Send on the OPDS card",
-    r.body.indexOf("📖 اقرأ أونلاين") !== -1
-    && r.body.indexOf("📖 اقرأ أونلاين") < r.body.indexOf("📧 أرسل إلى جهازي"));
+    r.body.indexOf("اقرأ أونلاين") !== -1
+    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسل إلى جهازي"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
-  check("B3 flagged card: ⚑ marker shown", r.body.includes("⚑ تجاري"));
+  check("B3 flagged card: تجاري marker shown (F2: the word, no glyph)",
+    r.body.includes("تجاري") && !r.body.includes("⚑"));
   check("B3 flagged card: NO t.me link for the flagged book",
     !r.body.includes("https://t.me/darkromancenovels/123"));
   check("B3 flagged card: points at the bot instead",
@@ -428,9 +431,15 @@ console.log("E. OPDS failure behaviour unchanged:");
     return saved(u);
   };
   const r = await getBook("الحب");
-  check("E1 missing OPDS index still 500 naming the index",
-    r.status === 500 && r.body.includes("/sahwa/search-index.json"),
-    "status " + r.status);
+  check("E1 missing OPDS index: still 500 (never partial results as if complete)",
+    r.status === 500, "status " + r.status);
+  check("E1 missing OPDS index: a full HTML page, not a bare error line",
+    r.body.includes("<!DOCTYPE html>") && r.body.includes("مكتبة صحوه"));
+  check("E1 missing OPDS index: next step — Telegram index + home links",
+    r.body.includes('href="/telegram/"') && r.body.includes('href="/"'));
+  check("E1 missing OPDS index: no partial results shown",
+    !r.body.includes("وجدنا") && !r.body.includes("/api/send-to-kindle"));
+  globalThis.fetch = saved; // restore the standard mock for later sections
 }
 
 // ============ F. telegramSendUrl / parseTelegramPostUrl unit ========
@@ -490,6 +499,75 @@ console.log("H. Telegram reader-URL helper:");
   check("H1 private-group link -> null",
     telegramReaderUrl(
       { title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }) === null);
+}
+
+// ============ I. Review fixes (Area 2): query cap, malformed index,
+// ============    non-sendable OPDS format =============================
+console.log("I. Review fixes (Area 2):");
+{
+  // A query longer than MAX_Q_LEN is a 400 page with the search form,
+  // not a search (and not a crash).
+  const r = await getBook("x".repeat(201));
+  check("I1 query >200 chars: 400 + plain message + search form",
+    r.status === 400 && r.body.includes("طويلة جداً")
+    && r.body.includes("<form") && r.body.includes('href="/"'),
+    "status " + r.status);
+  const r2 = await getBook("x".repeat(200));
+  check("I1 query of exactly 200 chars: searched, not rejected",
+    r2.status === 200 && !r2.body.includes("طويلة جداً"), "status " + r2.status);
+}
+{
+  // A malformed (non-JSON / non-array) OPDS index is the same helpful
+  // 500 HTML page as a missing one — never an uncaught throw.
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") throw new Error("down");
+    if (url.pathname === "/sahwa/search-index.json") return new Response("{not json", { headers: { "content-type": "application/json" } });
+    return saved(u);
+  };
+  const r = await getBook("الحب");
+  check("I2 malformed OPDS index: 500 HTML page naming the library",
+    r.status === 500 && r.body.includes("<!DOCTYPE html>")
+    && r.body.includes("مكتبة صحوه"), "status " + r.status);
+  check("I2 malformed OPDS index: next-step links present",
+    r.body.includes('href="/telegram/"') && r.body.includes('href="/"'));
+  globalThis.fetch = saved;
+}
+{
+  // An OPDS MOBI book (no such book is in the five indexes today, so
+  // the index is mocked): NO send button — the endpoint would refuse
+  // it — a bot note instead, and no footer note promising a send.
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") throw new Error("down");
+    if (url.pathname === "/api/ratings") {
+      return jsonRes({ ok: true, title: "", rating: null, description: null });
+    }
+    if (url.pathname === "/khazendar/search-index.json") {
+      return new Response(JSON.stringify([
+        { t: "Mobi Test Book", a: "Author", i: "1MPnTH-P5PD3KCwkQd8Swayi2my_RD1Uq", m: "application/x-mobipocket-ebook" },
+      ]), { headers: { "content-type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/search-index.json")) {
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    }
+    return saved(u);
+  };
+  const r = await getBook("Mobi Test");
+  check("I3 OPDS MOBI card: 200, card shown",
+    r.status === 200 && r.body.includes("Mobi Test Book"), "status " + r.status);
+  check("I3 OPDS MOBI card: NO send button (email refuses MOBI)",
+    !r.body.includes("/api/send-to-kindle?lib=khazendar"));
+  check("I3 OPDS MOBI card: bot note instead",
+    r.body.includes("لا يمكن إرسال هذا الكتاب من الموقع")
+    && r.body.includes("@RliBook_bot"));
+  check("I3 OPDS MOBI card: NO Read online button (reader opens EPUB only)",
+    !r.body.includes("/site/reader/?lib=khazendar"));
+  check("I3 OPDS MOBI card: footer does not promise a send button",
+    !r.body.includes("زر «أرسل إلى جهازي» يرسل الكتاب"));
+  globalThis.fetch = saved;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

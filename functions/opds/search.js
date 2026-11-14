@@ -18,6 +18,9 @@
 // No Drive write, no Mac server involved.
 export async function onRequest(context) {
   const url = new URL(context.request.url);
+  if (context.request.method !== "GET") {
+    return new Response("Method not allowed", {status: 405});
+  }
   const q = (url.searchParams.get("q") || "").trim();
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   if (!q) {
@@ -34,9 +37,18 @@ export async function onRequest(context) {
   const hits = [];
   for (const lib of LIBS) {
     const idxUrl = new URL("/" + lib.slug + "/search-index.json", url.origin);
-    const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
-    if (!res.ok) return new Response("search index not found: /" + lib.slug + "/search-index.json", {status: 500});
-    const books = await res.json();
+    // A missing or malformed index is a 500 naming the failed index —
+    // never an uncaught throw (a bare 500 from the runtime) and never
+    // partial results presented as complete.
+    let books;
+    try {
+      const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
+      if (!res.ok) return new Response("search index not found: /" + lib.slug + "/search-index.json", {status: 500});
+      books = await res.json();
+      if (!Array.isArray(books)) return new Response("search index not found: /" + lib.slug + "/search-index.json", {status: 500});
+    } catch (e) {
+      return new Response("search index not found: /" + lib.slug + "/search-index.json", {status: 500});
+    }
     for (const b of books) {
       if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {
         hits.push({lib, b});

@@ -62,6 +62,14 @@
 // Response is metadata + links only (title, author, source, format,
 // t.me post link). No book file bytes are ever returned or stored.
 //
+// Totals are D1 counts: while the D1 import is still running (it
+// finishes 2026-11-19) `total` is LOWER than the catalog manifest
+// total (323,325 books) — the endpoint searches only what D1 holds
+// so far, and says nothing more. /api/stats reports both numbers
+// side by side; this endpoint never inflates its total to the
+// manifest, and never claims a book is absent from the catalog when
+// it may only be absent from D1 yet.
+//
 // Free-tier friendly: one D1 query (FTS MATCH, reads ~10-100 rows;
 // 5M rows read/day on Workers Free) + up to `limit` parallel KV gets
 // for the flag check. No catalog fetch, no heavy work. D1 writes
@@ -70,6 +78,8 @@
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const MAX_OFFSET = 10000;
+const MAX_Q_LEN = 200; // Longer than any real title/author query; a 400, not a search
+const SOURCE_RE = /^[A-Za-z0-9_]{1,64}$/; // A Telegram channel/group handle
 
 // Same normalization as the indexer (tbi.books.normalize_arabic) and
 // the website search page: NFKC, strip tashkeel (U+064B-U+0652) +
@@ -243,6 +253,22 @@ export async function onRequest(context) {
       },
     });
 
+  // Validate before touching D1: a bad source is a 400 (the caller
+  // passed something that is not a channel/group handle), and a very
+  // long query is a 400 too — both used to reach the database unchecked.
+  if (source && !SOURCE_RE.test(source)) {
+    return json(
+      { ok: false, error: "bad source — use a channel or group handle (letters, digits, underscore)" },
+      400,
+    );
+  }
+  if (q.length > MAX_Q_LEN) {
+    return json(
+      { ok: false, error: "query too long (max 200 characters)" },
+      400,
+    );
+  }
+
   const db = env && env.TG_D1;
   if (!db) {
     return json(
@@ -270,8 +296,11 @@ export async function onRequest(context) {
         results: found.rows.map((r, i) => toResult(r, flagged[i])),
       });
     } catch (e) {
+      // Never leak the database error to the caller (it can carry
+      // table/column names); log it, return a generic failure.
+      console.warn("[tg-search] search failed:", e && e.message);
       return json(
-        { ok: false, error: "search failed: " + (e && e.message ? e.message : e) },
+        { ok: false, error: "search failed — try again later" },
         500,
       );
     }
@@ -308,8 +337,11 @@ export async function onRequest(context) {
       results: found.rows.map((r, i) => toResult(r, flagged[i])),
     });
   } catch (e) {
+    // Never leak the database error to the caller (it can carry
+    // table/column names); log it, return a generic failure.
+    console.warn("[tg-search] search failed:", e && e.message);
     return json(
-      { ok: false, error: "search failed: " + (e && e.message ? e.message : e) },
+      { ok: false, error: "search failed — try again later" },
       500,
     );
   }
