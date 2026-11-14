@@ -1,0 +1,27 @@
+/* RliBook — Chess board style (brand palette, light, touch-friendly). */
+.chess-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; }
+.chess-controls select { font: inherit; padding: 0.5rem; min-height: 44px; border: 1px solid #99B6B3; border-radius: 8px; background: #fff; color: #1C2826; }
+.chess-board {
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  width: min(92vw, 520px); aspect-ratio: 1; margin: 0 auto;
+  border: 4px solid #44402F; border-radius: 6px; overflow: hidden;
+}
+.chess-sq {
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(1.6rem, 7vw, 2.6rem); line-height: 1;
+  cursor: pointer; user-select: none; border: 0; padding: 0;
+  background: none; color: #1C2826;
+}
+.chess-sq.light { background: #DFF1F4; }
+.chess-sq.dark { background: #99B6B3; }
+.chess-sq.white-piece { color: #fff; text-shadow: 0 1px 2px #1C2826, 0 0 2px #1C2826; }
+.chess-sq.black-piece { color: #1C2826; }
+.chess-sq.selected { box-shadow: inset 0 0 0 3px #44402F; }
+.chess-sq.legal::after {
+  content: ""; width: 26%; height: 26%; border-radius: 50%;
+  background: rgba(28, 40, 38, 0.55); position: absolute;
+}
+.chess-sq.legal-capture { box-shadow: inset 0 0 0 3px rgba(68, 64, 47, 0.9); }
+.chess-sq { position: relative; }
+.chess-sq:disabled { cursor: default; }
+.moves-list { overflow-wrap: break-word; }

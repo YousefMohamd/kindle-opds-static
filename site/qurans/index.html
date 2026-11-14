@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>المصاحف الإلكترونية — RliBook</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+         max-width: 820px; margin: 0 auto; padding: 1.2rem;
+         line-height: 1.8; color: #1C2826; background: #DFF1F4; }
+  h1 { font-size: 1.9rem; margin-bottom: 0.2rem; color: #1C2826; }
+  h2 { font-size: 1.25rem; margin: 1.6rem 0 0.5rem; color: #44402F;
+       border-bottom: 2px solid #93D4EF; padding-bottom: 0.3rem; }
+  h3 { font-size: 1.05rem; margin: 1.1rem 0 0.3rem; color: #44402F; }
+  .card { border: 1px solid #C4E0EB; border-radius: 10px; background: #fff;
+          padding: 1rem 1.2rem; margin: 1rem 0; }
+  .warn { border: 2px solid #44402F; border-radius: 10px; background: #fff;
+          padding: 1rem 1.2rem; margin: 1rem 0; }
+  .warn h2 { border: none; margin-top: 0; }
+  a { color: #0b5cad; }
+  .btn { display: inline-block; background: #93D4EF; color: #1C2826;
+         font-weight: bold; padding: 0.7rem 1.4rem; border-radius: 8px;
+         text-decoration: none; margin: 0.4rem 0; border: 1px solid #44402F; }
+  .btn:hover { background: #C4E0EB; }
+  .note { color: #44402F; font-size: 0.92rem; }
+  .muted { color: #555; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.4rem 0 1rem;
+          background: #fff; font-size: 0.95rem; }
+  th, td { border: 1px solid #C4E0EB; padding: 0.45rem 0.6rem;
+           text-align: right; vertical-align: top; }
+  th { background: #C4E0EB; }
+  tr.hidden { display: none; }
+  select { font: inherit; padding: 0.35rem 0.5rem; margin: 0.2rem;
+           border: 1px solid #99B6B3; border-radius: 6px; background: #fff; }
+  ul { margin: 0.3rem 0; }
+  .tag { display: inline-block; background: #99B6B3; color: #1C2826;
+         border-radius: 6px; padding: 0.1rem 0.5rem; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>📖 المصاحف الإلكترونية</h1>
+<p>المصحف كاملاً على جهازك — عربي، أو عربي مع ترجمة بلغتك، مع التفسير الذي تختاره.
+كل الملفات من مشروع مفتوح المصدر (zeeyado/quran-ebook — GPL-3.0)،
+ولا نستضيف أي ملف مصحف على خوادمنا: التحميل مباشرة من صفحة إصدارات المشروع.</p>
+
+<div class="warn">
+<h2>⚠️ قبل أن تحمّل: أي مصحف لجهازك؟</h2>
+<p><strong>عندك KOReader (على كيندل مكسور الحماية، أو كوبو، أو بوكيت بوك، أو أندرويد)؟</strong>
+— هذه هي التجربة الكاملة: العربية تظهر صحيحة، والترجمة تظهر بضغطة على رقم الآية،
+والتفسير يعمل. <strong>هذا هو الخيار الصحيح لك.</strong></p>
+<p><strong>كيندل عادي بدون KOReader؟</strong>
+— الكيندل العادي <strong>لا يعرض ملف EPUB العربي بشكل صحيح</strong> (الحروف والتشكيل تتكسر).
+لا تحمّل الملف على كيندل عادي — إما ثبّت KOReader أولاً، أو اقرأ على الهاتف/الحاسوب
+(تطبيق KOReader، أو Apple Books، أو Calibre). إرسال الملف بالإيميل إلى الكيندل
+لن يصلح العرض على الكيندل العادي.</p>
+<p><strong>آيفون / ماك (Apple Books) أو حاسوب (Calibre)؟</strong>
+— يعمل غالباً بشكل جيد، وبعض المزايا التفاعلية قد لا تعمل بالكامل.</p>
+</div>
+
+<div class="card">
+<h2 style="border:none;margin-top:0">كيف تحصل على المصحف؟</h2>
+<p><a class="btn" href="https://t.me/RliBook_bot">اطلب المصحف الالكتروني — عبر البوت 🤖</a></p>
+<p class="note">اضغط الزر وافتح البوت: اختر اللغة والصيغة والرواية والتفسير،
+والبوت يرسل لك المصحف بالإيميل (للكيندل/بوكيت بوك) أو يرشدك للنقل بـ USB.
+<em>ملاحظة: استبيان اختيار المصحف داخل البوت يصل في التحديث القادم (v4.8.43) —
+حتى ذلك الحين يمكنك التحميل مباشرة من الجدول أدناه.</em></p>
+<p>أو حمّل مباشرة من
+<a href="https://github.com/zeeyado/quran-ebook/releases/latest">صفحة الإصدارات (أحدث إصدار v0.10.0)</a>
+ثم انقل الملف إلى جهازك بـ USB.</p>
+<p>مستخدمو KOReader: تجد المصاحف أيضاً داخل مكتبتك عبر
+<a href="/opds/qurans">كتالوج OPDS: /opds/qurans</a>.</p>
+</div>
+
+<div class="card">
+<h2 style="border:none;margin-top:0">أي صيغة تختار؟</h2>
+<ul>
+<li><strong>عربي فقط</strong> — النص العربي وحده، نص متصل مثل المصحف الورقي. لمن يقرأ العربية فقط.</li>
+<li><strong>ثنائي اللغة (Bilingual)</strong> — العربية والترجمة معاً، آية بآية. الأفضل للدراسة أو القراءة مع الترجمة جنباً إلى جنب.</li>
+<li><strong>تفاعلي (Interactive)</strong> — عربي فقط، واضغط على رقم أي آية لتظهر ترجمتها في نافذة. الأفضل لمن يقرأ العربية ويريد الترجمة أحياناً.</li>
+<li><strong>كلمة بكلمة (Word-by-Word)</strong> — تحت كل كلمة عربية معناها، ثم ترجمة الجملة كاملة بعد كل آية. الأفضل لتعلّم المفردات وفهم تركيب الآية.</li>
+</ul>
+<p><strong>الرواية:</strong> كل الإصدارات برواية <strong>حفص عن عاصم</strong> — مصحف المدينة (٦٠٤ صفحات).
+إصدار <strong>ورش عن نافع</strong> موجود أيضاً لكنه <strong>تجريبي</strong> (عربي فقط، ٦٢١٤ آية بترقيم مدني،
+وبلا عناوين سور مذهّبة؛ القواميس والتفسير مبنية على ترقيم حفص وقد لا تطابق بعض السور).</p>
+</div>
+
+<div class="card">
+<h2 style="border:none;margin-top:0">اختر مصحفك</h2>
+<p>
+<label>اللغة:
+<select id="f-lang">
+<option value="">كل اللغات</option>
+<option value="ar">العربية</option>
+<option value="en">الإنجليزية</option>
+<option value="fr">الفرنسية</option>
+<option value="de">الألمانية</option>
+<option value="es">الإسبانية</option>
+<option value="tr">التركية</option>
+<option value="ur">الأردية</option>
+<option value="id">الإندونيسية</option>
+<option value="ru">الروسية</option>
+<option value="bn">البنغالية</option>
+</select></label>
+<label>الصيغة:
+<select id="f-format">
+<option value="">كل الصيغ</option>
+<option value="arabic">عربي فقط</option>
+<option value="bilingual">ثنائي اللغة</option>
+<option value="interactive">تفاعلي</option>
+<option value="wbw">كلمة بكلمة</option>
+<option value="wbw-en">كلمة بكلمة (شرح إنجليزي)</option>
+</select></label>
+<label>الرواية:
+<select id="f-narration">
+<option value="">كل الروايات</option>
+<option value="hafs">حفص</option>
+<option value="warsh">ورش (تجريبي)</option>
+</select></label>
+</p>
+<p class="note">٤٩ إصداراً في ١٠ لغات (المشروع كله يغطي ٤٢ لغة —
+<a href="https://github.com/zeeyado/quran-ebook/releases/latest">القائمة الكاملة في صفحة الإصدارات</a>).</p>
+<h3>العربية (Arabic)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="ar" data-format="arabic" data-narration="hafs"><td>المصحف — عربي فقط (حفص عن عاصم)</td><td>عربي فقط</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>878 KB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_inline_ar.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ar" data-format="arabic" data-narration="warsh"><td>المصحف — عربي فقط (ورش عن نافع — تجريبي)</td><td>عربي فقط</td><td>ورش عن نافع — تجريبي (٦٢١٤ آية، ترقيم مدني)</td><td>860 KB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_warsh_kfgqpc_inline_ar.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الإنجليزية (English)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="en" data-format="bilingual" data-narration="hafs"><td>المصحف — الإنجليزية (Sahih International) — ثنائي اللغة<br><span class="muted">Sahih International</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-en-sahih.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="interactive" data-narration="hafs"><td>المصحف — الإنجليزية (Sahih International) — تفاعلي<br><span class="muted">Sahih International</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-en-sahih.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="wbw" data-narration="hafs"><td>المصحف — الإنجليزية (Sahih International) — كلمة بكلمة<br><span class="muted">Sahih International</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-en-sahih.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="bilingual" data-narration="hafs"><td>المصحف — الإنجليزية (M.A.S. Abdel Haleem) — ثنائي اللغة<br><span class="muted">M.A.S. Abdel Haleem</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-en-haleem.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="interactive" data-narration="hafs"><td>المصحف — الإنجليزية (M.A.S. Abdel Haleem) — تفاعلي<br><span class="muted">M.A.S. Abdel Haleem</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.2 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-en-haleem.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="wbw" data-narration="hafs"><td>المصحف — الإنجليزية (M.A.S. Abdel Haleem) — كلمة بكلمة<br><span class="muted">M.A.S. Abdel Haleem</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-en-haleem.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="bilingual" data-narration="hafs"><td>المصحف — الإنجليزية (Sayyid Abul Ala Maududi (Tafhim ul-Quran)) — ثنائي اللغة<br><span class="muted">Sayyid Abul Ala Maududi (Tafhim ul-Quran)</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.7 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-en-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="interactive" data-narration="hafs"><td>المصحف — الإنجليزية (Sayyid Abul Ala Maududi (Tafhim ul-Quran)) — تفاعلي<br><span class="muted">Sayyid Abul Ala Maududi (Tafhim ul-Quran)</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.6 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-en-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="wbw" data-narration="hafs"><td>المصحف — الإنجليزية (Sayyid Abul Ala Maududi (Tafhim ul-Quran)) — كلمة بكلمة<br><span class="muted">Sayyid Abul Ala Maududi (Tafhim ul-Quran)</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>3.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-en-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="bilingual" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran) — ثنائي اللغة<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-en-khattab.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="interactive" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran) — تفاعلي<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-en-khattab.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="wbw" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran) — كلمة بكلمة<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-en-khattab.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="bilingual" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran (annotated)) — ثنائي اللغة<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran (annotated)</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-en-khattab-fn.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="interactive" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran (annotated)) — تفاعلي<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran (annotated)</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-en-khattab-fn.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="en" data-format="wbw" data-narration="hafs"><td>المصحف — الإنجليزية (Dr. Mustafa Khattab / The Clear Quran (annotated)) — كلمة بكلمة<br><span class="muted">Dr. Mustafa Khattab / The Clear Quran (annotated)</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.0 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-en-khattab-fn.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الفرنسية (Français)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="fr" data-format="bilingual" data-narration="hafs"><td>المصحف — الفرنسية (Hamidullah) — ثنائي اللغة<br><span class="muted">Hamidullah</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-fr-hamidullah.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="fr" data-format="interactive" data-narration="hafs"><td>المصحف — الفرنسية (Hamidullah) — تفاعلي<br><span class="muted">Hamidullah</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-fr-hamidullah.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="fr" data-format="wbw-en" data-narration="hafs"><td>المصحف — الفرنسية (Hamidullah) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Hamidullah</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-fr-hamidullah_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الألمانية (Deutsch)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="de" data-format="bilingual" data-narration="hafs"><td>المصحف — الألمانية (Bubenheim &amp; Elyas) — ثنائي اللغة<br><span class="muted">Bubenheim &amp; Elyas</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-de-bubenheim.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="de" data-format="interactive" data-narration="hafs"><td>المصحف — الألمانية (Bubenheim &amp; Elyas) — تفاعلي<br><span class="muted">Bubenheim &amp; Elyas</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-de-bubenheim.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="de" data-format="wbw-en" data-narration="hafs"><td>المصحف — الألمانية (Bubenheim &amp; Elyas) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Bubenheim &amp; Elyas</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.0 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-de-bubenheim_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الإسبانية (Español)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="es" data-format="bilingual" data-narration="hafs"><td>المصحف — الإسبانية (Isa Garcia) — ثنائي اللغة<br><span class="muted">Isa Garcia</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-es-garcia.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="es" data-format="interactive" data-narration="hafs"><td>المصحف — الإسبانية (Isa Garcia) — تفاعلي<br><span class="muted">Isa Garcia</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-es-garcia.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="es" data-format="wbw-en" data-narration="hafs"><td>المصحف — الإسبانية (Isa Garcia) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Isa Garcia</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-es-garcia_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>التركية (Türkçe)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="tr" data-format="bilingual" data-narration="hafs"><td>المصحف — التركية (Diyanet İşleri) — ثنائي اللغة<br><span class="muted">Diyanet İşleri</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-tr-diyanet.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="tr" data-format="interactive" data-narration="hafs"><td>المصحف — التركية (Diyanet İşleri) — تفاعلي<br><span class="muted">Diyanet İşleri</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.2 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-tr-diyanet.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="tr" data-format="wbw" data-narration="hafs"><td>المصحف — التركية (Diyanet İşleri) — كلمة بكلمة<br><span class="muted">Diyanet İşleri</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-tr-diyanet.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="tr" data-format="wbw-en" data-narration="hafs"><td>المصحف — التركية (Diyanet İşleri) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Diyanet İşleri</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-tr-diyanet_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الأردية (Urdu)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="ur" data-format="bilingual" data-narration="hafs"><td>المصحف — الأردية (Jalandhari) — ثنائي اللغة<br><span class="muted">Jalandhari</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-ur-jalandhari.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="interactive" data-narration="hafs"><td>المصحف — الأردية (Jalandhari) — تفاعلي<br><span class="muted">Jalandhari</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-ur-jalandhari.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="wbw" data-narration="hafs"><td>المصحف — الأردية (Jalandhari) — كلمة بكلمة<br><span class="muted">Jalandhari</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.0 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-ur-jalandhari.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="wbw-en" data-narration="hafs"><td>المصحف — الأردية (Jalandhari) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Jalandhari</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-ur-jalandhari_enwbw.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="bilingual" data-narration="hafs"><td>المصحف — الأردية (Sayyid Abul Ala Maududi (Tafheem-ul-Quran)) — ثنائي اللغة<br><span class="muted">Sayyid Abul Ala Maududi (Tafheem-ul-Quran)</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>4.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-ur-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="interactive" data-narration="hafs"><td>المصحف — الأردية (Sayyid Abul Ala Maududi (Tafheem-ul-Quran)) — تفاعلي<br><span class="muted">Sayyid Abul Ala Maududi (Tafheem-ul-Quran)</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>4.0 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-ur-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="wbw" data-narration="hafs"><td>المصحف — الأردية (Sayyid Abul Ala Maududi (Tafheem-ul-Quran)) — كلمة بكلمة<br><span class="muted">Sayyid Abul Ala Maududi (Tafheem-ul-Quran)</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>4.8 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-ur-maududi.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ur" data-format="wbw-en" data-narration="hafs"><td>المصحف — الأردية (Sayyid Abul Ala Maududi (Tafheem-ul-Quran)) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Sayyid Abul Ala Maududi (Tafheem-ul-Quran)</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>4.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-ur-maududi_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الإندونيسية (Bahasa Indonesia)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="id" data-format="bilingual" data-narration="hafs"><td>المصحف — الإندونيسية (Ministry of Religious Affairs) — ثنائي اللغة<br><span class="muted">Ministry of Religious Affairs</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-id-ministry.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="id" data-format="interactive" data-narration="hafs"><td>المصحف — الإندونيسية (Ministry of Religious Affairs) — تفاعلي<br><span class="muted">Ministry of Religious Affairs</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-id-ministry.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="id" data-format="wbw" data-narration="hafs"><td>المصحف — الإندونيسية (Ministry of Religious Affairs) — كلمة بكلمة<br><span class="muted">Ministry of Religious Affairs</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.9 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-id-ministry.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="id" data-format="wbw-en" data-narration="hafs"><td>المصحف — الإندونيسية (Ministry of Religious Affairs) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Ministry of Religious Affairs</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-id-ministry_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>الروسية (Русский)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="ru" data-format="bilingual" data-narration="hafs"><td>المصحف — الروسية (Kuliev) — ثنائي اللغة<br><span class="muted">Kuliev</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-ru-kuliev.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ru" data-format="interactive" data-narration="hafs"><td>المصحف — الروسية (Kuliev) — تفاعلي<br><span class="muted">Kuliev</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.3 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-ru-kuliev.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="ru" data-format="wbw-en" data-narration="hafs"><td>المصحف — الروسية (Kuliev) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Kuliev</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-ru-kuliev_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+  <h3>البنغالية (বাংলা)</h3>
+  <table>
+    <thead><tr><th>المصحف</th><th>الصيغة</th><th>الرواية</th><th>الحجم</th><th>تحميل</th></tr></thead>
+    <tbody>
+      <tr data-lang="bn" data-format="bilingual" data-narration="hafs"><td>المصحف — البنغالية (Taisirul Quran) — ثنائي اللغة<br><span class="muted">Taisirul Quran</span></td><td>ثنائي اللغة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_bilin_ar-bn-taisirul.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="bn" data-format="interactive" data-narration="hafs"><td>المصحف — البنغالية (Taisirul Quran) — تفاعلي<br><span class="muted">Taisirul Quran</span></td><td>تفاعلي</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>1.4 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_interactive_ar-bn-taisirul.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="bn" data-format="wbw" data-narration="hafs"><td>المصحف — البنغالية (Taisirul Quran) — كلمة بكلمة<br><span class="muted">Taisirul Quran</span></td><td>كلمة بكلمة</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-bn-taisirul.epub">EPUB ⬇</a></td></tr>
+      <tr data-lang="bn" data-format="wbw-en" data-narration="hafs"><td>المصحف — البنغالية (Taisirul Quran) — كلمة بكلمة (شرح إنجليزي)<br><span class="muted">Taisirul Quran</span></td><td>كلمة بكلمة (إنجليزي)</td><td>حفص عن عاصم — مصحف المدينة (٦٠٤ صفحات)</td><td>2.1 MB</td><td><a href="https://github.com/zeeyado/quran-ebook/releases/download/v0.10.0/quran_hafs_kfgqpc_wbw_ar-bn-taisirul_enwbw.epub">EPUB ⬇</a></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+<h2 style="border:none;margin-top:0">التفسير — أنت تختار التفسير الذي يعجبك</h2>
+<p>التفسير يعمل مع إضافة <strong>Quran Helper</strong> في KOReader:
+اضغط مطولاً على رقم أي آية فيظهر تفسيرها. ثبّت تفسيراً واحداً أو أكثر —
+كلها تظهر في نافذة الاختيار. طريقة التثبيت: حمّل ملف ZIP، فكّ ضغطه في مجلد
+<code>koreader/data/dict/</code> (على الكيندل: <code>/mnt/us/koreader/data/dict/</code>).</p>
+<p class="note">٢٠ تفسيراً في ٦ لغات — اختر ما يعجبك:</p>
+<h3>العربية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_muyassar_v1.1.zip">التفسير الميسر</a> <span class="muted">— 650 KB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_v1.1.zip">تفسير السعدي</a> <span class="muted">— 1.7 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_baghawi_v1.1.zip">تفسير البغوي</a> <span class="muted">— 2.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ar_v1.1.zip">تفسير ابن كثير</a> <span class="muted">— 3.7 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_wasit_v1.1.zip">التفسير الوسيط (طنطاوي)</a> <span class="muted">— 4.6 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_qurtubi_v1.1.zip">تفسير القرطبي</a> <span class="muted">— 5.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tabari_v1.1.zip">تفسير الطبري</a> <span class="muted">— 8.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+  <h3>الإنجليزية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkirul_quran_en_v1.1.zip">Tazkirul Quran (Wahiduddin Khan)</a> <span class="muted">— 881 KB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_en_v1.1.zip">Tafsir Ibn Kathir (Abridged)</a> <span class="muted">— 4.9 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_maariful_quran_v1.1.zip">Ma'ariful Qur'an (Mufti Shafi)</a> <span class="muted">— 4.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+  <h3>الأردية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkir_ul_quran_ur_v1.1.zip">Tazkir ul Quran (Wahiduddin Khan)</a> <span class="muted">— 1.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_bayan_ul_quran_v1.1.zip">Bayan ul Quran (Israr Ahmad)</a> <span class="muted">— 2.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ur_v1.1.zip">Tafsir Ibn Kathir (ابن کثیر)</a> <span class="muted">— 6.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fi_zilal_ur_v1.1.zip">Fi Zilal al-Quran (Qutb)</a> <span class="muted">— 7.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+  <h3>البنغالية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ahsanul_bayaan_v1.1.zip">Tafsir Ahsanul Bayaan</a> <span class="muted">— 1.9 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_abu_bakr_zakaria_v1.1.zip">Tafsir Abu Bakr Zakaria</a> <span class="muted">— 2.6 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fathul_majid_v1.1.zip">Tafsir Fathul Majid</a> <span class="muted">— 3.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_bn_v1.1.zip">Tafsir Ibn Kathir (ইবনে কাসীর)</a> <span class="muted">— 9.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+  <h3>الروسية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_ru_v1.1.zip">Tafsir al-Sa'di (Russian)</a> <span class="muted">— 2.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+  <h3>الكردية</h3>
+  <ul>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_rebar_v1.1.zip">Rebar Kurdish Tafsir</a> <span class="muted">— 1.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+  </ul>
+<p class="note">ملاحظة: التفاسير مبنية على ترقيم حفص (٦٢٣٦ آية)؛
+مع إصدار ورش قد لا تطابق في السور التي يختلف فيها الترقيم.</p>
+</div>
+
+<div class="card">
+<h2 style="border:none;margin-top:0">إعدادات KOReader المهمة (مرة واحدة)</h2>
+<ul>
+<li><strong>الخطوط والأنماط المضمّنة:</strong> أثناء فتح المصحف — القائمة السفلية ← أيقونة الترس ← فعّل <em>Embedded Style</em> ثم <em>Embedded Fonts</em> (وإلا ظهر الخط مكسوراً).</li>
+<li><strong>الحواشي كنوافذ:</strong> القائمة العلوية ← أيقونة الترس ← Taps and Gestures ← Links ← فعّل <em>Show Footnotes in Popup</em> (وإلا ظهرت الترجمة داخل الصفحة وكسرت التنسيق).</li>
+<li><strong>اتجاه الصفحات RTL:</strong> القائمة العلوية ← الترس ← Taps and Gestures ← Page Turns ← فعّل <em>Invert page turn taps and swipes</em> (وإلا انقلبت الصفحات بالاتجاه الخاطئ).</li>
+<li><strong>أرقام صفحات المصحف:</strong> القائمة العلوية ← أيقونة الإشارة ← Settings ← <em>Use stable page numbers</em> (لترى ترقيم مصحف المدينة الـ ٦٠٤).</li>
+</ul>
+</div>
+
+<p class="note">المصدر: مشروع
+<a href="https://github.com/zeeyado/quran-ebook">zeeyado/quran-ebook</a>
+(مفتوح المصدر، GPL-3.0) — النص العربي من مجمع الملك فهد (مصحف المدينة)،
+والترجمات والتفاسير من Quran.com API. RliBook لا يستضيف أي ملف مصحف؛
+كل الروابط تؤدي إلى إصدارات المشروع الأصلي.</p>
+<p><a href="/">← RliBook — الرئيسية</a> · <a href="/opds/qurans">كتالوج OPDS للمصاحف</a> · <a href="https://t.me/RliBook_bot">بوت RliBook</a></p>
+
+<script>
+(function () {
+  var lang = document.getElementById("f-lang");
+  var fmt = document.getElementById("f-format");
+  var nar = document.getElementById("f-narration");
+  function apply() {
+    var rows = document.querySelectorAll("tr[data-lang]");
+    var shown = 0;
+    rows.forEach(function (r) {
+      var ok = (!lang.value || r.dataset.lang === lang.value) &&
+               (!fmt.value || r.dataset.format === fmt.value) &&
+               (!nar.value || r.dataset.narration === nar.value);
+      r.classList.toggle("hidden", !ok);
+      if (ok) shown++;
+    });
+    document.querySelectorAll("h3 + table").forEach(function (t) {
+      var anyVisible = t.querySelector("tr[data-lang]:not(.hidden)");
+      t.style.display = anyVisible ? "" : "none";
+      var h = t.previousElementSibling;
+      if (h && h.tagName === "H3") h.style.display = anyVisible ? "" : "none";
+    });
+  }
+  [lang, fmt, nar].forEach(function (s) { s.addEventListener("change", apply); });
+})();
+</script>
+</body>
+</html>

@@ -43,6 +43,7 @@
 TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة. لا ملفات كتب مستضافة هنا؛
 المصادر قانونية فقط (كتب قديمة / مرخّصة / ملفات شخصية).</p>
 
+<p id="srcbanner" class="notfound" hidden></p>
 <input type="search" id="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="بحث">
 <div class="filters">
   <select id="fmt" aria-label="الصيغة">
@@ -54,7 +55,8 @@ TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة. لا
 <ul id="results"></ul>
 <footer>
   <p id="stats" class="stats"></p>
-  <p><a href="index-report.md">تقرير الفهرسة</a> •
+  <p><a href="libraries.html">كل مكتبات تلجرام</a> •
+  <a href="index-report.md">تقرير الفهرسة</a> •
   <a href="https://github.com/YousefMohamd/kindle-opds-static">المشروع على GitHub</a> •
   <a href="../">← المكتبات (الكتالوج الرئيسي)</a></p>
 </footer>
@@ -80,8 +82,13 @@ let MANIFEST = null;
 let BOOKS = [];          // Books loaded so far (objects, from shards).
 const LOADED = new Set(); // Shard files already loaded.
 let LOADING = null;      // In-flight shard-load promise (or null).
+// ?source=<handle> — browse one library only (from /telegram/libraries.html).
+// Filters the books AND loads only the shards that contain that source,
+// so a single library opens fast on a Kindle instead of loading all 4 shards.
+const SRC = (new URLSearchParams(location.search).get("source") || "").trim();
 const qEl = document.getElementById("q");
 const fmtEl = document.getElementById("fmt");
+const srcEl = document.getElementById("srcbanner");
 const countEl = document.getElementById("count");
 const notfoundEl = document.getElementById("notfound");
 const listEl = document.getElementById("results");
@@ -111,9 +118,13 @@ function tgLink(b) {
 }
 
 // No source filter: channel/group names are never shown in the UI, so
-// every search loads all shards (in parallel).
+// every search loads all shards (in parallel). With ?source=, load only
+// the shards that contain that source (the manifest lists each shard's
+// sources); an unknown source loads nothing and renders "no books yet".
 function neededShards() {
-  return (MANIFEST.shards || []).map(s => s.file);
+  const shards = MANIFEST.shards || [];
+  if (!SRC) return shards.map(s => s.file);
+  return shards.filter(s => (s.sources || []).includes(SRC)).map(s => s.file);
 }
 
 // Load every needed shard that is not loaded yet (in parallel).
@@ -153,10 +164,14 @@ function buildGroups() {
     const key = norm(b.title) + "\0" + norm(b.author || "");
     let g = map.get(key);
     if (!g) {
-      g = { title: b.title, author: b.author, formats: new Map(), hayParts: [] };
+      g = { title: b.title, author: b.author, formats: new Map(), hayParts: [], sources: new Set() };
       map.set(key, g);
     }
     g.hayParts.push(b.filename);
+    // Sources this book appears in (its own source + every source that
+    // reposted it) — used by the ?source= library filter.
+    if (b.source) g.sources.add(b.source);
+    for (const s of (b.sources || [])) g.sources.add(s);
     if (!g.formats.has(b.ext)) g.formats.set(b.ext, b);
   }
   for (const g of map.values()) {
@@ -176,26 +191,34 @@ function renderList() {
   // available for it. At most 100 books are shown.
   const hits = [];
   for (const g of buildGroups()) {
+    if (SRC && !g.sources.has(SRC)) continue;
     if (fmt && !g.formats.has(fmt)) continue;
     if (q && !g.hay.includes(q)) continue;
     hits.push(g);
     if (hits.length >= 100) break;
   }
-  countEl.textContent = q || fmt
-    ? "النتائج: " + hits.length + (hits.length >= 100 ? " (أول 100 كتاب فقط — ضيّق البحث)" : "")
+  countEl.textContent = (q || fmt || SRC)
+    ? (SRC ? "كتب مكتبة " + SRC + ": " : "النتائج: ") + hits.length + (hits.length >= 100 ? " (أول 100 كتاب فقط — ضيّق البحث)" : "")
     : "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   // "Not in the index yet": the book may live in a channel whose deep
   // history is still being backfilled, or in a channel nobody added.
   // A priority request (via the Telegram bot) searches that
   // channel directly and queues its backfill first — see the README.
-  if (q && hits.length === 0) {
+  if (hits.length === 0 && (q || SRC)) {
     notfoundEl.hidden = false;
+    if (q) {
     notfoundEl.innerHTML = "«" + esc(qEl.value.trim()) +
       "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
       "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
       "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
       "بوت تيليجرام: البوت بيدوّر في القناة مباشرة ويرجع لك الرابط " +
       "فورًا لو لقاه، ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
+    } else {
+      // A library with no indexed books yet (0 files in the manifest).
+      notfoundEl.innerHTML = "مكتبة «" + esc(SRC) + "» لسه ما فيها كتب " +
+        "مفهرسة. ممكن تطلب فهرستها بأولوية من بوت تيليجرام: " +
+        "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.";
+    }
   } else {
     notfoundEl.hidden = true;
     notfoundEl.textContent = "";
@@ -240,6 +263,15 @@ fetch("index.json").then(r => {
   statsEl.textContent = "الفهرس: " + (t.books || 0) + " كتاب مميز، " +
     (t.files || 0) + " ملف، " + (t.posts || 0) + " بوست، من " +
     (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated_at || data.generated || "؟");
+  if (SRC) {
+    // One-library view: name it, and give the next steps (all libraries,
+    // open in Telegram, clear the filter) — never a dead end.
+    srcEl.hidden = false;
+    srcEl.innerHTML = "مكتبة <b>" + esc(SRC) + "</b> — الكتب من هذه المكتبة وحدها. " +
+      "<a href=\"libraries.html\">كل مكتبات تلجرام</a> • " +
+      "<a href=\"https://t.me/" + encodeURIComponent(SRC) + "\">فتح في تيليجرام</a> • " +
+      "<a href=\"/telegram/\">إلغاء التصفية</a>";
+  }
   countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   render();
 }).catch(err => {

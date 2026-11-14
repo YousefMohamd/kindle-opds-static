@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دفتر الملاحظات — RliBook</title>
+<link rel="stylesheet" href="../games/style.css">
+<style>
+  /* Live preview of the notebook page design (same CSS as the EPUB). */
+  .preview { background: #fff; border: 1px solid #C4E0EB; border-radius: 8px; padding: 1rem; }
+  .preview .masthead { text-align: center; border-bottom: 2px solid #44402F; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+  .preview .brand { font-size: 1.3em; font-weight: bold; letter-spacing: 0.08em; }
+  .preview .line { display: flex; align-items: flex-end; height: 2.1em; border-bottom: 1px solid #99B6B3; }
+  .preview .ln { width: 2.2em; text-align: right; font-size: 0.8em; color: #1C2826; opacity: 0.05; }
+  .who { display: grid; gap: 0.8rem; }
+  @media (min-width: 560px) { .who { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<p class="back"><a href="/">← RliBook — الرئيسية</a> • <a href="../games/">← الألعاب</a></p>
+<h1>📓 دفتر الملاحظات</h1>
+<p class="sub">دفتر مرقّم بتصميم RliBook — 🐦 RliBook على رأس كل صفحة، والسطور مرقّمة بأرقام باهتة جداً (5% فقط) لا تنافس كتابتك.</p>
+
+<div class="card">
+  <h2>لمن هذا الدفتر؟ اقرأ قبل أن تطلبه</h2>
+  <div class="who">
+    <div>
+      <h2>✒️ عندك Kindle Scribe (بقلم)؟</h2>
+      <p>هذا الدفتر مخصص لك: اكتب مباشرة على السطور بقلم Scribe، كأنك تكتب على ورق.</p>
+    </div>
+    <div>
+      <h2>📖 Kindle آخر من غير قلم؟</h2>
+      <p>الدفتر ينفعك أيضاً: حدّد أي سطر واضغط لإضافة ملاحظة (ميزة الملاحظات المدمجة في Kindle) — السطور المرقّمة تساعدك على ترتيب ملاحظاتك.</p>
+    </div>
+  </div>
+  <p class="note">الدفتر ملف EPUB عادي — يصل بالإيميل (Send-to-Kindle) أو بالـ USB إلى مجلد documents، مثل المصاحف تماماً.</p>
+</div>
+
+<div class="card">
+  <h2>كيف تحصل على الدفتر؟</h2>
+  <p><strong>1 — من البوت (الأسهل):</strong> اطلبه من بوت RliBook وسيصلك بالإيميل على إيميل Kindle الخاص بك.</p>
+  <a class="btn" href="https://t.me/RliBook_bot">اطلب الدفتر من البوت @RliBook_bot ←</a>
+  <p class="note">زر مخصص للدفتر داخل البوت قادم في التحديث التالي (v4.8.43) — حتى ذلك الحين اطلبه برسالة في البوت.</p>
+  <p><strong>2 — نسخة تجريبية بالـ USB:</strong> حمّل عينة من 50 صفحة مرقّمة، وانقلها بالـ USB إلى مجلد documents في Kindle.</p>
+  <a class="btn btn-ghost" href="rlibook-notebook-sample.epub">حمّل عينة الدفتر (EPUB — 50 صفحة) ↓</a>
+</div>
+
+<div class="card">
+  <h2>هكذا تبدو الصفحة</h2>
+  <div class="preview">
+    <div class="masthead">
+      <div>🐦</div>
+      <div class="brand">RliBook</div>
+      <div>دفتر الملاحظات — Notebook</div>
+    </div>
+    <div class="line"><span class="ln">1</span><span>&nbsp;</span></div>
+    <div class="line"><span class="ln">2</span><span>&nbsp;</span></div>
+    <div class="line"><span class="ln">3</span><span>&nbsp;</span></div>
+    <div class="line"><span class="ln">4</span><span>&nbsp;</span></div>
+    <div class="line"><span class="ln">5</span><span>&nbsp;</span></div>
+    <p class="note">الأرقام على اليمين باهتة جداً (5%) — هكذا صُممت: ترشدك دون أن تزعجك.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📚 ملف الكتب (الكتالوج)</h2>
+  <p>تبحث عن ملف الكتب؟ له زر مستقل: اطلبه من البوت بنفس الطريقة — بالإيميل أو بالـ USB.</p>
+  <a class="btn" href="https://t.me/RliBook_bot">اطلب ملف الكتب من البوت @RliBook_bot ←</a>
+  <p class="note">أو ابحث في الكتب مباشرة: <a href="/telegram/">فهرس كتب تيليجرام</a></p>
+</div>
+
+<p class="note">الدفتر يُبنى من سكربت (<a href="notebook.py">notebook.py</a>) — لا نخزّن ملفاً ضخماً على الخادم؛ العينة أعلاه هي 50 صفحة فقط. <a href="../games/">العب ألعاب RliBook ←</a></p>
+<footer>
+  <p>RliBook — Reply. Read. Fly. — رد. اقرأ. حلّق.</p>
+</footer>
+</body>
+</html>

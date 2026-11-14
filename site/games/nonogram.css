@@ -1,0 +1,25 @@
+/* RliBook — Nonogram grid style (brand palette, touch-friendly).
+   The grid is one CSS grid: first column = row clues, first row =
+   column clues, the rest = tappable cells (44px, touch-friendly). */
+.nono-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.8rem; }
+.nono-controls select { font: inherit; padding: 0.5rem; min-height: 44px; border: 1px solid #99B6B3; border-radius: 8px; background: #fff; color: #1C2826; }
+.nono-grid {
+  display: grid; margin: 0 auto; width: max-content; max-width: 100%;
+  border: 2px solid #44402F; border-radius: 6px; overflow: auto;
+  background: #fff;
+}
+.nono-corner { background: #C4E0EB; }
+.nono-clue {
+  display: flex; align-items: center; justify-content: center;
+  background: #DFF1F4; color: #1C2826; font-size: 0.85rem; font-weight: 700;
+  padding: 2px 6px; text-align: center; line-height: 1.25;
+}
+.nono-clue.row { justify-content: flex-end; padding-inline-end: 8px; }
+.nono-clue.col { flex-direction: column; justify-content: flex-end; padding-bottom: 6px; }
+.nono-cell {
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  border: 0; border-inline-start: 1px solid #C4E0EB; border-top: 1px solid #C4E0EB;
+  background: #fff; cursor: pointer; padding: 0; font-size: 1.1rem; color: #44402F;
+}
+.nono-cell.filled { background: #1C2826; }
+.nono-cell.marked { background: #DFF1F4; }

@@ -1,0 +1,60 @@
+/* RliBook games + notebook — shared brand style.
+   Brand: Sky Pale #DFF1F4, Sky Light #C4E0EB, Sky Blue #93D4EF,
+   Sage #99B6B3, Olive Dark #44402F, Ink #1C2826.
+   Light, no framework, touch-friendly (44px+ targets), works on
+   Kindle / mobile / iPad browsers. No external fonts or images. */
+:root {
+  --sky-pale: #DFF1F4;
+  --sky-light: #C4E0EB;
+  --sky-blue: #93D4EF;
+  --sage: #99B6B3;
+  --olive: #44402F;
+  --ink: #1C2826;
+  --card: #ffffff;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+  max-width: 760px; margin: 0 auto; padding: 1.2rem;
+  line-height: 1.7; color: var(--ink); background: var(--sky-pale);
+}
+h1 { font-size: 1.6rem; margin-bottom: 0.2rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+.sub { color: var(--olive); font-size: 0.95rem; margin-top: 0; }
+a { color: #0b5cad; }
+.card {
+  border: 1px solid var(--sky-light); border-radius: 10px;
+  background: var(--card); padding: 1rem 1.2rem; margin: 1rem 0;
+}
+.card p { margin: 0.3rem 0; }
+.btn {
+  display: inline-block; padding: 0.7rem 1.2rem; margin: 0.3rem 0;
+  min-height: 44px; border-radius: 8px; background: var(--sky-blue);
+  color: var(--ink); text-decoration: none; font-weight: 700;
+  border: 1px solid var(--sage); cursor: pointer; font: inherit;
+}
+.btn:hover, .btn:focus { background: var(--sky-light); }
+.btn-ghost { background: var(--card); }
+.note { color: var(--olive); font-size: 0.9rem; }
+.back { font-size: 0.95rem; }
+.howto {
+  background: var(--sky-light); border-radius: 8px;
+  padding: 0.6rem 0.9rem; margin: 0.8rem 0; font-weight: 600;
+}
+.status {
+  background: var(--sky-pale); border: 1px solid var(--sky-light);
+  border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.8rem 0;
+  min-height: 2.6rem;
+}
+.game-grid { display: grid; gap: 0.8rem; }
+@media (min-width: 560px) { .game-grid { grid-template-columns: 1fr 1fr; } }
+.game-card h2 { margin-bottom: 0.2rem; }
+.game-card .play { margin-top: 0.6rem; }
+footer {
+  margin-top: 2rem; color: var(--olive); font-size: 0.85rem;
+  border-top: 1px solid var(--sky-light); padding-top: 0.8rem;
+}
+/* Boards are always left-to-right, even on the Arabic (RTL) page. */
+.board-ltr { direction: ltr; }
+button { font: inherit; -webkit-tap-highlight-color: transparent; }

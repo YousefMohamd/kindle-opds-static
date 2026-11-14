@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>أدوات RliBook — جهّز كتبك لقارئك</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+         max-width: 760px; margin: 0 auto; padding: 1.2rem;
+         line-height: 1.7; color: #1C2826; background: #DFF1F4; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.2rem; color: #1C2826; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.4rem; color: #1C2826; }
+  .slogan { color: #44402F; font-size: 1rem; margin-top: 0; }
+  .card { border: 1px solid #99B6B3; border-radius: 10px; background: #fff;
+          padding: 1rem 1.2rem; margin: 1rem 0; }
+  .card p { margin: 0.3rem 0; }
+  .card ol, .card ul { margin: 0.4rem 0; padding-right: 1.2rem; }
+  .card li { margin: 0.25rem 0; }
+  a { color: #0b5cad; }
+  .btn { display: inline-block; padding: 0.6rem 1.1rem; margin: 0.3rem 0;
+         border-radius: 6px; background: #93D4EF; color: #1C2826;
+         text-decoration: none; font-weight: 700; }
+  .btn-dark { background: #44402F; color: #fff; }
+  .badge { display: inline-block; font-size: 0.85rem; font-weight: 700;
+           padding: 0.1rem 0.6rem; border-radius: 20px; margin-inline-start: 0.4rem;
+           background: #C4E0EB; color: #1C2826; }
+  .badge-reader { background: #99B6B3; color: #fff; }
+  .badge-web { background: #C4E0EB; color: #1C2826; }
+  code { background: #DFF1F4; padding: 0.05rem 0.35rem; border-radius: 4px;
+         direction: ltr; unicode-bidi: embed; font-size: 0.92rem; }
+  pre { background: #1C2826; color: #DFF1F4; padding: 0.8rem 1rem;
+        border-radius: 8px; overflow-x: auto; direction: ltr; text-align: left;
+        font-size: 0.9rem; line-height: 1.5; }
+  .note { color: #44402F; font-size: 0.9rem; }
+  .licence { color: #44402F; font-size: 0.85rem; }
+  .steps-title { font-weight: 700; margin-top: 0.6rem; }
+</style>
+</head>
+<body>
+<h1>🧰 أدوات RliBook</h1>
+<p class="slogan">أدوات تساعدك تجهّز الكتب لقارئك — كل أداة تقول لك في سطر واحد ما هي ولأي جهاز، قبل أن تثبّت أي شيء.</p>
+<p class="note">لا نستضيف ملفات أي أداة هنا. كل رابط في هذه الصفحة يذهب إلى صفحة الأداة نفسها أو مستودعها الرسمي.</p>
+
+<div class="card">
+  <h2>📚 من المكتبة الشاملة إلى EPUB <span class="badge badge-web">🌐 المتصفح — كمبيوتر أو هاتف</span></h2>
+  <p>حمّل أي كتاب من المكتبة الشاملة (تراث) بصيغة EPUB جاهزة للكيندل، بلا تثبيت.</p>
+  <p class="steps-title">الخطوات:</p>
+  <ol>
+    <li>افتح <a href="https://app.turath.io/">مكتبة تراث — app.turath.io</a> في المتصفح.</li>
+    <li>ابحث عن الكتاب وافتحه.</li>
+    <li>حمّل نسخة EPUB، ثم أرسلها إلى كيندلك (Send-to-Kindle أو USB).</li>
+  </ol>
+  <p class="note">تنبيه: إضافة المتصفح القديمة <a href="https://github.com/yshalsager/shamela-epub-exporter">shamela-epub-exporter</a> توقّف صيانتها وأرشفها صاحبها نفسه، وهو يوجّه إلى تراث بدلاً منها — لذلك نرشّح تراث، لا الإضافة.</p>
+  <p class="licence">الإضافة الأرشيفية مرخّصة GPL-3.0 — للاطّلاع فقط، لا تثبّتها.</p>
+</div>
+
+<div class="card">
+  <h2>🖼️ من قصص مصوّرة (CBZ / CBR / PDF) إلى EPUB <span class="badge">💻 الكمبيوتر</span></h2>
+  <p>حوّل مجلد صور أو ملف CBZ/CBR/PDF إلى EPUB مضبوط على مقاس كيندلك أو كوبو — مع تقسيم تلقائي للملفات الكبيرة.</p>
+  <p class="steps-title">الخطوات:</p>
+  <ol>
+    <li>ثبّت Go، ثم ثبّت الأداة: <code>go install github.com/celogeek/go-comic-converter/v3</code></li>
+    <li>حوّل ملفك (مثال: بروفايل SR لكيندل عادي): <code>go-comic-converter -profile SR -input ~/Download/MyComic.cbz</code></li>
+    <li>ستجد الناتج <code>MyComic.epub</code> بجانب الملف الأصلي — أرسله إلى كيندلك (حدّ الإيميل 50MB، والموقع 200MB؛ الأداة تقسّم الملف تلقائياً كل 200MB).</li>
+  </ol>
+  <p><a href="https://github.com/celogeek/go-comic-converter">go-comic-converter على GitHub</a> <span class="licence">— MIT، الإصدار 3.0.0، نشطة.</span></p>
+</div>
+
+<div class="card">
+  <h2>🔍 OCR — اجعل الكتب الممسوحة قابلة للبحث <span class="badge badge-reader">📖 KOReader على القارئ</span> <span class="badge">💻 الكمبيوتر</span></h2>
+  <p>الكتب الممسوحة (صور بلا نص) لا يمكن البحث فيها. الحلّ أحد طريقين — اختر الطريق الذي يناسبك:</p>
+  <p class="steps-title">أ) داخل KOReader (على القارئ نفسه):</p>
+  <ol>
+    <li>حمّل ملفّي اللغة <a href="https://github.com/tesseract-ocr/tessdata_fast/raw/main/ara.traineddata">ara.traineddata</a> و <a href="https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata">eng.traineddata</a> (بيانات Tesseract 5، من مستودع tessdata_fast الرسمي).</li>
+    <li>انسخهما بالـ USB إلى مجلد <code>koreader/data/tessdata</code> على القارئ.</li>
+    <li>في ملف <code>koreader/defaults.custom.lua</code> أضف السطر: <code>DKOPTREADER_CONFIG_DOC_LANGS_CODE = {"ara", "eng"}</code></li>
+    <li>افتح الـ PDF الممسوح في KOReader — البحث في الصفحة والبحث في القاموس سيعملان الآن عبر OCR.</li>
+  </ol>
+  <p class="steps-title">ب) على الكمبيوتر قبل النقل (أفضل للكتب الكبيرة):</p>
+  <ol>
+    <li>ثبّت OCRmyPDF: <code>sudo apt install ocrmypdf tesseract-ocr-ara tesseract-ocr-eng</code> (أوبنتو/ديبيان) أو <code>brew install ocrmypdf tesseract-lang</code> (ماك).</li>
+    <li>شغّل: <code>ocrmypdf -l ara+eng input.pdf output.pdf</code></li>
+    <li>انقل <code>output.pdf</code> إلى قارئك — أصبح فيه طبقة نص قابلة للبحث والنسخ.</li>
+  </ol>
+  <p><a href="https://github.com/koreader/koreader/wiki/Dictionary-support">توثيق KOReader للـ OCR</a> · <a href="https://ocrmypdf.readthedocs.io/">توثيق OCRmyPDF</a> <span class="licence">— OCRmyPDF مرخّص MPL-2.0، وبيانات Tesseract مجانية مفتوحة.</span></p>
+</div>
+
+<div class="card">
+  <h2>📖 القرآن الكريم <span class="badge badge-reader">📖 القارئ</span></h2>
+  <p>القرآن في RliBook له صفحة مستقلة — اختر المصحف والرواية والتفسير الذي تحبه.</p>
+  <p><a class="btn" href="/qurans/">تصفّح المصاحف ←</a></p>
+  <p class="note">هذه الصفحة لا تعيد بناء القرآن — فقط تحيل إليه.</p>
+</div>
+
+<div class="card">
+  <h2>♟️ الشطرنج <span class="badge badge-web">🌐 المتصفح</span></h2>
+  <p>الشطرنج في المتصفح — العب ضد الكمبيوتر أو ضد صديق، من عمل البلوك 14 (الألعاب — Chess.js).</p>
+  <p><a class="btn" href="/games/chess.html">العب الشطرنج ←</a> <a href="/games/">كل الألعاب ←</a></p>
+  <p class="note">هذه الصفحة لا تعيد بناء الشطرنج — فقط تحيل إليه.</p>
+</div>
+
+<p class="note">RliBook — أدوات مجانية ومفتوحة المصدر فقط، لمساعدتك على القراءة. لا نستضيف أي ملف كتاب أو أداة هنا.</p>
+<p><a href="/">← RliBook — الرئيسية</a> · <a class="btn btn-dark" href="https://t.me/RliBook_bot">افتح البوت @RliBook_bot</a></p>
+</body>
+</html>

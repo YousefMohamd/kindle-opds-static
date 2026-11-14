@@ -47,6 +47,16 @@
 // flagged books are flagged but not readable/downloadable on the
 // site — they point at the bot instead, which enforces the 3/day cap.
 //
+// Enrichment (Blocks 4 + 9): Telegram cards also show, when available,
+// an embedded cover (Block 4 pairing — a data:image/* URI stored with
+// the book metadata, never a hotlink; no cover -> no <img> at all),
+// a rating X/10 with its source (Block 9, via /api/ratings — Google
+// Books first, Open Library fallback; no rating -> nothing, never a
+// fake 0), and a short description with its source (Telegram post text
+// first, Google Books second). OPDS cards are NOT enriched (up to 100
+// cards x external fetches would blow the subrequest budget and slow
+// the Kindle page). Every enrichment call degrades to "not shown".
+//
 // Graceful degradation (never a 500 from the Telegram half): the
 // tg-search fetch is wrapped so it can only resolve to
 // { available, total, results } — a throw, a non-200 status, a
@@ -102,6 +112,22 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
     for (const r of data.results) {
       if (!r || typeof r.title !== "string" || !r.title) continue;
       if (typeof r.url !== "string" || !/^https:\/\/t\.me\//.test(r.url)) continue;
+      // Cover (Block 4 pairing): EMBEDDED only — a data:image/* URI
+      // stored with the book metadata, small enough for the Kindle
+      // browser (<= 150 KB). Anything else (a hotlink, an oversized
+      // blob, a non-image) is dropped: no evidence = no cover, and a
+      // wrong/huge cover is worse than no cover.
+      let cover = "";
+      if (typeof r.cover === "string"
+        && /^data:image\/(jpeg|png|webp|gif);base64,/.test(r.cover)
+        && r.cover.length <= 150000) {
+        cover = r.cover;
+      }
+      // Description from the Telegram post text (first source for the
+      // description; Google Books is second, via /api/ratings).
+      const description = typeof r.description === "string"
+        ? r.description.slice(0, 2000)
+        : "";
       results.push({
         title: r.title,
         author: typeof r.author === "string" ? r.author : "",
@@ -112,6 +138,8 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
           : [],
         url: r.url,
         flagged: r.flagged === true,
+        cover,
+        description,
       });
     }
     return {
@@ -160,6 +188,63 @@ export function telegramSendUrl(r, fpQ = "") {
     + "&amp;t=" + encodeURIComponent(r.title || "") + fpQ;
 }
 
+/** The reader URL for one Telegram result, or null when it cannot be
+ *  read online (flagged, private-group link, or no EPUB format — the
+ *  reader opens EPUB only, per site/reader/README.md). The reader
+ *  fetches the book via /api/dl-token, so flagged books never reach
+ *  it (the token endpoint returns 403). Exported for tests. */
+export function telegramReaderUrl(r) {
+  if (!r || r.flagged) return null;
+  const post = parseTelegramPostUrl(r.url);
+  if (!post) return null;
+  const hasEpub = Array.isArray(r.formats)
+    && r.formats.some((f) => String(f).toLowerCase().includes("epub"));
+  if (!hasEpub) return null;
+  return "/site/reader/?lib=tg"
+    + "&amp;h=" + encodeURIComponent(post.handle)
+    + "&amp;p=" + post.postId
+    + "&amp;f=epub"
+    + "&amp;title=" + encodeURIComponent(r.title || "");
+}
+
+// Rating + description for one book, via the same-origin
+// /api/ratings endpoint (functions/api/ratings.js: Google Books first,
+// Open Library as fallback). NEVER throws and NEVER returns a rating
+// the endpoint did not confidently match: any failure — endpoint not
+// deployed yet, upstream down, no match — yields
+// { rating: null, description: null }, and the card simply shows no
+// rating (never a fake 0). Exported for tests.
+export async function fetchEnrichment(origin, title, author = "") {
+  try {
+    const u = new URL("/api/ratings", origin);
+    u.searchParams.set("title", title || "");
+    if (author) u.searchParams.set("author", author);
+    const res = await fetch(u.toString(), {headers: {"accept": "application/json"}});
+    if (!res.ok) return {rating: null, description: null};
+    const data = await res.json();
+    if (!data || data.ok !== true) return {rating: null, description: null};
+    const rating = data.rating
+      && Number.isFinite(Number(data.rating.value))
+      && data.rating.value > 0 && data.rating.value <= 10
+      && typeof data.rating.source === "string" && data.rating.source
+      ? {
+          value: Number(data.rating.value),
+          count: Number(data.rating.count) || 0,
+          source: data.rating.source,
+        }
+      : null;
+    const description = data.description
+      && typeof data.description.text === "string" && data.description.text
+      && typeof data.description.source === "string" && data.description.source
+      ? {text: data.description.text.slice(0, 2000), source: data.description.source}
+      : null;
+    return {rating, description};
+  } catch (e) {
+    console.warn("[book] ratings unavailable:", e && e.message);
+    return {rating: null, description: null};
+  }
+}
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const q = (url.searchParams.get("q") || "").trim();
@@ -181,11 +266,14 @@ export async function onRequest(context) {
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
     + "<style>body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
-    + "margin:0 auto;padding:1rem;line-height:1.7;color:#1c1c1c;background:#fdfdf8}"
+    + "margin:0 auto;padding:1rem;line-height:1.7;color:#1C2826;background:#DFF1F4}"
     + "h1{font-size:1.4rem;margin-bottom:.2rem}h2{font-size:1.1rem;margin:.6rem 0 .2rem}"
     + "a{color:#0b5cad}.btn{display:inline-block;padding:.5rem 1rem;margin:.3rem 0;"
-    + "border-radius:6px;background:#0b5cad;color:#fff;text-decoration:none;font-weight:600}"
-    + ".card{border:1px solid #ccc;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
+    + "border-radius:6px;background:#44667b;color:#fff;text-decoration:none;font-weight:600}"
+    + ".card{border:1px solid #C4E0EB;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
+    + ".cover{max-width:120px;height:auto;border-radius:6px;border:1px solid #C4E0EB}"
+    + ".rating{font-weight:600}.desc{font-size:.95rem}"
+    + ".src{color:#555;font-size:.85rem}"
     + ".note{color:#555;font-size:.9rem}input[type=search]{font-size:1rem;padding:.4rem;width:70%}"
     + "input[type=submit]{font-size:1rem;padding:.4rem .8rem}</style>\n</head>\n<body>\n"
     + "<h1>📚 RliBook</h1>\n"
@@ -305,9 +393,20 @@ export async function onRequest(context) {
       + "&amp;id=" + encodeURIComponent(b.i)
       + "&amp;f=" + fmtCode(b)
       + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ;
+    // "Read online" (Block 11b reader): EPUB only — the reader opens
+    // EPUB books, so a PDF/DOC/MOBI book gets no button (its honest
+    // page lives in the reader itself). Same URL contract as
+    // site/reader/README.md (buildReaderUrl): lib + id + title + author.
+    const readerUrl = fmtCode(b) === "epub"
+      ? "/site/reader/?lib=" + lib.slug
+        + "&amp;id=" + encodeURIComponent(b.i)
+        + "&amp;title=" + encodeURIComponent(b.t || "")
+        + (b.a ? "&amp;author=" + encodeURIComponent(b.a) : "")
+      : null;
     body += "<div class=\"card\"><h2>" + esc(b.t) + "</h2>\n";
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
+    if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
     body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";
     body += "</div>\n";
   }
@@ -328,9 +427,47 @@ export async function onRequest(context) {
         ? " (" + tg.results.length + " من " + tg.total + ")"
         : "")
       + "</h2>\n";
-    for (const r of tg.results) {
+    // Enrichment (Block 9): one /api/ratings subrequest per Telegram
+    // card, in parallel (max TG_LIMIT = 10 — inside the 50-subrequest
+    // budget). Each call never throws and returns nulls on any failure,
+    // so a missing/unreachable ratings endpoint only means "no rating
+    // shown". OPDS cards are NOT enriched: up to 100 cards x external
+    // fetches would blow the budget and slow the Kindle page.
+    const enrichments = await Promise.all(
+      tg.results.map((r) => fetchEnrichment(url.origin, r.title, r.author)),
+    );
+    for (let i = 0; i < tg.results.length; i++) {
+      const r = tg.results[i];
+      const enr = enrichments[i] || {rating: null, description: null};
       body += "<div class=\"card\"><h2>" + esc(r.title) + "</h2>\n";
+      // Cover (Block 4 pairing): shown ONLY when the pairing supplied
+      // an embedded cover. No cover -> no <img> at all, never a
+      // placeholder image (a wrong cover is worse than no cover).
+      if (r.cover) {
+        body += "<p><img class=\"cover\" src=\"" + esc(r.cover)
+          + "\" alt=\"غلاف: " + esc(r.title) + "\" width=\"120\"></p>\n";
+      }
       if (r.author) body += "<p>المؤلف: " + esc(r.author) + "</p>\n";
+      // Rating: shown ONLY when the endpoint confidently matched the
+      // book. No rating -> NOTHING here (never a fake "0/10": a missing
+      // rating must not look like a bad rating).
+      if (enr.rating) {
+        body += "<p class=\"rating\">⭐ " + esc(String(enr.rating.value)) + "/10"
+          + (enr.rating.count
+            ? " · " + esc(String(enr.rating.count)) + " تقييمًا" : "")
+          + " <span class=\"src\">— التقييم من " + esc(enr.rating.source)
+          + "</span></p>\n";
+      }
+      // Description: Telegram post text first, Google Books second.
+      // Short (a few lines) and always with its source.
+      const postDesc = (r.description || "").replace(/\s+/g, " ").trim();
+      const desc = postDesc
+        ? {text: postDesc.slice(0, 400), source: "منشور تيليجرام"}
+        : enr.description;
+      if (desc && desc.text) {
+        body += "<p class=\"desc\">" + esc(desc.text)
+          + " <span class=\"src\">(الوصف من " + esc(desc.source) + ")</span></p>\n";
+      }
       body += "<p>تيليجرام"
         + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
         + (r.flagged ? " · ⚑ تجاري" : "")
@@ -341,6 +478,10 @@ export async function onRequest(context) {
           + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
       } else {
+        // "Read online" (Block 11b reader): EPUB only, never flagged.
+        // Same URL contract as site/reader/README.md.
+        const readerUrl = telegramReaderUrl(r);
+        if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
         const sendUrl = telegramSendUrl(r, fpQ);
         if (sendUrl) {
           body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">📧 أرسل إلى جهازي</a></p>\n";

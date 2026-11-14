@@ -1,0 +1,44 @@
+/* RliBook — Set (no colours) card style.
+   Cards differ ONLY by shape, number, fill and size — never by colour.
+   Shapes are the classic Set shapes that render with plain CSS on any
+   browser, including old e-ink browsers: oval, diamond, rectangle.
+   (No gradients, no clip-path, no exotic glyphs.)
+   Fill: solid = filled ink; striped = outline + one bar through the
+   middle; outline = border only. All monochrome ink-on-white. */
+.set-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.8rem; }
+.set-table {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  max-width: 520px; margin: 0 auto;
+}
+@media (min-width: 560px) { .set-table { grid-template-columns: repeat(4, 1fr); } }
+.set-card {
+  min-height: 96px; border: 2px solid #99B6B3; border-radius: 10px;
+  background: #fff; cursor: pointer; padding: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.set-card:hover, .set-card:focus-visible { border-color: #44402F; background: #DFF1F4; }
+.set-card.selected { border-color: #44402F; box-shadow: 0 0 0 3px #93D4EF; background: #DFF1F4; }
+.set-card.hint { box-shadow: 0 0 0 3px #44402F; }
+.set-card:disabled { cursor: default; opacity: 0.6; }
+.set-symbols { display: flex; gap: 5px; align-items: center; justify-content: center; min-height: 44px; }
+.set-sym { position: relative; background: transparent; flex-shrink: 0; }
+/* Sizes */
+.set-sym.size-small { width: 18px; height: 26px; }
+.set-sym.size-medium { width: 24px; height: 34px; }
+.set-sym.size-large { width: 30px; height: 42px; }
+/* Shapes */
+.set-sym.shape-oval { border-radius: 50%; }
+.set-sym.shape-diamond { transform: rotate(45deg); border-radius: 2px; }
+.set-sym.shape-diamond.size-small { width: 20px; height: 20px; }
+.set-sym.shape-diamond.size-medium { width: 26px; height: 26px; }
+.set-sym.shape-diamond.size-large { width: 32px; height: 32px; }
+.set-sym.shape-rect { border-radius: 3px; }
+/* Fills — monochrome only */
+.set-sym.fill-solid { background: #1C2826; border: 2px solid #1C2826; }
+.set-sym.fill-outline { background: transparent; border: 2px solid #1C2826; }
+.set-sym.fill-striped { background: transparent; border: 2px solid #1C2826; }
+.set-sym.fill-striped::after {
+  content: ""; position: absolute; left: -2px; right: -2px; top: 50%;
+  height: 2px; margin-top: -1px; background: #1C2826;
+}
+.set-sym.shape-diamond.fill-striped::after { left: -6px; right: -6px; }

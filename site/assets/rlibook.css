@@ -1,0 +1,219 @@
+/* RliBook shared design system — site/assets/rlibook.css (Block 11c).
+ *
+ * LIGHT BY DESIGN: plain CSS, no framework, no webfont download, no
+ * JavaScript, no external resource. The Kindle experimental browser is
+ * the baseline: everything here must render on an old Kindle, a Kobo,
+ * a Boox, a Tolino, an iPad, a phone and a desktop.
+ *
+ * Brand (from the RliBook identity):
+ *   Sky Pale  #DFF1F4   Sky Light #C4E0EB   Sky Blue #93D4EF
+ *   Sage      #99B6B3   Olive Dark #44402F  Ink    #1C2826
+ * Wordmark: Cabinet Grotesk Light. Slogan: Cintarini (#44667b).
+ * The two brand fonts are named first in the stacks below, but they
+ * are NOT downloaded as webfonts (a webfont is a large download the
+ * Kindle browser may fail to fetch). When the font is not installed
+ * the stack falls back to a system font — same layout, same colours.
+ * Logo: /site/assets/logo-256.jpg (header, 10 KB) and
+ * /site/assets/logo-1024.jpg (about page / large display, 92 KB).
+ * Both are downscaled copies of the user's own logo (bluebird on a
+ * stack of old books); the 1.2 MB original is never served.
+ *
+ * One button style, one card style, one header — everywhere. Any page
+ * that wants the RliBook look links this file and uses these classes.
+ * Pages that cannot link it (server-rendered Functions pages) copy
+ * the same values by hand — see docs/compatibility.md.
+ *
+ * Usage: <link rel="stylesheet" href="/site/assets/rlibook.css">
+ * (relative "assets/rlibook.css" also works from a page inside site/.)
+ */
+
+:root {
+  color-scheme: light;
+  --sky-pale: #dff1f4;
+  --sky-light: #c4e0eb;
+  --sky-blue: #93d4ef;
+  --sage: #99b6b3;
+  --olive-dark: #44402f;
+  --ink: #1c2826;
+  --slogan: #44667b;
+  --paper: #fdfdf8;
+  --card-border: #c9d6d3;
+  --muted: #555;
+  --link: #0b5cad;
+  --link-hover: #094a8a;
+}
+
+/* Page frame: narrow column, readable line length, generous margins
+ * for e-ink screens. No flexbox/grid layout is required anywhere. */
+body {
+  font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.2rem;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+a { color: var(--link); }
+a:hover, a:focus { color: var(--link-hover); }
+
+/* ---- Header / logo ---- */
+.rl-header {
+  border-bottom: 3px solid var(--sky-blue);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1rem;
+}
+.rl-header img.rl-logo {
+  display: block;
+  max-width: 256px;
+  width: 100%;
+  height: auto;
+  margin: 0 auto 0.4rem;
+}
+/* Text wordmark (used when the logo image cannot load, and as the
+ * accessible name next to it). Cabinet Grotesk Light, weight 300. */
+.rl-wordmark {
+  font-family: "Cabinet Grotesk", "Avenir Next", system-ui, sans-serif;
+  font-weight: 300;
+  font-size: 1.8rem;
+  letter-spacing: 0.02em;
+  margin: 0;
+  text-align: center;
+  color: var(--ink);
+}
+.rl-wordmark a { color: var(--ink); text-decoration: none; }
+/* Slogan: Cintarini, #44667b. */
+.rl-slogan {
+  font-family: "Cintarini", Georgia, serif;
+  color: var(--slogan);
+  font-size: 1rem;
+  margin: 0.2rem 0 0;
+  text-align: center;
+}
+h1 { font-size: 1.8rem; margin-bottom: 0.2rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+
+/* ---- Buttons: exactly one style ---- */
+.btn {
+  display: inline-block;
+  padding: 0.6rem 1.1rem;
+  margin: 0.3rem 0;
+  border-radius: 6px;
+  background: var(--link);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+.btn:hover, .btn:focus { background: var(--link-hover); color: #fff; }
+/* Secondary button: same shape, brand colours instead of blue. */
+.btn-secondary {
+  background: var(--sky-light);
+  color: var(--ink);
+}
+.btn-secondary:hover, .btn-secondary:focus {
+  background: var(--sky-blue);
+  color: var(--ink);
+}
+
+/* ---- Book cards: exactly one style ---- */
+.card {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+}
+.card p { margin: 0.3rem 0; }
+.card .meta, .note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.card .title { font-weight: 700; }
+.card .links a { display: block; padding: 0.35rem 0; }
+
+/* Format chips on a book card (EPUB / PDF / MOBI / AZW3 / KFX / TXT). */
+.chips { margin-top: 0.4rem; }
+.chip {
+  display: inline-block;
+  background: var(--link);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.15rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  margin: 0.15rem 0.15rem 0.15rem 0;
+}
+.chip:hover, .chip:focus { background: var(--link-hover); color: #fff; }
+.chip .sz { font-weight: 400; font-size: 0.85rem; }
+
+/* ---- Search box ---- */
+input[type="search"], select {
+  font: inherit;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #999;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+input[type="search"] { width: 100%; box-sizing: border-box; }
+
+/* ---- Stats table (reports page) ---- */
+table.rl-stats {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+}
+table.rl-stats th, table.rl-stats td {
+  text-align: start;
+  padding: 0.4rem 0.3rem;
+  border-bottom: 1px solid var(--sky-light);
+}
+table.rl-stats td.rl-num {
+  font-weight: 700;
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+.rl-source {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.rl-notmeasured {
+  background: var(--sky-pale);
+  border: 1px solid var(--sky-light);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+}
+
+/* ---- Footer ---- */
+footer, .rl-footer {
+  margin-top: 2rem;
+  color: #666;
+  font-size: 0.85rem;
+  border-top: 1px solid #ddd;
+  padding-top: 0.8rem;
+}
+
+/* ---- Agents bar ----
+ * A bar at the BOTTOM of the website showing the agents/libraries
+ * actually contracted with. It appears ONLY when there are agents:
+ * the bar renders nothing while the agents list is empty (the
+ * element stays hidden), and it is shown only once a first agent
+ * is contracted and added to the list. There are NO agents yet, so
+ * today this renders nothing. Do NOT invent agents to fill it. */
+.agents-bar { display: none; }
+.agents-bar[data-has-agents="true"] {
+  display: block;
+  border-top: 3px solid var(--sage);
+  background: var(--sky-pale);
+  padding: 0.8rem 1rem;
+  margin-top: 2rem;
+  font-size: 0.9rem;
+}
+.agents-bar h2 {
+  font-size: 1rem;
+  margin: 0 0 0.3rem;
+  color: var(--olive-dark);
+}
+.agents-bar ul { margin: 0.3rem 0; padding-inline-start: 1.2rem; }

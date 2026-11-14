@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نونوغرام — ألعاب RliBook</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="nonogram.css">
+</head>
+<body>
+<p class="back"><a href="index.html">← كل الألعاب</a></p>
+<h1>🧩 نونوغرام (Nonogram)</h1>
+<p class="howto">اضغط على المربعات لتعبئتها حسب الأرقام — الأرقام تقول كم مربعاً متتالياً يُملأ في كل صف وعمود — حتى تظهر الصورة المخفية.</p>
+
+<div class="card">
+  <div class="nono-controls board-ltr" dir="ltr">
+    <label>اللغز:
+      <select id="puzzle"></select>
+    </label>
+    <button type="button" id="modeFill" class="btn">⬛ تعبئة</button>
+    <button type="button" id="modeMark" class="btn btn-ghost">✕ تعليم</button>
+    <button type="button" id="clear" class="btn btn-ghost">مسح</button>
+  </div>
+  <div id="status" class="status">اختر «تعبئة» واضغط على المربعات الصحيحة. زر «تعليم» يضع ✕ على المربعات الفارغة.</div>
+  <div class="board-ltr" dir="ltr">
+    <div id="grid" class="nono-grid" role="grid" aria-label="لوحة النونوغرام"></div>
+  </div>
+</div>
+
+<p class="note">لعبة أخرى؟ <a href="chess.html">شطرنج</a> • <a href="checkers.html">دامة</a> • <a href="connect4.html">كونكت 4</a> • <a href="set.html">Set</a> • <a href="../notebook/">دفتر الملاحظات</a></p>
+<script src="nonogram.js"></script>
+</body>
+</html>

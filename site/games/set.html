@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لعبة Set — من غير ألوان — ألعاب RliBook</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="set.css">
+</head>
+<body>
+<p class="back"><a href="index.html">← كل الألعاب</a></p>
+<h1>🃏 لعبة Set — من غير ألوان</h1>
+<p class="howto">اضغط على 3 بطاقات تكون فيها كل صفة — الشكل، العدد، التعبئة، الحجم — إما متشابهة كلها أو مختلفة كلها. بلا ألوان أبداً: الفارق بالشكل فقط.</p>
+
+<div class="card">
+  <div class="set-controls board-ltr" dir="ltr">
+    <button type="button" id="newGame" class="btn">لعبة جديدة</button>
+    <button type="button" id="hint" class="btn btn-ghost">تلميح</button>
+    <button type="button" id="noSet" class="btn btn-ghost">لا يوجد Set — أضف 3 بطاقات</button>
+  </div>
+  <div id="status" class="status">نقاطك: 0 — اختر 3 بطاقات.</div>
+  <div id="table" class="set-table board-ltr" dir="ltr" role="grid" aria-label="بطاقات Set"></div>
+  <p class="note">الأشكال: دائرة ○، مثلث △، مربع □ — التعبئة: مملوء / مخطط / مفرّغ — الحجم: صغير / وسط / كبير — العدد: 1 أو 2 أو 3.</p>
+</div>
+
+<p class="note">لعبة أخرى؟ <a href="chess.html">شطرنج</a> • <a href="checkers.html">دامة</a> • <a href="connect4.html">كونكت 4</a> • <a href="nonogram.html">نونوغرام</a> • <a href="../notebook/">دفتر الملاحظات</a></p>
+<script src="set.js"></script>
+</body>
+</html>

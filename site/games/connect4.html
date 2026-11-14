@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>كونكت 4 — ألعاب RliBook</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="connect4.css">
+</head>
+<body>
+<p class="back"><a href="index.html">← كل الألعاب</a></p>
+<h1>🔵 كونكت 4 (Connect 4)</h1>
+<p class="howto">اضغط على عمود لتُسقط قرصاً — اجمع أربعة أقراص في صف واحد (أفقي أو عمودي أو قطري).</p>
+
+<div class="card">
+  <div class="c4-controls board-ltr" dir="ltr">
+    <label>الخصم:
+      <select id="mode">
+        <option value="ai" selected>حاسوب</option>
+        <option value="two">لاعبان على نفس الجهاز</option>
+      </select>
+    </label>
+    <button type="button" id="newGame" class="btn">لعبة جديدة</button>
+  </div>
+  <div id="status" class="status">دورك — أنت الأزرق، والحاسوب الزيتوني.</div>
+  <div class="board-ltr" dir="ltr">
+    <div id="colButtons" class="c4-cols" aria-label="اختر عموداً"></div>
+    <div id="board" class="c4-board" role="grid" aria-label="لوحة كونكت 4"></div>
+  </div>
+</div>
+
+<p class="note">لعبة أخرى؟ <a href="chess.html">شطرنج</a> • <a href="checkers.html">دامة</a> • <a href="set.html">Set</a> • <a href="nonogram.html">نونوغرام</a> • <a href="../notebook/">دفتر الملاحظات</a></p>
+<script src="connect4.js"></script>
+</body>
+</html>

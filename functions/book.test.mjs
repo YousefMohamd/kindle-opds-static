@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, parseTelegramPostUrl, telegramSendUrl } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, parseTelegramPostUrl, telegramSendUrl, telegramReaderUrl } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -62,6 +62,10 @@ const TG_OK_RESULTS = [
     formats: ["EPUB"],
     url: "https://t.me/kotobkhana/7559",
     flagged: false,
+    // Embedded cover (Block 4 pairing): tiny 1x1 GIF data URI.
+    cover: "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+    // Post-text description (first description source).
+    description: "وصف المنشور: سرقة بنك تتحول إلى لغز.",
   },
   {
     title: "كتاب تجاري تجريبي",
@@ -82,6 +86,11 @@ const TG_OK_RESULTS = [
 let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | xss
 let tgCalls = 0;
 let lastTgUrl = "";
+// Ratings mock (Blocks 9): "ok" serves a rating+description for the
+// first TG title and a description-only reply for the flagged title;
+// "fail" throws (endpoint down); "none" returns nulls for everything.
+let ratingsMode = "ok";
+let ratingsCalls = 0;
 const jsonRes = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -90,6 +99,23 @@ const jsonRes = (obj, status = 200) =>
 
 globalThis.fetch = async (u) => {
   const url = new URL(u);
+  if (url.pathname === "/api/ratings") {
+    ratingsCalls++;
+    if (ratingsMode === "fail") throw new Error("ratings down");
+    const title = url.searchParams.get("title") || "";
+    if (title.includes("Bank Is a Thief")) {
+      return jsonRes({ ok: true, title,
+        rating: { value: 8.4, count: 12345, source: "Google Books" },
+        description: { text: "A bank heist gone wrong, told by the thief.",
+          source: "Google Books" } });
+    }
+    if (title.includes("كتاب تجاري")) {
+      return jsonRes({ ok: true, title, rating: null,
+        description: { text: "وصف تجريبي من Google Books.",
+          source: "Google Books" } });
+    }
+    return jsonRes({ ok: true, title, rating: null, description: null });
+  }
   if (url.pathname === "/api/tg-search") {
     tgCalls++;
     lastTgUrl = u;
@@ -182,6 +208,13 @@ tgMode = "ok";
     r.body.includes("/api/send-to-kindle?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
     && r.body.includes("📧 أرسل إلى جهازي"));
+  check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
+    r.body.includes("/site/reader/?lib=tg")
+    && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
+    && r.body.includes("📖 اقرأ أونلاين"));
+  check("B1 TG-only title: Read online comes before Send (read first)",
+    r.body.indexOf("📖 اقرأ أونلاين") !== -1
+    && r.body.indexOf("📖 اقرأ أونلاين") < r.body.indexOf("📧 أرسل إلى جهازي"));
   check("B1 TG-only title: send footer note present (TG cards have send buttons)",
     r.body.includes("زر «أرسل إلى جهازي»"));
   check("B1 TG-only title: telegram note explains the send button fetches from Telegram",
@@ -208,6 +241,11 @@ tgMode = "ok";
     && !r.body.includes("hindawi.org/books/"));
   check("B2 combined query: send footer note present (OPDS half shown)",
     r.body.includes("زر «أرسل إلى جهازي»"));
+  check("B2 combined query: OPDS EPUB cards have a Read online button",
+    r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("📖 اقرأ أونلاين"));
+  check("B2 combined query: Read online comes before Send on the OPDS card",
+    r.body.indexOf("📖 اقرأ أونلاين") !== -1
+    && r.body.indexOf("📖 اقرأ أونلاين") < r.body.indexOf("📧 أرسل إلى جهازي"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
@@ -224,6 +262,8 @@ tgMode = "ok";
     && r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") < r.body.indexOf("قناة النشر"));
   check("B3 flagged card: NO send button for the flagged book",
     !r.body.includes("h=darkromancenovels"));
+  check("B3 flagged card: NO Read online button for the flagged book",
+    !r.body.includes("/site/reader/?lib=tg&amp;h=darkromancenovels"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
@@ -277,6 +317,104 @@ console.log("D. fetchTelegramResults unit:");
     t.available === true && t.total === 42 && t.results.length === 2,
     JSON.stringify({ available: t.available, total: t.total, n: t.results.length }));
   check("D2 flagged flag survives", t.results[1] && t.results[1].flagged === true);
+  check("D2 embedded cover survives passthrough",
+    t.results[0] && t.results[0].cover.startsWith("data:image/gif;base64,"));
+  check("D2 post-text description survives passthrough",
+    t.results[0] && t.results[0].description.includes("سرقة بنك"));
+}
+
+// ============ G. Enrichment: cover + rating + description ==========
+console.log("G. Enrichment (Blocks 4 + 9):");
+tgMode = "ok";
+ratingsMode = "ok";
+{
+  ratingsCalls = 0;
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("G1 book with a rating shows it (8.4/10) with its source",
+    r.body.includes("8.4/10") && r.body.includes("التقييم من Google Books"),
+    r.body.slice(0, 400));
+  check("G1 rating count shown (what people say: how many rated)",
+    r.body.includes("12345"));
+  check("G1 book with NO rating shows no rating (never a fake 0/10)",
+    !r.body.includes("0/10") && (r.body.match(/\/10/g) || []).length === 1,
+    "occurrences of /10: " + (r.body.match(/\/10/g) || []).length);
+  check("G1 ratings endpoint called once per Telegram card",
+    ratingsCalls === 2, "calls " + ratingsCalls);
+  check("G1 book with a cover shows it (embedded <img>)",
+    r.body.includes('<img class="cover"')
+    && r.body.includes("data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="));
+  check("G1 book with NO cover shows no <img> (no placeholder image)",
+    (r.body.match(/<img/g) || []).length === 1,
+    "img tags: " + (r.body.match(/<img/g) || []).length);
+  check("G1 description prefers the post text (first source)",
+    r.body.includes("وصف المنشور: سرقة بنك تتحول إلى لغز.")
+    && r.body.includes("(الوصف من منشور تيليجرام)"));
+  check("G1 post text present -> Google Books description NOT shown for it",
+    !r.body.includes("A bank heist gone wrong"));
+  check("G1 flagged book (no post text) falls back to Google Books description",
+    r.body.includes("وصف تجريبي من Google Books.")
+    && r.body.includes("(الوصف من Google Books)"));
+  check("G1 page still Kindle-small (<8 KB)",
+    r.body.length < 8192, r.body.length + " B");
+}
+{
+  // Ratings endpoint down: the page still renders, cards intact,
+  // just without ratings/descriptions from Google Books.
+  ratingsMode = "fail";
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("G2 ratings down: still 200, Telegram cards intact",
+    r.status === 200 && r.body.includes("Everyone in This Bank Is a Thief")
+    && r.body.includes("kotobkhana"));
+  check("G2 ratings down: no rating text anywhere",
+    !r.body.includes("/10"));
+  check("G2 ratings down: post-text description still shown",
+    r.body.includes("وصف المنشور: سرقة بنك"));
+  check("G2 ratings down: cover still shown (cover does not need ratings)",
+    r.body.includes('<img class="cover"'));
+  ratingsMode = "ok";
+}
+{
+  // fetchEnrichment unit: ok -> rating; fail -> nulls, never throws.
+  const e1 = await fetchEnrichment("https://rlibook.tech",
+    "Everyone in This Bank Is a Thief", "Benjamin Stevenson");
+  check("G3 fetchEnrichment ok -> 8.4/10 from Google Books",
+    e1.rating && e1.rating.value === 8.4 && e1.rating.source === "Google Books");
+  ratingsMode = "fail";
+  const e2 = await fetchEnrichment("https://rlibook.tech", "Dune", "");
+  check("G3 fetchEnrichment fail -> nulls, no throw",
+    e2.rating === null && e2.description === null);
+  ratingsMode = "ok";
+  const e3 = await fetchEnrichment("https://rlibook.tech", "No Such Book", "");
+  check("G3 fetchEnrichment no match -> nulls",
+    e3.rating === null && e3.description === null);
+}
+{
+  // Cover validation in fetchTelegramResults: a hotlink cover and an
+  // oversized embedded cover are both dropped (no cover, not a bad one).
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") {
+      return jsonRes({ ok: true, q: "x", total: 2, limit: 10, offset: 0, results: [
+        { title: "Hotlink Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], url: "https://t.me/s/1", flagged: false,
+          cover: "https://example.com/cover.jpg" },
+        { title: "Huge Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], url: "https://t.me/s/2", flagged: false,
+          cover: "data:image/jpeg;base64," + "A".repeat(200000) },
+      ] });
+    }
+    if (url.pathname === "/api/ratings") {
+      return jsonRes({ ok: true, title: "", rating: null, description: null });
+    }
+    return saved(u);
+  };
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  check("G4 hotlink cover dropped (embedded only)",
+    t.results[0] && t.results[0].cover === "");
+  check("G4 oversized embedded cover dropped (Kindle-small only)",
+    t.results[1] && t.results[1].cover === "");
+  globalThis.fetch = saved;
 }
 
 // ============ E. OPDS failure behaviour unchanged ====================
@@ -323,6 +461,35 @@ console.log("F. Telegram send-URL helpers:");
     telegramSendUrl({ title: "T", formats: [], url: "https://t.me/s/1", flagged: false }, "") === null);
   check("F2 private-group link -> null",
     telegramSendUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }, "") === null);
+}
+
+// ============ H. telegramReaderUrl unit (Block 11b reader) =========
+console.log("H. Telegram reader-URL helper:");
+{
+  const u = telegramReaderUrl(
+    { title: "Test Book", formats: ["EPUB"], url: "https://t.me/kotobkhana/7559", flagged: false });
+  check("H1 reader URL: lib=tg + handle + post + f=epub + title",
+    u === "/site/reader/?lib=tg&amp;h=kotobkhana&amp;p=7559&amp;f=epub&amp;title=Test%20Book",
+    u);
+  check("H1 reader URL: EPUB among other formats still works",
+    telegramReaderUrl(
+      { title: "T", formats: ["PDF", "EPUB"], url: "https://t.me/s/1", flagged: false })
+      !== null);
+  check("H1 PDF-only -> null (reader opens EPUB only)",
+    telegramReaderUrl(
+      { title: "T", formats: ["PDF"], url: "https://t.me/s/1", flagged: false }) === null);
+  check("H1 MOBI-only -> null",
+    telegramReaderUrl(
+      { title: "T", formats: ["MOBI"], url: "https://t.me/s/1", flagged: false }) === null);
+  check("H1 no formats -> null",
+    telegramReaderUrl(
+      { title: "T", formats: [], url: "https://t.me/s/1", flagged: false }) === null);
+  check("H1 flagged -> null (flagged books never reach the reader)",
+    telegramReaderUrl(
+      { title: "T", formats: ["EPUB"], url: "https://t.me/s/1", flagged: true }) === null);
+  check("H1 private-group link -> null",
+    telegramReaderUrl(
+      { title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

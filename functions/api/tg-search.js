@@ -1,10 +1,16 @@
 // Cloudflare Pages Function: Telegram-catalog search (RliBook, Task 2).
-// Route: GET /api/tg-search?q=...&limit=...&offset=...
+// Route: GET /api/tg-search?q=...&limit=...&offset=...&source=...
 //
 //   GET /api/tg-search?q=فن%20التواصل
 //     -> 200 { ok: true, q: "فن التواصل", total: 42, limit: 10,
 //              offset: 0, results: [
 //                { title, author, source, kind, formats, url, flagged }, ... ] }
+//   GET /api/tg-search?source=EBook_Library&q=...  — same search, but only
+//     books whose source (channel/group handle) is exactly EBook_Library.
+//     Powers the per-library browse links on /telegram/libraries.html.
+//     With source= and no q, returns that library's books (newest first
+//     is NOT guaranteed — FTS rank needs a query; empty-q source browse
+//     lists by id order, capped by limit).
 //
 // What it searches: the Telegram catalog (321k distinct books from 51
 // channels + 168 groups), held in a Cloudflare D1 database (SQLite +
@@ -145,13 +151,39 @@ async function isFlagged(env, url) {
 
 // One D1 search: FTS MATCH, rank order, bounded. Returns { total, rows }.
 // `total` is the full match count (may exceed rows.length).
-async function d1Search(db, match, limit, offset) {
+// `source` (optional) restricts to one channel/group handle (exact match
+// on books.source). With no query words (empty q) and a source, it lists
+// that library's books by id order instead of FTS rank.
+async function d1Search(db, match, limit, offset, source) {
+  const hasSource = !!(source && source.trim());
+  const srcClause = hasSource ? " AND b.source = ?" : "";
+  const srcParams = hasSource ? [source.trim()] : [];
+  if (!match) {
+    // Empty query + source: plain browse of one library.
+    const countRes = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM books b WHERE 1=1" +
+          (hasSource ? " AND b.source = ?" : ""),
+      )
+      .bind(...srcParams)
+      .first();
+    const total = countRes ? Number(countRes.n) || 0 : 0;
+    if (total === 0) return { total: 0, rows: [] };
+    const { results } = await db
+      .prepare(
+        "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.url, b.date " +
+          "FROM books b WHERE 1=1" + srcClause + " ORDER BY b.id LIMIT ? OFFSET ?",
+      )
+      .bind(...srcParams, limit, offset)
+      .all();
+    return { total, rows: results || [] };
+  }
   const countRes = await db
     .prepare(
-      "SELECT COUNT(*) AS n FROM books WHERE id IN " +
-        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)",
+      "SELECT COUNT(*) AS n FROM books b WHERE b.id IN " +
+        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause,
     )
-    .bind(match)
+    .bind(match, ...srcParams)
     .first();
   const total = countRes ? Number(countRes.n) || 0 : 0;
   if (total === 0) return { total: 0, rows: [] };
@@ -159,9 +191,9 @@ async function d1Search(db, match, limit, offset) {
     .prepare(
       "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.url, b.date " +
         "FROM books_fts f JOIN books b ON b.id = f.rowid " +
-        "WHERE f.books_fts MATCH ? ORDER BY f.rank LIMIT ? OFFSET ?",
+        "WHERE f.books_fts MATCH ?" + srcClause + " ORDER BY f.rank LIMIT ? OFFSET ?",
     )
-    .bind(match, limit, offset)
+    .bind(match, ...srcParams, limit, offset)
     .all();
   return { total, rows: results || [] };
 }
@@ -192,6 +224,7 @@ export async function onRequest(context) {
   }
 
   const q = (url.searchParams.get("q") || "").trim();
+  const source = (url.searchParams.get("source") || "").trim();
   const limitRaw = parseInt(url.searchParams.get("limit") || "", 10);
   const limit = Number.isFinite(limitRaw)
     ? Math.max(1, Math.min(MAX_LIMIT, limitRaw))
@@ -210,16 +243,38 @@ export async function onRequest(context) {
       },
     });
 
-  if (!q) {
-    return json({ ok: true, q: "", total: 0, limit, offset, results: [] });
-  }
-
   const db = env && env.TG_D1;
   if (!db) {
     return json(
       { ok: false, error: "search unavailable (TG_D1 not bound)" },
       503,
     );
+  }
+
+  if (!q) {
+    // Empty query: without a source there is nothing to list; with a
+    // source, browse that library's books (id order, capped by limit).
+    if (!source) {
+      return json({ ok: true, q: "", total: 0, limit, offset, results: [] });
+    }
+    try {
+      const found = await d1Search(db, null, limit, offset, source);
+      if (found.total === 0) {
+        return json({ ok: true, q: "", source, total: 0, limit, offset, results: [] });
+      }
+      const flagged = await Promise.all(
+        found.rows.map((r) => isFlagged(env, r.url)),
+      );
+      return json({
+        ok: true, q: "", source, total: found.total, limit, offset,
+        results: found.rows.map((r, i) => toResult(r, flagged[i])),
+      });
+    } catch (e) {
+      return json(
+        { ok: false, error: "search failed: " + (e && e.message ? e.message : e) },
+        500,
+      );
+    }
   }
 
   const words = queryWords(q);
@@ -230,10 +285,10 @@ export async function onRequest(context) {
   try {
     // Full AND first; fall back to the longest word alone (same spirit
     // as the bot's suggestSearch) when nothing matches all words.
-    let found = await d1Search(db, ftsMatch(words), limit, offset);
+    let found = await d1Search(db, ftsMatch(words), limit, offset, source);
     if (found.total === 0 && words.length > 1) {
       const longest = [...words].sort((a, b) => b.length - a.length)[0];
-      found = await d1Search(db, ftsMatch([longest]), limit, offset);
+      found = await d1Search(db, ftsMatch([longest]), limit, offset, source);
     }
     if (found.total === 0) {
       return json({ ok: true, q, total: 0, limit, offset, results: [] });
@@ -246,6 +301,7 @@ export async function onRequest(context) {
     return json({
       ok: true,
       q,
+      ...(source ? { source } : {}),
       total: found.total,
       limit,
       offset,

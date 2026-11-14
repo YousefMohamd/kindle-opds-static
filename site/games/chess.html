@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>شطرنج — ألعاب RliBook</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="chess.css">
+</head>
+<body>
+<p class="back"><a href="index.html">← كل الألعاب</a></p>
+<h1>♟️ شطرنج</h1>
+<p class="howto">اضغط على قطعة ثم على مربع مضيء — الترقية تلقائياً إلى وزير.</p>
+
+<div class="card">
+  <div class="chess-controls board-ltr" dir="ltr">
+    <label>الخصم:
+      <select id="mode">
+        <option value="easy">حاسوب — سهل</option>
+        <option value="medium" selected>حاسوب — متوسط</option>
+        <option value="two">لاعبان على نفس الجهاز</option>
+      </select>
+    </label>
+    <button type="button" id="newGame" class="btn">لعبة جديدة</button>
+    <button type="button" id="undo" class="btn btn-ghost">تراجع</button>
+  </div>
+  <div id="status" class="status">دور الأبيض — اضغط على قطعة لترى نقلاتها.</div>
+  <div class="board-ltr" dir="ltr">
+    <div id="board" class="chess-board" role="grid" aria-label="رقعة الشطرنج"></div>
+  </div>
+  <p id="moves" class="note moves-list"></p>
+</div>
+
+<p class="note">لعبة أخرى؟ <a href="checkers.html">دامة</a> • <a href="connect4.html">كونكت 4</a> • <a href="set.html">Set</a> • <a href="nonogram.html">نونوغرام</a> • <a href="../notebook/">دفتر الملاحظات</a></p>
+<p class="note">محرك القواعد: <a href="https://github.com/jhlywa/chess.js">chess.js</a> (BSD-2-Clause) — انظر <a href="attribution.md">مصادر الألعاب والتراخيص</a>.</p>
+<script src="vendor/chess.js"></script>
+<script src="chess-game.js"></script>
+</body>
+</html>

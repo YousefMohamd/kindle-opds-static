@@ -182,5 +182,21 @@ const D1 = mockD1(db);
   check("6e queryWords strips ال", JSON.stringify(queryWords("الكاتب")) === JSON.stringify(["كاتب"]));
 }
 
+// 7. source= filter (per-library browse, /telegram/libraries.html).
+// "Everyone in This Bank Is a Thief" is source kotobkhana in this sample.
+{
+  const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief") + "&source=kotobkhana");
+  check("7a source match finds the book", (body.results || []).some((r) => r.title === "Everyone in This Bank Is a Thief"));
+  check("7b source echoed", body.source === "kotobkhana", JSON.stringify(body.source));
+  check("7c all results from that source", (body.results || []).every((r) => r.source === "kotobkhana"));
+  const { body: bodyWrong } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief") + "&source=EBook_Library");
+  check("7d wrong source finds nothing", bodyWrong.total === 0 && bodyWrong.results.length === 0, `total=${bodyWrong.total}`);
+  const { body: bodyBrowse } = await call({ TG_D1: D1 }, "/api/tg-search?source=kotobkhana&limit=5");
+  check("7e empty-q source browse lists books", bodyBrowse.ok === true && bodyBrowse.total >= 1 && bodyBrowse.results.length >= 1, `total=${bodyBrowse.total}`);
+  check("7f browse results all from that source", (bodyBrowse.results || []).every((r) => r.source === "kotobkhana"));
+  const { body: bodyNone } = await call({ TG_D1: D1 }, "/api/tg-search?source=zzz_no_such_handle&limit=5");
+  check("7g unknown source -> 0 results", bodyNone.total === 0 && bodyNone.results.length === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -8,30 +8,65 @@
   :root { color-scheme: light; }
   body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
          max-width: 760px; margin: 0 auto; padding: 1.2rem;
-         line-height: 1.7; color: #1c1c1c; background: #fdfdf8; }
-  h1 { font-size: 1.8rem; margin-bottom: 0.2rem; }
-  .slogan { color: #555; font-size: 1rem; margin-top: 0; }
-  .card { border: 1px solid #ccc; border-radius: 8px; background: #fff;
+         line-height: 1.7; color: #1C2826; background: #DFF1F4; }
+  h1 { font-family: "Cabinet Grotesk", system-ui, "Segoe UI", Tahoma, sans-serif;
+       font-weight: 300; font-size: 1.8rem; margin-bottom: 0.2rem; }
+  .logo { display: block; max-width: 220px; height: auto; margin: 0 auto 0.4rem; }
+  .slogan { color: #44667b; font-size: 1rem; margin-top: 0; text-align: center; }
+  .card { border: 1px solid #C4E0EB; border-radius: 8px; background: #fff;
           padding: 1rem 1.2rem; margin: 1rem 0; }
   .card h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
   .card p { margin: 0.3rem 0; }
-  a { color: #0b5cad; }
+  a { color: #44667b; }
   .btn { display: inline-block; padding: 0.6rem 1.1rem; margin: 0.3rem 0;
-         border-radius: 6px; background: #0b5cad; color: #fff;
+         border-radius: 6px; background: #44667b; color: #fff;
          text-decoration: none; font-weight: 600; }
   .links a { display: block; padding: 0.35rem 0; }
-  .note { color: #555; font-size: 0.9rem; }
+  .note { color: #44402F; font-size: 0.9rem; }
+  input[type="search"] {
+    font: inherit; width: 100%; box-sizing: border-box;
+    padding: 0.6rem 0.7rem; border: 1px solid #99B6B3; border-radius: 6px;
+    background: #fff; }
+  .reshead { font-weight: 700; margin: 1rem 0 0.2rem;
+             border-bottom: 2px solid #93D4EF; padding-bottom: 0.2rem; }
+  ul.results { list-style: none; padding: 0; margin: 0.2rem 0; }
+  ul.results li { border-bottom: 1px solid #C4E0EB; padding: 0.7rem 0; }
+  .title { font-weight: 700; }
+  .meta { color: #44402F; font-size: 0.9rem; }
+  .fmt { display: inline-block; background: #93D4EF; color: #1C2826;
+         border-radius: 999px; padding: 0.05rem 0.6rem; font-size: 0.85rem;
+         font-weight: 600; margin-inline-end: 0.3rem; }
+  .flag { color: #8a3b00; font-weight: 700; }
+  .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
+              border-radius: 6px; padding: 0.8rem 1rem; margin-top: 0.8rem; }
 </style>
 </head>
 <body>
-<h1>📚 RliBook</h1>
-<p class="slogan">Reply. Read. Fly. — ردّك بكتابك، على كيندلك.</p>
+<img class="logo" src="/site/logo-1024.jpg" alt="RliBook — طائر أزرق يحمل كتاباً" width="220" height="181">
+<h1 style="text-align:center">RliBook</h1>
+<p class="slogan">Reply. Read. Fly. — رد. اقرأ. حلّق.</p>
 
 <div class="card">
-  <h2>ابحث في فهرس كتب تيليجرام</h2>
-  <p>أكبر فهرس عربي للكتب المجانية — من قنوات وجروبات تيليجرام العامة،
-  كتب بصيغ Kindle و PDF و EPUB. بحث مجاني وغير محدود.</p>
-  <a class="btn" href="/telegram/">ابحث في الكتب</a>
+  <h2>ابحث في كل المكتبات</h2>
+  <p>بحث واحد يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (219 مكتبة)
+  وخازندار وصحوه والمكتبة الإلكترونية وهنداوي وDOAB — بالعنوان أو المؤلف.</p>
+  <form id="searchform" action="/" method="get">
+    <input type="search" id="q" name="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="ابحث في كل المكتبات">
+    <button class="btn" type="submit">ابحث</button>
+  </form>
+  <p id="status" class="note" role="status"></p>
+  <div id="results"></div>
+  <p id="notfound" class="notfound" hidden></p>
+</div>
+
+<div class="card">
+  <h2>مكتبات تلجرام</h2>
+  <p id="tgcount">219 مكتبة — 324,416 كتاب مميز، 444,412 ملف — من قنوات
+  وجروبات تيليجرام العامة.</p>
+  <a class="btn" href="/telegram/libraries.html">تصفّح مكتبات تلجرام ←</a>
+  <a class="btn" href="/telegram/">ابحث في كتب تيليجرام</a>
+  <p class="note">كل مكتبة لها صفحة كتبها الخاصة — اضغط اسم المكتبة في
+  القائمة لتصفّح كتبها وحدها، أو افتحها في تيليجرام.</p>
 </div>
 
 <div class="card">
@@ -43,9 +78,11 @@
     <a href="/electronic/">المكتبة الإلكترونية</a>
     <a href="/hindawi/">مكتبة صفحات — هنداوي</a>
     <a href="/doab/">DOAB</a>
+    <a href="https://ws-export.wmcloud.org/opds/en/Ready_for_export.xml">Wikisource (English) — تصفّح فقط</a>
   </div>
   <p class="note">الكتالوج يعمل على Kindle وأي قارئ إلكتروني و iPad وتابلت —
-  افتح الرابط في متصفح جهازك وابحث وحمّل مباشرة، من غير تطبيق ولا جيلبريك.</p>
+  افتح الرابط في متصفح جهازك وابحث وحمّل مباشرة، من غير تطبيق ولا جيلبريك.
+  Wikisource مكتبة خارجية — تصفّح فقط، ولا تظهر في البحث.</p>
 </div>
 
 <div class="card" id="newspapers">
@@ -60,13 +97,181 @@
   ولا نقدّم تحميلاً مباشراً لأي جريدة.</p>
 </div>
 
+<div class="card" id="qurans">
+  <h2>📖 المصاحف الإلكترونية</h2>
+  <p>اختر المصحف والرواية والتفسير الذي تحبه — حفص أو ورش، عربي أو ثنائي اللغة أو تفاعلي.</p>
+  <p><a class="btn" href="/qurans/">تصفّح المصاحف ←</a></p>
+</div>
+
+<div class="card">
+  <h2>أقسام RliBook</h2>
+  <div class="links">
+    <a href="/reader/">القارئ — اقرأ أونلاين</a>
+    <a href="/games/">الألعاب</a>
+    <a href="/notebook/">المفكرة</a>
+    <a href="/tools/">الأدوات</a>
+    <a href="/stats/">الإحصائيات</a>
+  </div>
+</div>
+
 <div class="card">
   <h2>بوت RliBook</h2>
-  <p>أضف قناة أو كتاباً للفهرس، واطلب فهرسة بأولوية، وادعُ أصدقاءك.</p>
+  <p>أضف قناة أو كتاباً للفهرس، وادعُ أصدقاءك.</p>
   <a class="btn" href="https://t.me/RliBook_bot">افتح البوت @RliBook_bot</a>
 </div>
 
 <p class="note">RliBook — فهرس مجاني للكتب العامة (Public Domain) والمشاع الإبداعي
 (Creative Commons) والكتب القديمة غير التجارية. لا ننشر كتباً تجارية حديثة.</p>
+
+<script>
+"use strict";
+// Merged search: /api/tg-search (Telegram catalog, D1) + /opds/search
+// (OPDS libraries: khazendar, sahwa, electronic, hindawi, doab).
+// Plain fetch + DOMParser, no framework — must work in the Kindle browser.
+// Wikisource is browse-only (no search index) and is not queried here.
+var qEl = document.getElementById("q");
+var statusEl = document.getElementById("status");
+var resEl = document.getElementById("results");
+var notfoundEl = document.getElementById("notfound");
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// OPDS Atom feed -> [{title, author, library, href, format}].
+// getElementsByTagNameNS("*", ...) because entries live in the Atom
+// namespace; falls back to the no-namespace lookup for odd parsers.
+function parseOpds(xmlText) {
+  var doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  var entries = doc.getElementsByTagNameNS("*", "entry");
+  if (!entries.length) entries = doc.getElementsByTagName("entry");
+  var out = [];
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    var text = function (tag) {
+      var n = e.getElementsByTagNameNS("*", tag)[0] ||
+              e.getElementsByTagName(tag)[0];
+      return n ? n.textContent : "";
+    };
+    var href = "", mime = "";
+    var links = e.getElementsByTagNameNS("*", "link");
+    if (!links.length) links = e.getElementsByTagName("link");
+    for (var j = 0; j < links.length; j++) {
+      var rel = links[j].getAttribute("rel") || "";
+      if (rel.indexOf("acquisition") !== -1) {
+        href = links[j].getAttribute("href") || "";
+        mime = links[j].getAttribute("type") || "";
+        break;
+      }
+    }
+    var cat = e.getElementsByTagNameNS("*", "category")[0] ||
+            e.getElementsByTagName("category")[0];
+    out.push({ title: text("title"), author: text("author"),
+               library: cat ? (cat.getAttribute("term") || "") : "",
+               href: href, format: mimeToFormat(mime) });
+  }
+  return out;
+}
+
+function mimeToFormat(mime) {
+  mime = (mime || "").toLowerCase();
+  if (mime.indexOf("epub") !== -1) return "EPUB";
+  if (mime.indexOf("pdf") !== -1) return "PDF";
+  if (mime.indexOf("mobipocket") !== -1 || mime.indexOf("mobi") !== -1) return "MOBI";
+  if (mime.indexOf("azw") !== -1) return "AZW3";
+  if (mime.indexOf("plain") !== -1) return "TXT";
+  return "";
+}
+
+function renderGroup(heading, items, tg) {
+  if (!items.length) return "";
+  var html = "<p class=\"reshead\">" + esc(heading) + " (" + items.length + ")</p><ul class=\"results\">";
+  for (var i = 0; i < items.length; i++) {
+    var b = items[i];
+    var fmts = "";
+    var formats = tg ? (b.formats || []) : (b.format ? [b.format] : []);
+    for (var j = 0; j < formats.length; j++) {
+      fmts += "<span class=\"fmt\">" + esc(formats[j]) + "</span>";
+    }
+    var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — الرابط للمصدر فقط</span>" : "";
+    var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
+    html += "<li><div class=\"title\"><a href=\"" + esc(b.href || b.url) + "\">" +
+      esc(b.title) + "</a></div>" +
+      (b.author ? "<div class=\"meta\">" + esc(b.author) + "</div>" : "") +
+      "<div class=\"meta\">" + esc(lib) + "</div>" +
+      (fmts || flag ? "<div>" + fmts + flag + "</div>" : "") + "</li>";
+  }
+  return html + "</ul>";
+}
+
+function runSearch(q) {
+  q = (q || "").trim();
+  if (!q) return;
+  statusEl.textContent = "جارٍ البحث في كل المكتبات…";
+  resEl.innerHTML = "";
+  notfoundEl.hidden = true;
+  var enc = encodeURIComponent(q);
+  Promise.allSettled([
+    fetch("/api/tg-search?q=" + enc + "&limit=10").then(function (r) { return r.json(); }),
+    fetch("/opds/search?q=" + enc).then(function (r) { return r.text(); }).then(parseOpds)
+  ]).then(function (out) {
+    var tg = [], opds = [], tgDown = false, opdsDown = false;
+    if (out[0].status === "fulfilled" && out[0].value && out[0].value.ok) {
+      tg = out[0].value.results || [];
+    } else { tgDown = true; }
+    if (out[1].status === "fulfilled") {
+      opds = out[1].value || [];
+    } else { opdsDown = true; }
+    var total = tg.length + opds.length;
+    statusEl.textContent = total
+      ? "النتائج: " + total + " كتاب — " + tg.length + " من تيليجرام، " + opds.length + " من المكتبات."
+      : "لا نتائج.";
+    if (tgDown) statusEl.textContent += " (بحث تيليجرام غير متاح حالياً — جرّب لاحقاً.)";
+    if (opdsDown) statusEl.textContent += " (بحث المكتبات غير متاح حالياً — جرّب لاحقاً.)";
+    resEl.innerHTML =
+      renderGroup("من تيليجرام", tg, true) +
+      renderGroup("من المكتبات", opds, false);
+    if (total === 0) {
+      notfoundEl.hidden = false;
+      notfoundEl.innerHTML = "«" + esc(q) + "» مش موجود في الفهرس لسه — " +
+        "جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من بوت تيليجرام: " +
+        "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — البوت بيدوّر " +
+        "في القنوات مباشرة ويرجع لك الرابط فوراً لو لقاه.";
+    }
+  });
+}
+
+document.getElementById("searchform").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  runSearch(qEl.value);
+});
+var deb = null;
+qEl.addEventListener("input", function () {
+  clearTimeout(deb);
+  deb = setTimeout(function () { runSearch(qEl.value); }, 600);
+});
+
+// Fresh Telegram counts from the manifest (falls back to the static
+// numbers in the HTML when the fetch fails).
+// NOTE for maintainers: the static numbers above are from
+// site/telegram/index.json (generated 2026-11-13: 219 sources,
+// 324,416 books, 444,412 files). Update them when the manifest is
+// regenerated if the JS fetch ever stops working.
+fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(function (d) {
+  var t = d.totals || {};
+  if (t.sources && t.books) {
+    document.getElementById("tgcount").textContent =
+      t.sources + " مكتبة — " + Number(t.books).toLocaleString("en-US") +
+      " كتاب مميز، " + Number(t.files || 0).toLocaleString("en-US") +
+      " ملف — من قنوات وجروبات تيليجرام العامة.";
+  }
+}).catch(function () { /* keep the static numbers */ });
+
+// ?q= in the URL runs the search on load (deep links to a search).
+var startQ = (new URLSearchParams(location.search).get("q") || "").trim();
+if (startQ) { qEl.value = startQ; runSearch(startQ); }
+</script>
 </body>
 </html>

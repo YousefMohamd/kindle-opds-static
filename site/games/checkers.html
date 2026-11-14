@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دامة — ألعاب RliBook</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="checkers.css">
+</head>
+<body>
+<p class="back"><a href="index.html">← كل الألعاب</a></p>
+<h1>⛂ دامة (Checkers)</h1>
+<p class="howto">اضغط على قطعة ثم على مربع مضيء — اقفز فوق قطع الخصم لتأخذها، واصنع ملكاً بالوصول إلى آخر الصف.</p>
+
+<div class="wrapper board-ltr" dir="ltr">
+  <!-- Level selection -->
+  <div id="levelScreen" class="level-screen">
+    <div class="level-header">
+      <h1>دامة</h1>
+      <button type="button" id="helpBtnLevel" class="help-btn" title="كيف تلعب" aria-label="كيف تلعب">؟</button>
+    </div>
+    <p>اختر المستوى — أنت الأزرق، والحاسوب الزيتوني</p>
+    <div class="level-buttons">
+      <button type="button" data-level="easy" class="level-btn">
+        <span class="level-name">سهل</span>
+        <span class="level-desc">الحاسوب يختار عشوائياً · يفضّل الأكل</span>
+      </button>
+      <button type="button" data-level="medium" class="level-btn">
+        <span class="level-name">متوسط</span>
+        <span class="level-desc">يفكّر نقلتين إلى الأمام</span>
+      </button>
+      <button type="button" data-level="hard" class="level-btn">
+        <span class="level-name">صعب</span>
+        <span class="level-desc">يفكّر 4 نقلات إلى الأمام</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Game screen -->
+  <div id="gameScreen" class="game-screen hidden">
+    <header class="header">
+      <h1>دامة</h1>
+      <button type="button" id="helpBtnGame" class="help-btn" title="كيف تلعب" aria-label="كيف تلعب">؟</button>
+      <span class="level-badge" id="levelBadge">سهل</span>
+      <div class="header-actions">
+        <span class="turn-label" id="turnLabel">دورك</span>
+        <button type="button" id="changeLevelBtn" class="btn btn-ghost">غيّر المستوى</button>
+        <button type="button" id="newGameBtn" class="btn">لعبة جديدة</button>
+      </div>
+    </header>
+
+    <main class="game-container">
+      <div class="board-wrap">
+        <div id="board" class="board" role="grid" aria-label="رقعة الدامة"></div>
+      </div>
+    </main>
+
+    <!-- Win / lose / draw overlay -->
+    <div id="resultOverlay" class="result-overlay hidden">
+      <div class="result-box">
+        <h2 id="resultTitle">فزت!</h2>
+        <p id="resultMessage">أُخذت كل قطع الحاسوب.</p>
+        <div class="result-actions">
+          <button type="button" id="playAgainBtn" class="btn btn-large">العب مجدداً</button>
+          <button type="button" id="changeLevelFromResultBtn" class="btn btn-ghost">غيّر المستوى</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- How to play modal -->
+<div id="helpOverlay" class="help-overlay hidden" aria-hidden="true">
+  <div class="help-modal" role="dialog" aria-labelledby="helpTitle" aria-modal="true">
+    <div class="help-header">
+      <h2 id="helpTitle">كيف تلعب</h2>
+      <button type="button" id="helpClose" class="help-close" aria-label="إغلاق">&times;</button>
+    </div>
+    <div class="help-body">
+      <p>دامة أمريكية على رقعة 8×8. أنت الأزرق؛ والحاسوب الزيتوني.</p>
+      <ul>
+        <li><strong>النقلة:</strong> اضغط على قطعة، ثم على مربع مضيء. القطعة العادية تتحرك للأمام قطرياً؛ والملك يتحرك في الاتجاهين.</li>
+        <li><strong>الأكل:</strong> اقفز فوق قطعة مجاورة للخصم إلى مربع فارغ خلفها. الأكل اختياري — القطع التي تستطيع الأكل تظهر مميزة كتلميح.</li>
+        <li><strong>قفزات متتالية:</strong> واصل القفز بنفس القطعة ما دامت هناك قطع أخرى تؤكل.</li>
+        <li><strong>الملوك:</strong> أوصل قطعة إلى آخر الصف لتتوج ملكاً. الملك يتحرك ويأكل في كل الاتجاهات القطرية.</li>
+        <li><strong>الفوز:</strong> خذ كل قطع الخصم أو اتركه بلا نقلات قانونية. تعادل إذا تكرر نفس الوضع ثلاث مرات.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p class="note">لعبة أخرى؟ <a href="chess.html">شطرنج</a> • <a href="connect4.html">كونكت 4</a> • <a href="set.html">Set</a> • <a href="nonogram.html">نونوغرام</a> • <a href="../notebook/">دفتر الملاحظات</a></p>
+<script src="checkers.js"></script>
+</body>
+</html>

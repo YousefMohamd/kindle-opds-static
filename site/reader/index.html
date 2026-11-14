@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RliBook Reader — اقرأ</title>
+<meta name="description" content="RliBook Reader — read library books online, free. Reply. Read. Fly.">
+<meta name="theme-color" content="#93D4EF">
+<link rel="manifest" href="/site/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/site/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/site/icons/apple-touch-icon.png">
+<!-- Reader fonts: Amiri + Noto Naskh Arabic (Arabic + English).
+     If they do not load (offline / Kindle browser) the reader falls
+     back to the device default font — reading still works. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
+<!-- Wordmark: Cabinet Grotesk Light (Fontshare, free). Falls back to system sans. -->
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site/reader/reader.css">
+</head>
+<body>
+
+<header class="top">
+  <img class="logo" src="/site/icons/icon-192.png" alt="RliBook — bluebird on a stack of books" width="34" height="34">
+  <a class="wordmark" href="/">RliBook</a>
+  <span class="title" id="book-title">Reader</span>
+  <button class="btn" id="install-btn" style="display:none">Add to Home Screen</button>
+  <button class="btn primary" id="login-btn">Log in</button>
+</header>
+
+<div class="status" id="status">Opening…</div>
+<div class="status" id="notice" style="display:none"></div>
+<p class="status" id="ios-install-hint" style="display:none">On iPhone / iPad: tap Share, then “Add to Home Screen” to install RliBook.</p>
+
+<!-- Toolbar: plain words only, no jargon. -->
+<div class="toolbar" id="toolbar" style="display:none">
+  <button class="btn" id="prev-btn">‹ Previous</button>
+  <button class="btn" id="next-btn">Next ›</button>
+  <button class="btn" id="warm-toggle" aria-pressed="false">☀️ Warm Light</button>
+  <button class="btn" id="toc-btn">Contents</button>
+  <button class="btn" id="highlights-btn">My Highlights</button>
+  <label>Font size
+    <input type="range" id="font-size" min="80" max="150" step="5" value="100" aria-label="Font size">
+    <span id="font-size-val">100%</span>
+  </label>
+  <label>Font
+    <select id="font-select" aria-label="Font"></select>
+  </label>
+  <span class="spacer"></span>
+  <span class="progress" id="progress-text"></span>
+</div>
+<div class="progressbar"><div id="progress-fill"></div></div>
+
+<!-- Warm Light controls -->
+<div class="panel" id="warm-panel">
+  <div class="row">
+    <label>Brightness
+      <input type="range" id="brightness" min="0" max="100" step="5" value="60" aria-label="Brightness">
+    </label>
+    <label>Warmth
+      <input type="range" id="warmth" min="0" max="100" step="5" value="50" aria-label="Warmth">
+    </label>
+    <span class="note">Warm Light is a warm yellow light for your eyes. Turn it off any time with the Warm Light button.</span>
+  </div>
+</div>
+
+<!-- Contents / Highlights / Login drawers -->
+<div class="drawer" id="toc-drawer">
+  <h2>Contents</h2>
+  <ul id="toc-list"></ul>
+</div>
+
+<div class="drawer" id="highlights-drawer">
+  <h2>My Highlights</h2>
+  <ul id="highlight-list"></ul>
+  <p class="note">Highlights are saved on this device. Log in to keep them on all your devices.</p>
+</div>
+
+<div class="drawer" id="login-drawer">
+  <div class="login-box">
+    <h2>Log in</h2>
+    <p id="login-state">Reading is free, no login needed. Log in to keep your highlights and reading progress on all your devices.</p>
+    <div id="google-btn"></div>
+    <div id="telegram-btn"></div>
+    <p><a class="btn" href="https://t.me/RliBook_bot?start=login">Log in with the Telegram bot @RliBook_bot</a></p>
+    <p class="note">Apple login is not available yet.</p>
+    <p class="note" id="sync-line"></p>
+    <p><button class="btn" id="logout-btn" style="display:none">Log out</button></p>
+  </div>
+</div>
+
+<!-- Reading area -->
+<div class="viewer-wrap" id="viewer-wrap" style="display:none">
+  <div id="viewer"></div>
+  <div id="warm-overlay"></div>
+  <button class="tapzone prev" id="tap-prev" aria-label="Previous page"></button>
+  <button class="tapzone next" id="tap-next" aria-label="Next page"></button>
+  <div id="select-pop">
+    <button class="btn" id="highlight-btn">Highlight</button>
+  </div>
+</div>
+
+<!-- Empty state: no book in the URL -->
+<div class="empty" id="empty" style="display:none">
+  <h2>Read a book</h2>
+  <p>Reading is free, no login needed. Pick an EPUB file from your device, or try the sample book.</p>
+  <p><input type="file" id="file-input" accept=".epub,application/epub+zip"></p>
+  <p><a class="btn" href="#" id="demo-link">Open the sample book</a>
+     <a class="btn" href="/book">Search the libraries</a></p>
+  <p class="note">The reader opens EPUB books. For a PDF or Word book, use «Send to my device» on the book page — it arrives by email.</p>
+  <p class="note">No book files are stored on our server — the book streams from its library, and a copy is kept only on your device so you can read it offline.</p>
+</div>
+
+<footer class="foot">
+  <span class="slogan">RliBook — Reply. Read. Fly.</span> ·
+  <a href="/">Home</a> · <a href="/book">Search</a> · <a href="https://t.me/RliBook_bot">Bot @RliBook_bot</a>
+</footer>
+
+<script src="/site/reader/vendor/jszip.min.js"></script>
+<script src="/site/reader/vendor/epub.min.js"></script>
+<script src="/site/reader/config.js"></script>
+<script src="/site/reader/reader-lib.js"></script>
+<script src="/site/reader/auth.js"></script>
+<script src="/site/reader/reader.js"></script>
+</body>
+</html>

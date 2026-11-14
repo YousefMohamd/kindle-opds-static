@@ -13,3 +13,12 @@
 # Newspapers (link-out only): /newspapers/ is the "other papers" page;
 # the data file is /site/newspapers.json (fetched by both pages).
 /newspapers/*  /site/newspapers/:splat  200
+# Games + notebook (Block 14): /games/ and /notebook/ are the public URLs,
+# rewritten to /site/games/ and /site/notebook/ (200, not a redirect),
+# same pattern as /telegram/ and /newspapers/ above.
+/games/*  /site/games/:splat  200
+/notebook/*  /site/notebook/:splat  200
+# Qurans (Block 13) + stats (Block 11c): public URLs rewritten to
+# /site/qurans/ and /site/stats/ (200, not a redirect), same pattern.
+/qurans/*  /site/qurans/:splat  200
+/stats/*  /site/stats/:splat  200

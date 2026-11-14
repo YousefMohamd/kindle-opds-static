@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>التقارير والإحصاءات — RliBook</title>
+<link rel="stylesheet" href="/site/assets/rlibook.css">
+<!--
+  Cloudflare Web Analytics (free, privacy-friendly) — NOT LIVE YET.
+  To enable it (a user step in the Cloudflare dashboard):
+    1. Cloudflare dashboard -> rlibook.tech zone -> Analytics & Logs
+       -> Web Analytics -> Enable / Add site.
+    2. Copy the token Cloudflare shows you.
+    3. Paste it in place of RLIBOOK-WEB-ANALYTICS-TOKEN below and
+       remove the surrounding comment markers — then the beacon loads
+       and real visit counts appear in the Cloudflare dashboard.
+  Until then this page reports views as "not measured yet" — no
+  number is invented. Do NOT paste any other token here.
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "RLIBOOK-WEB-ANALYTICS-TOKEN"}'></script>
+-->
+</head>
+<body>
+<header class="rl-header">
+  <img class="rl-logo" src="/site/assets/logo-256.jpg" alt="RliBook — طائر أزرق يحمل كتاباً" width="256" height="210">
+  <p class="rl-wordmark"><a href="/">RliBook</a></p>
+  <p class="rl-slogan">Reply. Read. Fly. — ردّ. اقرأ. حلّق.</p>
+  <h1>التقارير والإحصاءات</h1>
+  <p class="note">أرقام حيّة من مصادرها — كل رقم مكتوب تحته مصدره ووقته. لا رقم مخترَع هنا.</p>
+</header>
+
+<p id="status" class="note">جارٍ تحميل الأرقام الحيّة…</p>
+
+<div class="card" id="books-card" hidden>
+  <h2>الكتب</h2>
+  <table class="rl-stats">
+    <tr><td>إجمالي الكتب (كل المكتبات)</td><td class="rl-num" id="books-total">—</td></tr>
+    <tr><td>كتب تيليجرام (الفهرس)</td><td class="rl-num" id="books-tg">—</td></tr>
+    <tr><td>كتب مكتبات OPDS الخمس</td><td class="rl-num" id="books-opds">—</td></tr>
+    <tr><td>ملفات كتب (تيليجرام)</td><td class="rl-num" id="files-tg">—</td></tr>
+    <tr><td>منشورات مفحوصة (تيليجرام)</td><td class="rl-num" id="posts-tg">—</td></tr>
+  </table>
+  <p class="rl-source" id="books-source"></p>
+  <p class="rl-source" id="d1-line"></p>
+</div>
+
+<div class="card" id="libs-card" hidden>
+  <h2>المكتبات</h2>
+  <table class="rl-stats" id="libs-table"></table>
+  <p class="rl-source">المصدر: عدد كل مكتبة يُقرأ حيّاً من فهرس البحث المنشور لها (search-index.json)؛ فهرس تيليجرام من المانيفست اليومي. <span id="libs-count"></span></p>
+</div>
+
+<div class="card" id="sources-card" hidden>
+  <h2>مصادر تيليجرام</h2>
+  <table class="rl-stats">
+    <tr><td>إجمالي المصادر</td><td class="rl-num" id="sources-total">—</td></tr>
+    <tr><td>قنوات</td><td class="rl-num" id="sources-channels">—</td></tr>
+    <tr><td>جروبات</td><td class="rl-num" id="sources-groups">—</td></tr>
+  </table>
+  <p class="rl-source">المصدر: قائمة المصادر في المانيفست اليومي — أسماء القنوات والجروبات لا تُعرض هنا، العدد فقط.</p>
+</div>
+
+<div class="card" id="newest-card" hidden>
+  <h2>أحدث الكتب</h2>
+  <ul id="newest-list"></ul>
+  <p class="rl-source" id="newest-source"></p>
+</div>
+
+<div class="card" id="papers-card" hidden>
+  <h2>جرائد اليوم</h2>
+  <p id="papers-line">—</p>
+  <p class="rl-source">المصدر: <a href="/site/newspapers.json">newspapers.json</a> — <a href="/newspapers/">كل صحف اليوم</a>.</p>
+</div>
+
+<div class="card">
+  <h2>المشاهدات والتحميلات</h2>
+  <div class="rl-notmeasured">
+    <p><strong>غير مقاسة بعد.</strong></p>
+    <p>المشاهدات: لا يوجد تحليلات مفعّلة على الموقع بعد — تفعيل Cloudflare Web Analytics (مجاني) خطوة في لوحة تحكم Cloudflare، وبعدها تظهر الزيارات الحقيقية هنا. التحميلات: تتم عبر بوت تيليجرام وإيميل Send-to-Kindle، ولا ينشر أيٌّ منهما عدّاداً بعد. لا نعرض رقماً مخترَعاً بدلاً من ذلك.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>البوت والقناة</h2>
+  <p>إحصاءات استخدام البوت غير منشورة عبر أي واجهة بعد (البوت عامل منفصل) — عندما ينشر البوت واجهة إحصاءات ستُقرأ هنا تلقائياً. روابط: <a href="https://t.me/RliBook_bot">بوت RliBook @RliBook_bot</a> • <a href="/telegram/">فهرس تيليجرام</a> • <a href="/telegram/index-report.md">تقرير الفهرسة</a></p>
+</div>
+
+<footer class="rl-footer">
+  <p id="updated-line"></p>
+  <p>الأرقام الخام: <a href="/api/stats">/api/stats</a> (JSON) •
+  <a href="/">← RliBook — الرئيسية</a> •
+  <a href="https://github.com/YousefMohamd/kindle-opds-static">المشروع على GitHub</a></p>
+  <p>RliBook — فهرس مجاني للكتب العامة (Public Domain) والمشاع الإبداعي (Creative Commons) والكتب القديمة غير التجارية. لا ننشر كتباً تجارية حديثة، ولا نستضيف أي ملف كتاب هنا.</p>
+</footer>
+
+<!-- Agents bar: renders nothing — there are no contracted agents yet.
+     It appears ONLY when a first agent is contracted (see
+     /site/assets/agents-bar.html). Do NOT invent agents to fill it. -->
+<nav class="agents-bar" data-has-agents="false" hidden aria-label="Agents and contracted libraries">
+  <!-- No agents contracted yet. -->
+</nav>
+
+<noscript>
+  <p class="rl-notmeasured">هذه الصفحة تحتاج جافاسكربت لعرض الأرقام — أو افتح الأرقام الخام مباشرة: <a href="/api/stats">/api/stats</a> (JSON). وتقرير الفهرسة: <a href="/telegram/index-report.md">index-report.md</a>.</p>
+</noscript>
+
+<script>
+"use strict";
+// Plain ES5-style script on purpose (var, function, .then — no arrow
+// functions, no async/await, no optional chaining, no spread): the
+// oldest Kindle browsers that run any JavaScript at all cope with
+// this. If fetch() itself is missing (very old Kindle browser), the
+// fallback below points at the raw JSON instead of failing silently.
+function fmt(n) {
+  if (typeof n !== "number") return "—";
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function show(id) {
+  var el = document.getElementById(id);
+  if (el) el.hidden = false;
+}
+function setText(id, text) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+function fallback(msg) {
+  setText("status", msg + " — الأرقام الخام متاحة هنا: ");
+  var st = document.getElementById("status");
+  var a = document.createElement("a");
+  a.href = "/api/stats";
+  a.textContent = "/api/stats";
+  st.appendChild(a);
+}
+
+if (typeof fetch === "undefined") {
+  fallback("متصفحك لا يدعم تحميل الأرقام الحيّة.");
+} else {
+  fetch("/api/stats").then(function (r) {
+    if (!r.ok) throw new Error("/api/stats (HTTP " + r.status + ")");
+    return r.json();
+  }).then(function (d) {
+    if (!d.ok) throw new Error("stats endpoint returned ok:false");
+    setText("status", "أرقام حيّة — آخر تحديث للصفحة: " + d.generated_at);
+    // Books
+    setText("books-total", fmt(d.books.total));
+    setText("books-tg", fmt(d.books.telegram));
+    setText("books-opds", fmt(d.books.opds));
+    setText("files-tg", fmt(d.files.telegram));
+    setText("posts-tg", fmt(d.posts.telegram));
+    setText("books-source", "المصدر: " + d.books.source);
+    setText("d1-line", "فهرس البحث (D1): " +
+      (d.books_d1.count === null ? "غير متاح بعد — " : fmt(d.books_d1.count) + " كتاب — ") +
+      d.books_d1.note);
+    show("books-card");
+    // Libraries
+    var rows = "";
+    for (var i = 0; i < d.libraries.length; i++) {
+      var lib = d.libraries[i];
+      rows += "<tr><td><a href=\"" + esc(lib.path) + "\">" + esc(lib.name) +
+        "</a></td><td class=\"rl-num\">" + fmt(lib.books) + "</td></tr>";
+    }
+    document.getElementById("libs-table").innerHTML = rows;
+    setText("libs-count", "إجمالي المكتبات: " + d.libraries_count + " (5 مكتبات OPDS + فهرس تيليجرام).");
+    show("libs-card");
+    // Sources
+    setText("sources-total", fmt(d.sources.telegram_total));
+    setText("sources-channels", fmt(d.sources.channels));
+    setText("sources-groups", fmt(d.sources.groups));
+    show("sources-card");
+    // Newest
+    var items = "";
+    var books = d.newest.books || [];
+    var shown = books.length > 10 ? 10 : books.length;
+    for (var j = 0; j < shown; j++) {
+      var b = books[j];
+      items += "<li><div class=\"title\">" + esc(b.title) + "</div>" +
+        "<div class=\"meta\">" + esc(b.author || "") +
+        (b.author ? " — " : "") + esc(b.source) + " • " + esc(b.format) +
+        (b.date ? " • " + esc(b.date) : "") + "</div>" +
+        (b.url ? "<div class=\"meta\"><a href=\"" + esc(b.url) + "\">المنشور الأصلي على تيليجرام</a></div>" : "") +
+        "</li>";
+    }
+    document.getElementById("newest-list").innerHTML = items;
+    setText("newest-source", "المصدر: " + d.newest.source +
+      " — أحدث " + shown + " من " + d.newest.count +
+      " (أُنشئ: " + (d.newest.generated_at || "؟") + ").");
+    show("newest-card");
+    // Newspapers
+    setText("papers-line", d.newspapers.date
+      ? "صحف " + d.newspapers.date + ": " + fmt(d.newspapers.entries) +
+        " جريدة من " + fmt(d.newspapers.sources) + " مصادر."
+      : "لا توجد بيانات صحف منشورة بعد.");
+    show("papers-card");
+    setText("updated-line", "أُنشئت هذه الأرقام: " + d.generated_at +
+      " — المانيفست اليومي هو مصدر عدّ الكتب ويُحدَّث يومياً.");
+  }).catch(function (err) {
+    fallback("تعذّر تحميل الأرقام الحيّة: " + err.message);
+  });
+}
+</script>
+</body>
+</html>
