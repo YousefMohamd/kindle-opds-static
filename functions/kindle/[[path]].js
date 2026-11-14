@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: /kindle/* proxy to the RliBook bot Worker.
-// Route: GET /kindle/* (functions/kindle/[[...path]].js — catch-all
+// Route: GET /kindle/* (functions/kindle/[[path]].js — catch-all
 // under /kindle/, so /kindle, /kindle/, /kindle/menu, /kindle/search…
 // all land here).
 //

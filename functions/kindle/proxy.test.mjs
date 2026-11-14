@@ -1,4 +1,4 @@
-// Test for the /kindle/* proxy (functions/kindle/[[...path]].js).
+// Test for the /kindle/* proxy (functions/kindle/[[path]].js).
 // Standalone Node script — run from the repo root:
 //   node functions/kindle/proxy.test.mjs
 //
@@ -18,7 +18,7 @@
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production Worker, no deploy.
 
-import { onRequest, rewriteKindleLinks, rewriteLocation } from "./[[...path]].js";
+import { onRequest, rewriteKindleLinks, rewriteLocation } from "./[[path]].js";
 
 let pass = 0;
 let fail = 0;
