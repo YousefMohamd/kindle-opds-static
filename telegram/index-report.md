@@ -1,12 +1,12 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-13T18:59:49.086684+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
+**Date:** 2026-11-14T04:10:50.322009+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **896854 posts, 444412 book files** (324416 distinct books)
+- **Channels with data: 51 of 51 walkable** — **899032 posts, 445363 book files** (325361 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
@@ -17,7 +17,7 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| e_books_eng (group) | 0 | 0 | export |
+| englishbooks99 (group) | 0 | 0 | export |
 
 ## Indexed channels (51)
 
@@ -183,7 +183,7 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 - e_books_eng — 219 posts, 107 book files (ok)
 - easymath121 — 6006 posts, 36 book files (ok)
 - EBook_Library — 9021 posts, 6356 book files (ok)
-- ebookstoread — 6000 posts, 2546 book files (ok)
+- ebookstoread — 8178 posts, 3497 book files (ok)
 - ekraly3 — 6015 posts, 2297 book files (ok)
 - englishbooks99 — 1231 posts, 915 book files (ok)
 - englishcafe_1 — 2445 posts, 688 book files (ok)
