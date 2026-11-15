@@ -11,12 +11,19 @@
 //   - Telegram catalog (books / files / posts / sources / newest):
 //     the published manifest /site/telegram/index.json and
 //     /site/telegram/newest.json (rebuilt daily by the indexer).
-//   - D1 search index: when the TG_D1 binding exists, SELECT COUNT(*)
-//     FROM books. D1 is a snapshot import of the manifest, not the live
-//     catalog: it is still partial (finishing Thu 2026-11-19 at 323,325
-//     books) and the manifest keeps growing daily, so the D1 count
-//     stays below the manifest total. Both numbers are reported side
-//     by side with their source — the manifest is the headline count.
+//   - D1 search index: when the TG_D1 binding exists, the count comes
+//     from the SAME KV cache /api/tg-search uses (RLIBOOK_KV key
+//     `tg-search:coverage`, 1 h TTL — see d1CountCached below), not
+//     from a bare SELECT COUNT(*) on every request: a bare COUNT(*)
+//     scans ~150k rows and would burn the 5M rows/day free tier.
+//     On a cache miss (or a KV error / malformed value / no
+//     RLIBOOK_KV binding) it falls back to the live COUNT(*) once
+//     and best-effort repopulates the cache. D1 is a snapshot import
+//     of the manifest, not the live catalog: it is still partial
+//     (finishing Thu 2026-11-19 at 323,325 books) and the manifest
+//     keeps growing daily, so the D1 count stays below the manifest
+//     total. Both numbers are reported side by side with their
+//     source — the manifest is the headline count.
 //   - OPDS libraries (khazendar, sahwa, electronic, hindawi, doab):
 //     each library's published search-index.json, counted (array
 //     length) at build time. These are static catalogs, rebuilt only
@@ -49,8 +56,10 @@
 //   request origin.
 //
 // Free-tier friendly: one cached JSON per hour; a rebuild is a few
-// small static fetches + one D1 COUNT(*) (when bound). No book file
-// bytes are ever returned or stored — metadata + counts only.
+// small static fetches + a KV read for the D1 count (one live
+// COUNT(*) at most once an hour, when the cache is cold and D1 is
+// bound). No book file bytes are ever returned or stored — metadata
+// + counts only.
 
 // The five OPDS libraries: key, display name, site path, and the
 // published search index the count is read from. Names and paths are
@@ -238,6 +247,71 @@ export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
   };
 }
 
+// D1 count cache — the SAME key /api/tg-search uses (see
+// functions/api/tg-search.js: `tg-search:coverage`, 1 h TTL).
+// The D1 indexed count changes once a day (the daily import), not
+// per request, so it is cached in KV (the RLIBOOK_KV binding) instead
+// of running a full-table COUNT(*) on every stats request. A bare
+// COUNT(*) scans ~150k rows; at the 5M rows/day free-tier budget a
+// handful of uncached stats rebuilds a day would already hurt. With
+// a 1 h TTL the count is refreshed at most 24 times/day and is at
+// most 1 h stale — fine for a "how complete is D1" indicator. On a
+// cache miss, a KV error, or a malformed cached value, the code falls
+// back to the live COUNT(*) (and best-effort repopulates the cache),
+// so a missing or broken cache can never break the stats response.
+const COVERAGE_CACHE_KEY = "tg-search:coverage";
+const COVERAGE_CACHE_TTL_SECONDS = 3600; // 1 h
+
+// Read the cached D1 count (an integer), or null. Never throws.
+// Same validation as tg-search.js coverageCacheGet.
+async function coverageCacheGet(env) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const raw = await kv.get(COVERAGE_CACHE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (!v || typeof v.indexed !== "number" || !Number.isFinite(v.indexed) || v.indexed < 0) return null;
+    return Math.floor(v.indexed);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Store the D1 count (best-effort: a KV failure never fails the
+// request). Same expirationTtl pattern as tg-search.js coverageCachePut.
+async function coverageCachePut(env, indexed) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.put !== "function") return;
+  try {
+    await kv.put(COVERAGE_CACHE_KEY, JSON.stringify({ indexed, at: Date.now() }), { expirationTtl: COVERAGE_CACHE_TTL_SECONDS });
+  } catch (e) {
+    // Best-effort only.
+  }
+}
+
+// D1 book count, read-through: KV cache first, live COUNT(*) on a
+// miss/error, best-effort repopulate. Never throws: on any failure
+// returns null and the caller reports books_d1.count null with the
+// manifest count standing. Returns null when D1 is not bound.
+async function d1CountCached(db, env) {
+  if (!db) return null;
+  const cached = await coverageCacheGet(env);
+  if (cached !== null) return cached;
+  try {
+    const row = await db.prepare("SELECT COUNT(*) AS n FROM books").first();
+    if (row && typeof row.n === "number") {
+      const n = row.n;
+      await coverageCachePut(env, n);
+      return n;
+    }
+    return null;
+  } catch (e) {
+    console.warn("[stats] D1 count failed:", e && e.message);
+    return null;
+  }
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== "GET") {
@@ -304,15 +378,10 @@ export async function onRequest(context) {
     }
   }
 
-  let d1Count = null;
-  try {
-    if (env && env.TG_D1) {
-      const row = await env.TG_D1.prepare("SELECT COUNT(*) AS n FROM books").first();
-      if (row && typeof row.n === "number") d1Count = row.n;
-    }
-  } catch (e) {
-    d1Count = null; // D1 unreadable — manifest count stands
-  }
+  // D1 count via the shared KV coverage cache (see d1CountCached):
+  // a KV hit avoids the full-table COUNT(*); a miss/error falls back
+  // to the live count once. Never fails the response.
+  const d1Count = await d1CountCached(env && env.TG_D1 ? env.TG_D1 : null, env);
 
   const body = buildStats(manifest, newest, newspapers, opdsCounts, d1Count);
   const response = Response.json(body, {

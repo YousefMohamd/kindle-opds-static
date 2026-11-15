@@ -51,12 +51,24 @@ Success (200):
 - `flagged`: `true` when the book is flagged/commercial (see below).
 - `total`: full match count (may exceed `results.length`).
 - `coverage`: the D1 snapshot — `{ indexed, target, partial }`.
-  `indexed` is a direct `COUNT(*) FROM books` right now; `target`
+  `indexed` is the D1 book count right now; `target`
   is the D1 final-import target (323,325 books, import finishes
   2026-11-19); `partial` is true while `indexed < target`. This is
   NOT the catalog manifest total (326,149 books on 2026-11-14, and
   growing) — the two numbers must never be conflated. Present on
   every `ok: true` reply; omitted (not guessed) if the count fails.
+  **Caching (P0-2, 2026-11-15):** `indexed` comes from a KV cache
+  (`RLIBOOK_KV`, key `tg-search:coverage`, 1 h TTL), not from a
+  `COUNT(*)` on every request — a bare `COUNT(*)` scans ~150k rows
+  and ~30 searches/day would exhaust the 5M rows/day free tier. On
+  a cache miss (or a KV error / malformed value) the endpoint runs
+  the live `COUNT(*)` once and best-effort repopulates the cache.
+  The count changes once a day (the daily import), so a 1 h TTL is
+  at most 1 h stale. Without the `RLIBOOK_KV` binding the endpoint
+  simply runs the live count on every request (same as before).
+  The same key is also read by `/api/stats`
+  (functions/api/stats.js) for `books_d1.count`, so one cached
+  count serves both endpoints.
 
 Errors (JSON `{ ok: false, error }`):
 - `503` — `TG_D1` not bound (D1 database missing).
@@ -102,13 +114,18 @@ primary flag gate.
 | **D1 + FTS5** | **Yes.** One small indexed query, ~10–100 rows read (5M/day free). Storage ~81 MB for 321k books (500 MB/database cap). The indexer already uses SQLite FTS5, so semantics match. |
 
 Free-tier numbers (Workers Free, verified 2026-11-12):
-- D1 reads: 5,000,000 rows/day — a search reads ~10–100 rows.
+- D1 reads: 5,000,000 rows/day — a search reads ~10–100 rows
+  (FTS MATCH + paged SELECT). The coverage `COUNT(*)` is a
+  full-table scan (~150k rows) and therefore does NOT run per
+  request: it is cached in KV for 1 h (see `coverage` above) and
+  runs at most 24 times/day.
 - D1 writes: 100,000 rows/day — the **only** constraint, and only
   for the initial population (see below). Incremental sync is a few
   thousand rows/day and fits easily.
 - D1 storage: 5 GB total, 500 MB per database — the catalog is ~81 MB.
 - Pages Functions: 100,000 requests/day; this endpoint does one D1
-  query + up to `limit` parallel KV gets per request.
+  query + up to `limit` parallel KV gets (flag check) + one KV get
+  (coverage cache) per request.
 
 ## Deploy (exact steps)
 
@@ -139,7 +156,10 @@ Functions → **D1 database bindings** → Add binding:
 Same page → **KV namespace bindings** (if not already there):
 - Variable name: `RLIBOOK_KV`
 - Namespace: the same one the bot + OPDS feed use (the one holding
-  `fp:*`, `priv:*`, `flag:*` keys).
+  `fp:*`, `priv:*`, `flag:*` keys). The coverage cache uses this same
+  binding (key `tg-search:coverage`, 1 h TTL) — no new binding is
+  needed; without it the endpoint just runs the live count per
+  request.
 
 No `wrangler.toml` change is needed — this repo configures bindings
 in the dashboard, like the existing Functions.

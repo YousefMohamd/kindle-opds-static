@@ -20,6 +20,12 @@
 //      the mocked COUNT(*) and the manifest count is unchanged.
 //   4. Missing manifest -> 503, ok:false, no numbers returned.
 //   5. Non-GET -> 405.
+//   6. D1 count via the shared KV coverage cache (`tg-search:coverage`,
+//      same key as /api/tg-search): a KV hit is used with NO live
+//      COUNT(*) (the D1 mock records prepare() calls); a KV miss /
+//      error / malformed value falls back to the live count once and
+//      repopulates the cache; the response shape (source + note) is
+//      identical to the live-count path.
 // Exit 0 = all pass; non-zero + a message = failure.
 
 import { readFileSync } from "node:fs";
@@ -195,6 +201,120 @@ const resPost = await onRequest({
   env: { ASSETS: mockAssets(FILE_FOR_PATH) },
 });
 check("5a POST -> 405", resPost.status === 405, "HTTP " + resPost.status);
+
+// --- 6. D1 count via the shared KV coverage cache ----------------------
+// The KV mock records gets/puts; the D1 mock records prepare() calls,
+// so the tests prove a KV hit runs NO full-table COUNT(*).
+function mockKvStore(initial, opts = {}) {
+  const store = new Map();
+  if (initial !== undefined) store.set("tg-search:coverage", initial);
+  const calls = { gets: [], puts: [] };
+  return {
+    calls,
+    kv: {
+      get: async (key) => {
+        calls.gets.push(key);
+        if (opts.throwOnGet) throw new Error("kv down");
+        return store.has(key) ? store.get(key) : null;
+      },
+      put: async (key, value, putOpts) => {
+        calls.puts.push({ key, value, opts: putOpts });
+        if (opts.throwOnPut) throw new Error("kv put down");
+        store.set(key, value);
+      },
+    },
+  };
+}
+
+function mockD1(count) {
+  const calls = { prepares: 0 };
+  return {
+    calls,
+    db: {
+      prepare: () => {
+        calls.prepares += 1;
+        return { first: async () => ({ n: count }) };
+      },
+    },
+  };
+}
+
+// 6a: KV hit (valid value) -> the KV count is used, D1 never touched.
+const kvHit = mockKvStore(JSON.stringify({ indexed: 149996, at: Date.now() }));
+const d1Hit = mockD1(1); // would return 1 if called — must not be
+const resKvHit = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvHit.kv, TG_D1: d1Hit.db },
+});
+const bodyKvHit = await resKvHit.json();
+check("6a KV hit -> books_d1.count is the KV indexed value",
+  bodyKvHit.books_d1.count === 149996, String(bodyKvHit.books_d1.count));
+check("6b KV hit -> NO live COUNT(*) ran (prepare not called)",
+  d1Hit.calls.prepares === 0, "prepares=" + d1Hit.calls.prepares);
+check("6c KV hit -> cache not rewritten (no put)",
+  kvHit.calls.puts.length === 0, "puts=" + kvHit.calls.puts.length);
+check("6d KV hit -> response shape identical to live-count path",
+  bodyKvHit.books_d1.source === bodyD1.books_d1.source &&
+    bodyKvHit.books_d1.note === bodyD1.books_d1.note &&
+    Object.keys(bodyKvHit.books_d1).sort().join(",") === "count,note,source",
+  JSON.stringify(bodyKvHit.books_d1));
+
+// 6e: KV miss -> live COUNT(*) once, then the cache is repopulated.
+const kvMiss = mockKvStore();
+const d1Miss = mockD1(99996);
+const resKvMiss = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvMiss.kv, TG_D1: d1Miss.db },
+});
+const bodyKvMiss = await resKvMiss.json();
+check("6e KV miss -> falls back to live COUNT(*)",
+  bodyKvMiss.books_d1.count === 99996 && d1Miss.calls.prepares === 1,
+  String(bodyKvMiss.books_d1.count) + " prepares=" + d1Miss.calls.prepares);
+check("6f KV miss -> cache repopulated with same key + 1 h TTL",
+  kvMiss.calls.puts.length === 1 &&
+    kvMiss.calls.puts[0].key === "tg-search:coverage" &&
+    JSON.parse(kvMiss.calls.puts[0].value).indexed === 99996 &&
+    kvMiss.calls.puts[0].opts.expirationTtl === 3600,
+  JSON.stringify(kvMiss.calls.puts));
+
+// 6g: KV get throws -> falls back to the live count, response still 200.
+const kvErr = mockKvStore(undefined, { throwOnGet: true });
+const d1Err = mockD1(99996);
+const resKvErr = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvErr.kv, TG_D1: d1Err.db },
+});
+const bodyKvErr = await resKvErr.json();
+check("6g KV get throws -> live COUNT(*) fallback, still 200",
+  resKvErr.status === 200 && bodyKvErr.books_d1.count === 99996 &&
+    d1Err.calls.prepares === 1,
+  "HTTP " + resKvErr.status + " count=" + bodyKvErr.books_d1.count);
+
+// 6h: KV malformed (bad JSON, then non-number indexed) -> live fallback.
+for (const bad of ['{"indexed":', '{"indexed":"abc"}', '{"indexed":-5}']) {
+  const kvBad = mockKvStore(bad);
+  const d1Bad = mockD1(99996);
+  const resBad = await onRequest({
+    request: mockRequest("https://rlibook.tech/api/stats"),
+    env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvBad.kv, TG_D1: d1Bad.db },
+  });
+  const bodyBad = await resBad.json();
+  check("6h KV malformed " + bad + " -> live COUNT(*) fallback",
+    bodyBad.books_d1.count === 99996 && d1Bad.calls.prepares === 1,
+    String(bodyBad.books_d1.count));
+}
+
+// 6i: KV put throws on repopulate -> live count still returned, no failure.
+const kvPutErr = mockKvStore(undefined, { throwOnPut: true });
+const d1PutErr = mockD1(99996);
+const resPutErr = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvPutErr.kv, TG_D1: d1PutErr.db },
+});
+const bodyPutErr = await resPutErr.json();
+check("6i KV put throws -> live count still returned, still 200",
+  resPutErr.status === 200 && bodyPutErr.books_d1.count === 99996,
+  "HTTP " + resPutErr.status + " count=" + bodyPutErr.books_d1.count);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

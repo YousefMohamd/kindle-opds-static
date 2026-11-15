@@ -101,6 +101,34 @@ function mockKV(entries = {}) {
   const m = new Map(Object.entries(entries));
   return { get: async (k) => (m.has(k) ? m.get(k) : null) };
 }
+// KV mock with put: records every write so tests can assert the
+// coverage cache was populated (and with what).
+function mockKVStore(entries = {}) {
+  const m = new Map(Object.entries(entries));
+  const writes = [];
+  return {
+    store: m,
+    writes,
+    get: async (k) => (m.has(k) ? m.get(k) : null),
+    put: async (k, v, opts) => { m.set(k, v); writes.push({ key: k, value: v, opts }); },
+  };
+}
+// D1 mock that counts executions of the coverage COUNT(*) only
+// (exact SQL "SELECT COUNT(*) AS n FROM books") — the FTS and browse
+// counts are different statements and must still run.
+function countingD1(sqlite) {
+  const base = mockD1(sqlite);
+  let coverageCountQueries = 0;
+  return {
+    db: {
+      prepare(sql) {
+        if (sql === "SELECT COUNT(*) AS n FROM books") coverageCountQueries++;
+        return base.prepare(sql);
+      },
+    },
+    get coverageCountQueries() { return coverageCountQueries; },
+  };
+}
 
 async function call(env, path) {
   const req = new Request("https://example.com" + path, { method: "GET" });
@@ -256,6 +284,78 @@ const D1 = mockD1(db);
   const noD1 = await call({}, "/api/tg-search?q=test");
   check("9i 503 (no D1) carries no coverage field",
     noD1.body.coverage === undefined, JSON.stringify(noD1.body));
+}
+
+// 10. coverage cache (P0-2 D1 read-budget fix): the coverage COUNT(*)
+// is a full-table scan (~150k rows), so it is cached in KV for 1 h
+// (key `tg-search:coverage`) and the live COUNT(*) runs only on a
+// cache miss. The response shape is identical either way.
+{
+  // 10a: cache hit — the cached value is used (123456 != rows.length)
+  // and the coverage COUNT(*) is NOT executed at all.
+  const counted = countingD1(db);
+  const kvHit = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 123456, at: Date.now() }) });
+  const { body: bodyHit } = await call({ TG_D1: counted.db, RLIBOOK_KV: kvHit }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10a cache hit uses the cached indexed value",
+    bodyHit.coverage && bodyHit.coverage.indexed === 123456,
+    JSON.stringify(bodyHit.coverage));
+  check("10b cache hit runs ZERO coverage COUNT(*)",
+    counted.coverageCountQueries === 0,
+    `coverage COUNT(*) ran ${counted.coverageCountQueries} times`);
+  check("10c cache hit still returns search results",
+    bodyHit.total >= 1 && (bodyHit.results || []).length >= 1, `total=${bodyHit.total}`);
+  check("10d cache-hit coverage shape is unchanged",
+    bodyHit.coverage && Object.keys(bodyHit.coverage).sort().join(",") === "indexed,partial,target"
+    && bodyHit.coverage.target === 323325 && bodyHit.coverage.partial === true,
+    JSON.stringify(bodyHit.coverage));
+
+  // 10e: cache miss — the live COUNT(*) runs exactly once and the
+  // value is written back to KV (so the next request is a hit).
+  const counted2 = countingD1(db);
+  const kvMiss = mockKVStore();
+  const { body: bodyMiss } = await call({ TG_D1: counted2.db, RLIBOOK_KV: kvMiss }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10e cache miss falls back to the live COUNT(*)",
+    bodyMiss.coverage && bodyMiss.coverage.indexed === rows.length,
+    JSON.stringify(bodyMiss.coverage));
+  check("10f cache miss runs the coverage COUNT(*) exactly once",
+    counted2.coverageCountQueries === 1,
+    `ran ${counted2.coverageCountQueries} times`);
+  const written = kvMiss.writes.find((w) => w.key === "tg-search:coverage");
+  check("10g cache miss populates KV with the live count",
+    !!written && JSON.parse(written.value).indexed === rows.length,
+    JSON.stringify(written && written.value));
+  check("10h cache write carries a 1 h TTL",
+    !!written && written.opts && written.opts.expirationTtl === 3600,
+    JSON.stringify(written && written.opts));
+
+  // 10i: malformed cached value -> fall back to the live COUNT(*).
+  const counted3 = countingD1(db);
+  const kvBad = mockKVStore({ "tg-search:coverage": "not-json{{" });
+  const { body: bodyBad } = await call({ TG_D1: counted3.db, RLIBOOK_KV: kvBad }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10i malformed cache falls back to the live COUNT(*)",
+    bodyBad.coverage && bodyBad.coverage.indexed === rows.length
+    && counted3.coverageCountQueries === 1, JSON.stringify(bodyBad.coverage));
+  const kvBad2 = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: "abc" }) });
+  const { body: bodyBad2 } = await call({ TG_D1: D1, RLIBOOK_KV: kvBad2 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10j non-numeric cached indexed falls back to the live COUNT(*)",
+    bodyBad2.coverage && bodyBad2.coverage.indexed === rows.length,
+    JSON.stringify(bodyBad2.coverage));
+
+  // 10k: KV get throws -> fall back to the live COUNT(*), search works.
+  const counted4 = countingD1(db);
+  const kvThrow = { get: async () => { throw new Error("KV down"); }, put: async () => { throw new Error("KV down"); } };
+  const { body: bodyThrow } = await call({ TG_D1: counted4.db, RLIBOOK_KV: kvThrow }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10k KV failure falls back to the live COUNT(*)",
+    bodyThrow.coverage && bodyThrow.coverage.indexed === rows.length
+    && counted4.coverageCountQueries === 1, JSON.stringify(bodyThrow.coverage));
+
+  // 10l: a cached value at/above the target reports partial: false —
+  // the /book partial note self-removes from the cached value too.
+  const kvDone = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 323325, at: Date.now() }) });
+  const { body: bodyDone } = await call({ TG_D1: D1, RLIBOOK_KV: kvDone }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("10l cached indexed == target -> partial false",
+    bodyDone.coverage && bodyDone.coverage.indexed === 323325 && bodyDone.coverage.partial === false,
+    JSON.stringify(bodyDone.coverage));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

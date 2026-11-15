@@ -75,14 +75,19 @@
 // Every ok:true reply therefore also carries `coverage`:
 // { indexed, target, partial } — the D1 indexed count right now, the
 // D1 final-import target (323,325), and whether D1 is still a partial
-// snapshot (indexed < target). Callers (e.g. /book) show the partial
-// note only while partial is true, so it disappears on its own when
-// the import finishes.
+// snapshot (indexed < target). `indexed` comes from a KV cache
+// (key `tg-search:coverage`, 1 h TTL; refreshed by a live COUNT(*)
+// on a cache miss — see d1Coverage), so the full-table count runs at
+// most 24 times/day instead of on every search. Callers (e.g. /book)
+// show the partial note only while partial is true, so it disappears
+// on its own when the import finishes.
 //
 // Free-tier friendly: one D1 query (FTS MATCH, reads ~10-100 rows;
 // 5M rows read/day on Workers Free) + up to `limit` parallel KV gets
-// for the flag check. No catalog fetch, no heavy work. D1 writes
-// happen only in the population script, never here.
+// for the flag check + one KV get for the coverage cache. The
+// coverage COUNT(*) (a full-table scan, ~150k rows) runs only on a
+// cache miss, at most once an hour. No catalog fetch, no heavy work.
+// D1 writes happen only in the population script, never here.
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -174,15 +179,63 @@ async function isFlagged(env, url) {
 // 2026-11-14, and growing) — never conflate the two.
 const D1_FINAL_TARGET = 323325;
 
+// Coverage cache: the D1 indexed count changes once a day (the daily
+// import), not per request — so it is cached in KV (same RLIBOOK_KV
+// binding the flag check already uses, same read-through pattern as
+// functions/api/ratings.js) instead of running a full-table COUNT(*)
+// on every search. A bare COUNT(*) scans ~150k rows, and at the 5M
+// rows/day free-tier budget ~30 searches/day would exhaust it and
+// site search would die with 500 for the rest of the day. With a
+// 1 h TTL the count is refreshed at most 24 times/day and is at most
+// 1 h stale — fine for a "how complete is D1" indicator. On a cache
+// miss, a KV error, or a malformed cached value, the code falls back
+// to the live COUNT(*) (and best-effort repopulates the cache), so a
+// missing or broken cache can never break a search.
+const COVERAGE_CACHE_KEY = "tg-search:coverage";
+const COVERAGE_CACHE_TTL_SECONDS = 3600; // 1 h
+
+// Read the cached coverage count (an integer), or null. Never throws.
+async function coverageCacheGet(env) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const raw = await kv.get(COVERAGE_CACHE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (!v || typeof v.indexed !== "number" || !Number.isFinite(v.indexed) || v.indexed < 0) return null;
+    return Math.floor(v.indexed);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Store the coverage count (best-effort: a KV failure never fails the
+// request). Same expirationTtl pattern as ratings.js cachePut.
+async function coverageCachePut(env, indexed) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.put !== "function") return;
+  try {
+    await kv.put(COVERAGE_CACHE_KEY, JSON.stringify({ indexed, at: Date.now() }), { expirationTtl: COVERAGE_CACHE_TTL_SECONDS });
+  } catch (e) {
+    // Best-effort only.
+  }
+}
+
 // Coverage of the D1 snapshot: how many books D1 holds right now vs
-// the final-import target. Same direct COUNT(*) the endpoint already
-// uses for match totals (and /api/stats uses for books_d1.count).
-// Never throws: on any failure returns null and the caller omits the
-// field, so a failed count can never break a search.
-async function d1Coverage(db) {
+// the final-import target. Served from the KV cache when present
+// (see above); otherwise a direct COUNT(*) — the same count
+// /api/stats uses for books_d1.count. Never throws: on any failure
+// returns null and the caller omits the field, so a failed count can
+// never break a search.
+async function d1Coverage(db, env) {
+  const cached = await coverageCacheGet(env);
+  if (cached !== null) {
+    return { indexed: cached, target: D1_FINAL_TARGET, partial: cached < D1_FINAL_TARGET };
+  }
   try {
     const row = await db.prepare("SELECT COUNT(*) AS n FROM books").bind().first();
     const indexed = row ? Number(row.n) || 0 : 0;
+    await coverageCachePut(env, indexed);
     return { indexed, target: D1_FINAL_TARGET, partial: indexed < D1_FINAL_TARGET };
   } catch (e) {
     console.warn("[tg-search] coverage count failed:", e && e.message);
@@ -310,8 +363,10 @@ export async function onRequest(context) {
 
   // Coverage is computed once per request and attached to every ok:true
   // reply below (spread as `...cov`); a failed count yields no field
-  // rather than a broken search.
-  const coverage = await d1Coverage(db);
+  // rather than a broken search. The count comes from the KV cache
+  // when present (see d1Coverage) — the live COUNT(*) runs only on a
+  // cache miss, at most once an hour.
+  const coverage = await d1Coverage(db, env);
   const cov = coverage ? { coverage } : {};
 
   if (!q) {
