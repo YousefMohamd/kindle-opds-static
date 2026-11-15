@@ -1477,6 +1477,34 @@
       "access_hash": 7780145690136402918,
       "type": "channel",
       "resolved_at": "2026-11-10T08:40:11.562384+00:00"
+    },
+    "jami-al-kutub-al-musawwara": {
+      "handle": "jami-al-kutub-al-musawwara",
+      "id": 1269314107,
+      "access_hash": -1131637839053241630,
+      "type": "channel",
+      "resolved_at": "2026-11-15T21:58:45.044247+00:00"
+    },
+    "bookstoragebox": {
+      "handle": "bookstoragebox",
+      "id": 2183543843,
+      "access_hash": -7595980216057032157,
+      "type": "channel",
+      "resolved_at": "2026-11-15T21:58:45.310215+00:00"
+    },
+    "dar-maana": {
+      "handle": "dar-maana",
+      "id": 3942655946,
+      "access_hash": -5711570866813240720,
+      "type": "channel",
+      "resolved_at": "2026-11-15T21:58:45.502927+00:00"
+    },
+    "al-suhuf-wal-majallat-al-ajnabiya": {
+      "handle": "al-suhuf-wal-majallat-al-ajnabiya",
+      "id": 1968622195,
+      "access_hash": -2560879216049211448,
+      "type": "channel",
+      "resolved_at": "2026-11-15T21:58:45.674689+00:00"
     }
   }
 }
