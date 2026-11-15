@@ -22,3 +22,8 @@
 # /site/qurans/ and /site/stats/ (200, not a redirect), same pattern.
 /qurans/*  /site/qurans/:splat  200
 /stats/*  /site/stats/:splat  200
+# Tools (Block 14): public URL rewritten to /site/tools/ (200, not a
+# redirect), same pattern as /qurans/ and /stats/ above. Was missing:
+# /tools/ fell through to the homepage, so the homepage "الأدوات" link
+# just reloaded the homepage and the Tools page was unreachable.
+/tools/*  /site/tools/:splat  200

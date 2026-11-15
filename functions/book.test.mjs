@@ -125,6 +125,7 @@ globalThis.fetch = async (u) => {
     if (tgMode === "malformed") return new Response("{not json", { headers: { "content-type": "application/json" } });
     if (tgMode === "empty") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: [] });
     if (tgMode === "emptyFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: [] });
+    if (tgMode === "okFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_OK_RESULTS });
     if (tgMode === "xss") {
       return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, results: [
         { title: "<script>alert(1)</script>", author: "a", source: "s", kind: "channel",
@@ -235,6 +236,27 @@ tgMode = "ok";
     lastTgUrl.includes("/api/tg-search?q=") && lastTgUrl.includes("limit=10"), lastTgUrl);
   check("B1 small combined page stays Kindle-small (<8 KB)",
     r.body.length < 8192, r.body.length + " B");
+}
+{
+  // Hit page while D1 is still partial: the Telegram half is
+  // incomplete, so the partial-import note must appear here too —
+  // not only on the no-match page — or "وجدنا N نتيجة" reads as
+  // complete.
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("B4 hit page + D1 partial: partial-import note shown under Telegram heading",
+    r.body.includes("ما زال يُستورَد") && r.body.includes("19 نوفمبر 2026")
+    && r.body.indexOf("ما زال يُستورَد") > r.body.indexOf("من تيليجرام"));
+  check("B4 hit page + D1 partial: note says more results may follow",
+    r.body.includes("لم تظهر بعد"));
+}
+{
+  // Import finished (coverage.partial === false): the same hit page,
+  // but WITHOUT the partial-import note — it expires on its own.
+  tgMode = "okFull";
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("B5 hit page + import done: NO partial-import note",
+    !r.body.includes("ما زال يُستورَد") && !r.body.includes("19 نوفمبر 2026"));
+  tgMode = "ok";
 }
 {
   const r = await getBook("الحب");

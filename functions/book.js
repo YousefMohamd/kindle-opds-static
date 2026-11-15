@@ -497,6 +497,15 @@ export async function onRequest(context) {
         ? " (" + tg.results.length + " من " + tg.total + ")"
         : "")
       + "</h2>\n";
+    // Partial-import note (same gate as the no-match page): while D1
+    // is still a partial snapshot the Telegram results on this page
+    // are incomplete — more matches may appear once the import
+    // finishes (Thu 2026-11-19). Shown only while coverage.partial
+    // is true, so it disappears on its own when the import finishes.
+    if (tg.coverage && tg.coverage.partial) {
+      body += "<p class=\"note\">ملاحظة: فهرس تيليجرام ما زال يُستورَد — "
+        + "يكتمل الخميس 19 نوفمبر 2026، فقد تكون هناك نتائج أخرى لم تظهر بعد.</p>\n";
+    }
     // Enrichment (Block 9): one /api/ratings subrequest per Telegram
     // card, in parallel (max TG_LIMIT = 10 — inside the 50-subrequest
     // budget). Each call never throws and returns nulls on any failure,

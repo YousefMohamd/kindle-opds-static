@@ -200,7 +200,10 @@ function renderGroup(heading, items, tg) {
     for (var j = 0; j < formats.length; j++) {
       fmts += "<span class=\"fmt\">" + esc(formats[j]) + "</span>";
     }
-    var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — الرابط للمصدر فقط</span>" : "";
+    // Flagged (commercial) books have NO source link anywhere on the
+    // site — the title links to /book, which points at the bot — so
+    // the flag must not claim a source link exists.
+    var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — اطلبه من البوت</span>" : "";
     var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
     // Telegram titles open the book page (/book), not the raw t.me post:
     // the book page has "📖 اقرأ أونلاين" and "📧 أرسل إلى جهازي".
@@ -231,9 +234,14 @@ function runSearch(q) {
     fetch("/api/tg-search?q=" + enc + "&limit=10").then(function (r) { return r.json(); }),
     fetch("/opds/search?q=" + enc).then(function (r) { return r.text(); }).then(parseOpds)
   ]).then(function (out) {
-    var tg = [], opds = [], tgDown = false, opdsDown = false;
+    var tg = [], opds = [], tgDown = false, opdsDown = false, tgPartial = false;
     if (out[0].status === "fulfilled" && out[0].value && out[0].value.ok) {
       tg = out[0].value.results || [];
+      // The Telegram half is a partial D1 snapshot until the import
+      // finishes (Thu 2026-11-19) — the endpoint says so in
+      // `coverage.partial`; read it, never hardcode it, so the note
+      // below disappears on its own when the import finishes.
+      tgPartial = !!(out[0].value.coverage && out[0].value.coverage.partial);
     } else { tgDown = true; }
     if (out[1].status === "fulfilled") {
       opds = out[1].value || [];
@@ -244,15 +252,21 @@ function runSearch(q) {
       : "لا نتائج.";
     if (tgDown) statusEl.textContent += " (بحث تيليجرام غير متاح حالياً — جرّب لاحقاً.)";
     if (opdsDown) statusEl.textContent += " (بحث المكتبات غير متاح حالياً — جرّب لاحقاً.)";
+    if (tgPartial) statusEl.textContent += " ملاحظة: فهرس تيليجرام ما زال يُستورَد — يكتمل الخميس 19 نوفمبر 2026، فقد تكون هناك نتائج أخرى لم تظهر بعد.";
     resEl.innerHTML =
       renderGroup("من تيليجرام", tg, true) +
       renderGroup("من المكتبات", opds, false);
     if (total === 0) {
       notfoundEl.hidden = false;
-      notfoundEl.innerHTML = "«" + esc(q) + "» مش موجود في الفهرس لسه — " +
-        "جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من بوت تيليجرام: " +
-        "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — البوت بيدوّر " +
-        "في القنوات مباشرة ويرجع لك الرابط فوراً لو لقاه.";
+      // No "priority search" here: /priority was removed from the bot
+      // (v4.2.0) and the bot searches the same partial D1 index, not
+      // the channels live — sending the user there finds nothing
+      // either. While the import is still running, say so.
+      var nf = "«" + esc(q) + "» مش موجود في نتائج البحث — جرّب كلمة تانية من العنوان أو اسم المؤلف.";
+      if (tgPartial) {
+        nf += " ملاحظة: فهرس تيليجرام ما زال يُستورَد — يكتمل الخميس 19 نوفمبر 2026، فالكتاب قد يظهر لاحقًا.";
+      }
+      notfoundEl.innerHTML = nf;
     }
   });
 }
