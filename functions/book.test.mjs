@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, parseTelegramPostUrl, telegramSendUrl, telegramReaderUrl } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, parseTelegramPostUrl, telegramSendUrl, telegramGetUrl, telegramReaderUrl } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -145,7 +145,7 @@ async function getBook(q, extra = "") {
     request: new Request("https://rlibook.tech/book?q=" + encodeURIComponent(q) + extra),
     env: {},
   });
-  return { status: res.status, body: await res.text() };
+  return { status: res.status, body: await res.text(), cache: res.headers.get("cache-control") };
 }
 
 // ================= A. OPDS-only mode (tg-search unavailable) ========
@@ -157,7 +157,13 @@ tgMode = "throw";
   const r = await getBook("لؤلؤة الحب");
   check("A1 OPDS title: 200", r.status === 200, "status " + r.status);
   check("A1 OPDS title: card + author", r.body.includes("لؤلؤة الحب") && r.body.includes("هربرت جورج ويلز"));
-  check("A1 OPDS title: send-to-kindle button", r.body.includes("/api/send-to-kindle?lib=hindawi"));
+  check("A1 OPDS title: Get-on-Kindle button (primary, /kindle/get)",
+    r.body.includes("/kindle/get?lib=hindawi")
+    && r.body.includes("احصل على الكتاب على جهازك"));
+  check("A1 OPDS title: email still present as a secondary link (not a button)",
+    r.body.includes("/api/send-to-kindle?lib=hindawi")
+    && r.body.includes("أرسله بالإيميل (لمن أضاف المرسل من قبل)")
+    && !r.body.includes('class="btn" href="/api/send-to-kindle'));
   check("A1 OPDS title: NO direct-download link (removed 2026-11-13)",
     !r.body.includes("تنزيل مباشر")
     && !r.body.includes("https://www.hindawi.org/books/13028368.epub")
@@ -212,22 +218,27 @@ tgMode = "ok";
     r.body.includes("من تيليجرام (2 من 42)"));
   check("B1 TG-only title: source as TEXT, no t.me link anywhere",
     r.body.includes("المصدر: kotobkhana") && !r.body.includes("https://t.me/kotobkhana/7559"));
-  check("B1 TG-only title: TG send button present (lib=tg, handle+post)",
-    r.body.includes("/api/send-to-kindle?lib=tg")
+  check("B1 TG-only title: Get-on-Kindle button present (lib=tg, handle+post)",
+    r.body.includes("/kindle/get?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
-    && r.body.includes("أرسل إلى جهازي"));
-  check("B1 TG-only title: no colour emoji on the page (F2: old Kindle shows tofu)",
-    !r.body.includes("📧") && !r.body.includes("📚") && !r.body.includes("⚑"));
+    && r.body.includes("احصل على الكتاب على جهازك"));
+  check("B1 TG-only title: email still present as a secondary link",
+    r.body.includes("/api/send-to-kindle?lib=tg")
+    && r.body.includes("أرسله بالإيميل (لمن أضاف المرسل من قبل)"));
+  check("B1 TG-only title: no colour emoji except the Get/Read buttons (F2: old Kindle shows tofu)",
+    !r.body.includes("📧") && !r.body.includes("📚") && !r.body.includes("⚑")
+    && r.body.includes("📥") && r.body.includes("📖"));
   check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
     r.body.includes("/site/reader/?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
     && r.body.includes("📖 اقرأ أونلاين"));
-  check("B1 TG-only title: Read online comes before Send (read first)",
-    r.body.indexOf("اقرأ أونلاين") !== -1
-    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسل إلى جهازي"));
-  check("B1 TG-only title: send footer note present (TG cards have send buttons)",
-    r.body.includes("زر «أرسل إلى جهازي»"));
-  check("B1 TG-only title: telegram note explains the send button fetches from Telegram",
+  check("B1 TG-only title: Get on Kindle comes first, then Read online, then the email link",
+    r.body.indexOf("احصل على الكتاب على جهازك") !== -1
+    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("اقرأ أونلاين")
+    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسله بالإيميل"));
+  check("B1 TG-only title: delivery footer note present (TG cards have Get buttons)",
+    r.body.includes("رابط تنزيل يعمل 10 دقائق"));
+  check("B1 TG-only title: telegram note explains the Get button fetches from Telegram",
     r.body.includes("يجلب الملف من تيليجرام"));
   check("B1 TG-only title: no 'Kindle' label anywhere on the page",
     !r.body.includes("كيندلي") && !r.body.includes("Kindle"));
@@ -262,7 +273,7 @@ tgMode = "ok";
   const r = await getBook("الحب");
   check("B2 combined query: OPDS + Telegram both present",
     r.body.includes("وجدنا 102 نتيجة لـ") && r.body.includes("من تيليجرام"));
-  const opdsPos = r.body.indexOf("أرسل إلى جهازي");
+  const opdsPos = r.body.indexOf("احصل على الكتاب على جهازك");
   const tgPos = r.body.indexOf("من تيليجرام");
   check("B2 combined query: OPDS cards before Telegram section",
     opdsPos !== -1 && tgPos !== -1 && opdsPos < tgPos);
@@ -270,13 +281,13 @@ tgMode = "ok";
     !r.body.includes("تنزيل مباشر")
     && !r.body.includes("drive.google.com/uc?id=")
     && !r.body.includes("hindawi.org/books/"));
-  check("B2 combined query: send footer note present (OPDS half shown)",
-    r.body.includes("زر «أرسل إلى جهازي»"));
+  check("B2 combined query: delivery footer note present (OPDS half shown)",
+    r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("B2 combined query: OPDS EPUB cards have a Read online button",
     r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("اقرأ أونلاين"));
-  check("B2 combined query: Read online comes before Send on the OPDS card",
-    r.body.indexOf("اقرأ أونلاين") !== -1
-    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسل إلى جهازي"));
+  check("B2 combined query: Get on Kindle comes first on the OPDS card",
+    r.body.indexOf("احصل على الكتاب على جهازك") !== -1
+    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("اقرأ أونلاين"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
@@ -319,6 +330,7 @@ for (const mode of ["503", "500", "malformed"]) {
   const r = await getBook("لؤلؤة الحب");
   check("C2 tg-search 503 + OPDS hit: OPDS card intact, 200",
     r.status === 200 && r.body.includes("لؤلؤة الحب")
+    && r.body.includes("/kindle/get?lib=hindawi")
     && r.body.includes("/api/send-to-kindle?lib=hindawi"));
 }
 {
@@ -606,16 +618,80 @@ console.log("I. Review fixes (Area 2):");
   const r = await getBook("Mobi Test");
   check("I3 OPDS MOBI card: 200, card shown",
     r.status === 200 && r.body.includes("Mobi Test Book"), "status " + r.status);
-  check("I3 OPDS MOBI card: NO send button (email refuses MOBI)",
-    !r.body.includes("/api/send-to-kindle?lib=khazendar"));
+  check("I3 OPDS MOBI card: NO Get button and NO email link (Send to Kindle refuses MOBI)",
+    !r.body.includes("/kindle/get?lib=khazendar")
+    && !r.body.includes("/api/send-to-kindle?lib=khazendar"));
   check("I3 OPDS MOBI card: bot note instead",
     r.body.includes("لا يمكن إرسال هذا الكتاب من الموقع")
     && r.body.includes("@RliBook_bot"));
   check("I3 OPDS MOBI card: NO Read online button (reader opens EPUB only)",
     !r.body.includes("/site/reader/?lib=khazendar"));
-  check("I3 OPDS MOBI card: footer does not promise a send button",
-    !r.body.includes("زر «أرسل إلى جهازي» يرسل الكتاب"));
+  check("I3 OPDS MOBI card: footer does not promise a delivery link",
+    !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   globalThis.fetch = saved;
+}
+
+// ============ J. Kindle delivery (Get on Kindle) contract =========
+// The primary button is /kindle/get; email is a secondary link;
+// every dynamic response is no-store (design §6.2.5).
+console.log("J. Kindle delivery contract:");
+tgMode = "throw";
+{
+  const r = await getBook("لؤلؤة الحب");
+  check("J1 OPDS card: Get URL carries lib + id + format + title",
+    r.body.includes("/kindle/get?lib=hindawi")
+    && r.body.includes("f=epub") && r.body.includes("t="),
+    r.body.slice(r.body.indexOf("/kindle/get"), r.body.indexOf("/kindle/get") + 120));
+  check("J1 OPDS card: Get button is a .btn, email link is a plain link",
+    r.body.includes('class="btn" href="/kindle/get')
+    && !r.body.includes('class="btn" href="/api/send-to-kindle'));
+  check("J1 hit page: cache-control: no-store",
+    r.cache === "no-store", r.cache);
+  check("J1 hit page: footer explains the 10-minute link + sendtokindle upload",
+    r.body.includes("رابط تنزيل يعمل 10 دقائق")
+    && r.body.includes("amazon.com/sendtokindle"));
+}
+{
+  const r = await getBook("");
+  check("J2 empty-query page: cache-control: no-store",
+    r.cache === "no-store", r.cache);
+}
+{
+  const r = await getBook("x".repeat(201));
+  check("J3 400 page: cache-control: no-store",
+    r.status === 400 && r.cache === "no-store", "status " + r.status + " cache " + r.cache);
+}
+{
+  // telegramGetUrl unit: same eligibility as telegramSendUrl, but
+  // the delivery page instead of the email endpoint.
+  const u = telegramGetUrl(
+    { title: "Test Book", formats: ["EPUB"], url: "https://t.me/kotobkhana/7559", flagged: false }, "");
+  check("J4 get URL: lib=tg + handle + post + format + title",
+    u === "/kindle/get?lib=tg&amp;h=kotobkhana&amp;p=7559&amp;f=epub&amp;t=Test%20Book",
+    u);
+  check("J4 get URL: fp passthrough",
+    telegramGetUrl(
+      { title: "T", formats: ["PDF"], url: "https://t.me/s/1", flagged: false }, "&amp;fp=FP1")
+      .includes("&amp;fp=FP1"));
+  check("J4 flagged -> null",
+    telegramGetUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/s/1", flagged: true }, "") === null);
+  check("J4 MOBI format -> null (delivery page cannot complete it)",
+    telegramGetUrl({ title: "T", formats: ["MOBI"], url: "https://t.me/s/1", flagged: false }, "") === null);
+  check("J4 no formats -> null",
+    telegramGetUrl({ title: "T", formats: [], url: "https://t.me/s/1", flagged: false }, "") === null);
+  check("J4 private-group link -> null",
+    telegramGetUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }, "") === null);
+}
+{
+  // A flagged Telegram card gets NEITHER a Get button NOR an email
+  // link (the B3 checks cover the send button by handle absence;
+  // pin the Get button explicitly too).
+  tgMode = "ok";
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("J5 flagged card: NO Get button for the flagged book",
+    !r.body.includes("/kindle/get?lib=tg&amp;h=darkromancenovels"));
+  check("J5 flagged card: NO email link for the flagged book",
+    !r.body.includes("/api/send-to-kindle?lib=tg&amp;h=darkromancenovels"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -3,11 +3,12 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, a "أرسل إلى جهازي" send
-//        button (Send-to-Kindle email — the ONLY download path; there
-//        is NO direct-download link: the Kindle browser cannot
-//        download EPUB/PDF) and a search form. No JavaScript, minimal
-//        CSS, tiny page —
+//        title, author, library, format, a "📥 احصل على الكتاب على
+//        جهازك" primary button (the Kindle delivery page /kindle/get
+//        — a 10-minute short link the user opens on a phone/computer
+//        and uploads at amazon.com/sendtokindle), a "📖 اقرأ أونلاين"
+//        reader button (EPUB only), and the Send-to-Kindle email as a
+//        secondary link. No JavaScript, minimal CSS, tiny page —
 //        built for the Kindle experimental browser.
 //
 // Why this exists: the catalog dictionary links to a book page. The old
@@ -37,12 +38,14 @@
 // cards appear with no further change to this file.
 //
 // Telegram cards are NORMAL cards (title, author, source, format)
-// with the SAME "أرسل إلى جهازي" send button as OPDS cards —
-// the button sends the book by email via functions/api/send-to-
-// kindle.js (lib=tg), which fetches the file from the Block 2 proxy
-// first. The source (library/channel name) is plain TEXT under the
-// book info, never the button label and never a t.me link: tapping
-// a source link opened the Telegram website, which is not a download.
+// with the SAME "📥 احصل على الكتاب على جهازك" primary button as
+// OPDS cards — the button opens the delivery page /kindle/get, which
+// mints a 10-minute short link (the proxy fetches the file from
+// Telegram for the short link's target). The Send-to-Kindle email is
+// a secondary link under it. The source (library/channel name) is
+// plain TEXT under the book info, never the button label and never a
+// t.me link: tapping a source link opened the Telegram website, which
+// is not a download.
 // Flagged (commercial) Telegram books show a "تجاري" marker and NO send
 // button and NO reading on the website, per the website rule that
 // flagged books are flagged but not readable/downloadable on the
@@ -73,11 +76,18 @@
 // hits the same error, *.mobi downloads). So there is no direct browser
 // download for these books, and the page renders NO direct-download
 // link at all (removed 2026-11-13: device test showed tapping it
-// failed with a white page + error codes 175/101). The "أرسل إلى
-// جهازي" button therefore sends the book by Send-to-Kindle email
-// instead (functions/api/send-to-kindle.js): EPUB by email IS accepted
-// — Amazon converts it to AZW3/KFX on delivery. Email send is the
-// ONLY download path on this page.
+// failed with a white page + error codes 175/101). The primary path is
+// the delivery page /kindle/get: a 10-minute short link the user opens
+// on a phone/computer, downloads there, and uploads at
+// amazon.com/sendtokindle — Amazon converts EPUB to AZW3/KFX on
+// delivery. The Send-to-Kindle email (functions/api/send-to-kindle.js)
+// stays as a secondary link for users who already approved the sender.
+//
+// Every dynamic response sends `cache-control: no-store` (changed
+// 2026-11-16 from `no-store`: max-age=0
+// still permits a heuristic/store-then-revalidate path in some
+// caches, no-store does not — and a cached copy of this page must
+// never be served to another visitor).
 //
 // Free-tier friendly: same cost profile as /opds/search (five static
 // JSON fetches, ~3 MB total, no KV, no D1) + one same-origin
@@ -187,8 +197,9 @@ export const TG_SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]
 
 /** The send URL for one Telegram result, or null when it cannot be
  *  sent from the website (private-group link, no usable format, or a
- *  non-sendable format). `fpQ` is the "&amp;fp=..." suffix ("" when
- *  no fingerprint). Exported for tests. */
+ *  non-sendable format). This is the SECONDARY email link on the
+ *  card now — the primary button is telegramGetUrl below. `fpQ` is
+ *  the "&amp;fp=..." suffix ("" when no fingerprint). Exported for tests. */
 export function telegramSendUrl(r, fpQ = "") {
   if (!r || r.flagged) return null;
   const post = parseTelegramPostUrl(r.url);
@@ -198,6 +209,30 @@ export function telegramSendUrl(r, fpQ = "") {
     : "";
   if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
   return "/api/send-to-kindle?lib=tg"
+    + "&amp;h=" + encodeURIComponent(post.handle)
+    + "&amp;p=" + post.postId
+    + "&amp;f=" + fmt
+    + "&amp;t=" + encodeURIComponent(r.title || "") + fpQ;
+}
+
+/** The "Get on Kindle" delivery-page URL for one Telegram result,
+ *  or null when the book cannot go through the delivery flow — the
+ *  SAME eligibility as telegramSendUrl (not flagged, parseable post,
+ *  sendable format), so a book the email endpoint would refuse gets
+ *  no Get button either (its delivery page could not be completed:
+ *  Send to Kindle for Web does not accept MOBI/AZW3). The delivery
+ *  page mints the 10-minute short link; the short link's target is
+ *  the signed proxy download. `fpQ` is the "&amp;fp=..." suffix.
+ *  Exported for tests. */
+export function telegramGetUrl(r, fpQ = "") {
+  if (!r || r.flagged) return null;
+  const post = parseTelegramPostUrl(r.url);
+  if (!post) return null;
+  const fmt = Array.isArray(r.formats) && r.formats.length
+    ? String(r.formats[0]).toLowerCase()
+    : "";
+  if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
+  return "/kindle/get?lib=tg"
     + "&amp;h=" + encodeURIComponent(post.handle)
     + "&amp;p=" + post.postId
     + "&amp;f=" + fmt
@@ -313,7 +348,7 @@ export async function onRequest(context) {
       + foot;
     return new Response(body, {headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=0, must-revalidate"}});
+      "cache-control": "no-store"}});
   }
 
   if (q.length > MAX_Q_LEN) {
@@ -322,7 +357,7 @@ export async function onRequest(context) {
       + foot;
     return new Response(body, {status: 400, headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=0, must-revalidate"}});
+      "cache-control": "no-store"}});
   }
 
   const LIBS = [
@@ -353,7 +388,7 @@ export async function onRequest(context) {
       + foot;
     return new Response(body, {status: 500, headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=0, must-revalidate"}});
+      "cache-control": "no-store"}});
   };
   const hits = [];
   for (const lib of LIBS) {
@@ -438,21 +473,33 @@ export async function onRequest(context) {
     }
     return new Response(body, {headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=0, must-revalidate"}});
+      "cache-control": "no-store"}});
   }
 
   const shown = hits.length + tg.results.length;
   body += "<p>وجدنا " + shown + " نتيجة لـ «" + esc(q) + "»:</p>\n";
   for (const {lib, b} of hits) {
     // Send by email only works for the formats Send-to-Kindle accepts
-    // (epub/pdf/doc/docx/txt). A MOBI/AZW3 book gets NO send button —
-    // the endpoint would refuse it — and a note pointing at the bot
-    // instead, so the page never shows a button that is certain to fail.
+    // (epub/pdf/doc/docx/txt) — and the same set governs the primary
+    // "Get on Kindle" button (Send to Kindle for Web does not accept
+    // MOBI/AZW3 either). A MOBI/AZW3 book gets NO Get button and NO
+    // send link — the endpoints would refuse them — and a note
+    // pointing at the bot instead, so the page never shows a button
+    // that is certain to fail.
     // (No MOBI/AZW3 book is in the five indexes today, 2026-11-14, so
     // this is defensive: a future catalog rebuild may add one.)
     const sendable = TG_SENDABLE_FORMATS.has(fmtCode(b));
     const sendUrl = sendable
       ? "/api/send-to-kindle?lib=" + lib.slug
+        + "&amp;id=" + encodeURIComponent(b.i)
+        + "&amp;f=" + fmtCode(b)
+        + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ
+      : null;
+    // Primary button: the delivery page (/kindle/get) — same
+    // eligibility as the email link (a format Send to Kindle for
+    // Web does not accept gets no Get button either; see I3).
+    const getUrl = sendable
+      ? "/kindle/get?lib=" + lib.slug
         + "&amp;id=" + encodeURIComponent(b.i)
         + "&amp;f=" + fmtCode(b)
         + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ
@@ -470,9 +517,12 @@ export async function onRequest(context) {
     body += "<div class=\"card\"><h2>" + esc(b.t) + "</h2>\n";
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
+    if (getUrl) {
+      body += "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+    }
     if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
     if (sendUrl) {
-      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
+      body += "<p><a href=\"" + sendUrl + "\">أرسله بالإيميل (لمن أضاف المرسل من قبل)</a></p>\n";
     } else {
       body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
         + "اطلبه من البوت "
@@ -557,13 +607,19 @@ export async function onRequest(context) {
           + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
       } else {
-        // "Read online" (Block 11b reader): EPUB only, never flagged.
-        // Same URL contract as site/reader/README.md.
+        // Primary button: the delivery page (/kindle/get) — same
+        // eligibility as the email link (telegramGetUrl mirrors
+        // telegramSendUrl). Then "Read online" (Block 11b reader):
+        // EPUB only, never flagged. Same URL contract as
+        // site/reader/README.md. The email send is a secondary
+        // link under both buttons.
+        const getUrl = telegramGetUrl(r, fpQ);
+        if (getUrl) body += "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
         const readerUrl = telegramReaderUrl(r);
         if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
         const sendUrl = telegramSendUrl(r, fpQ);
         if (sendUrl) {
-          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
+          body += "<p><a href=\"" + sendUrl + "\">أرسله بالإيميل (لمن أضاف المرسل من قبل)</a></p>\n";
         } else {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "
@@ -572,26 +628,29 @@ export async function onRequest(context) {
       }
       body += "</div>\n";
     }
-    body += "<p class=\"note\">زر «أرسل إلى جهازي» على كتب تيليجرام يجلب الملف "
-      + "من تيليجرام ثم يرسله إلى بريد جهازك.</p>\n";
+    body += "<p class=\"note\">زر «احصل على الكتاب على جهازك» على كتب تيليجرام يجلب الملف "
+      + "من تيليجرام ويعطيك رابط تنزيل يعمل 10 دقائق.</p>\n";
   }
 
-  // Footer note whenever ANY send button is on the page (OPDS cards,
-  // or a sendable non-flagged Telegram card) — a page with no send
-  // button must not promise one.
-  const anySend = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
-    || tg.results.some((r) => telegramSendUrl(r, fpQ) !== null);
-  if (anySend) {
-    body += "<p class=\"note\">متصفح جهازك لا ينزّل EPUB/PDF — زر «أرسل إلى جهازي» يرسل الكتاب "
-      + "إلى بريد جهازك، فيظهر في مكتبتك خلال دقائق. "
+  // Footer note whenever ANY Get button is on the page (OPDS cards,
+  // or a sendable non-flagged Telegram card) — a page with no Get
+  // button must not promise one. It explains the delivery flow in
+  // one place instead of repeating it on every card.
+  const anyGet = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
+    || tg.results.some((r) => telegramGetUrl(r, fpQ) !== null);
+  if (anyGet) {
+    body += "<p class=\"note\">متصفح جهازك لا ينزّل EPUB/PDF — زر «احصل على الكتاب على جهازك» يعطيك "
+      + "رابط تنزيل يعمل 10 دقائق: نزّل الكتاب على هاتفك أو حاسوبك ثم ارفعه في "
+      + "amazon.com/sendtokindle، فيظهر في مكتبتك خلال دقائق. "
+      + "أو أرسله بالإيميل إن كنت قد أضفت المرسل من قبل"
       + (fp
-        ? "ميلك محفوظ في البوت — لن يُطلب منك كتابته."
-        : "سيُطلب منك كتابة بريد جهازك مرة واحدة لكل كتاب — أو أرسله للبوت "
+        ? " — ميلك محفوظ في البوت، لن يُطلب منك كتابته."
+        : " — سيُطلب منك كتابة بريد جهازك مرة واحدة لكل كتاب، أو أرسله للبوت "
           + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> ليُحفظ.")
       + "</p>\n";
   }
   body += foot;
   return new Response(body, {headers: {
     "content-type": "text/html; charset=utf-8",
-    "cache-control": "public, max-age=0, must-revalidate"}});
+    "cache-control": "no-store"}});
 }

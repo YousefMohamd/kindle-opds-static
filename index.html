@@ -56,7 +56,7 @@
   </form>
   <p id="status" class="note" role="status"></p>
   <div id="results"></div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «📧 أرسل إلى جهازي» ليصلك الكتاب بالإيميل، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «📥 احصل على الكتاب على جهازك» ليصلك رابط تنزيل يعمل 10 دقائق (نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -82,7 +82,7 @@
     <a href="https://ws-export.wmcloud.org/opds/en/Ready_for_export.xml">Wikisource (English) — تصفّح فقط</a>
   </div>
   <p class="note">الكتالوج يعمل على Kindle وأي قارئ إلكتروني و iPad وتابلت —
-  افتح الرابط في متصفح جهازك وابحث وحمّل مباشرة، من غير تطبيق ولا جيلبريك.
+  افتح الرابط في متصفح جهازك وابحث واحصل على الكتب، من غير تطبيق ولا جيلبريك.
   Wikisource مكتبة خارجية — تصفّح فقط، ولا تظهر في البحث.</p>
 </div>
 
@@ -205,19 +205,20 @@ function renderGroup(heading, items, tg) {
     // the flag must not claim a source link exists.
     var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — اطلبه من البوت</span>" : "";
     var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
-    // Telegram titles open the book page (/book), not the raw t.me post:
-    // the book page has "📖 اقرأ أونلاين" and "📧 أرسل إلى جهازي".
-    // OPDS titles keep their direct download link; the "صفحة الكتاب"
-    // link beside them is the Kindle path (read online / send by
-    // email), because the Kindle browser blocks direct EPUB/PDF
-    // downloads.
+    // Titles open the book page (/book) — for Telegram AND for OPDS
+    // titles alike. The book page is the Kindle path (Get on Kindle /
+    // read online / send by email), because the Kindle browser blocks
+    // direct EPUB/PDF downloads — no title links straight to a file
+    // URL any more (the OPDS feed itself still carries acquisition
+    // links for KOReader; only the website changed). The "صفحة
+    // الكتاب" link beside OPDS titles stays as a second way in.
     var bookPage = "/book?q=" + encodeURIComponent(b.title || "");
-    var titleLink = tg ? bookPage : (b.href || b.url);
+    var titleLink = bookPage;
     html += "<li><div class=\"title\"><a href=\"" + esc(titleLink) + "\">" +
       esc(b.title) + "</a></div>" +
       (b.author ? "<div class=\"meta\">" + esc(b.author) + "</div>" : "") +
       "<div class=\"meta\">" + esc(lib) + "</div>" +
-      (!tg ? "<div class=\"meta\"><a href=\"" + esc(bookPage) + "\">صفحة الكتاب — اقرأ أونلاين أو أرسل إلى جهازي</a></div>" : "") +
+      (!tg ? "<div class=\"meta\"><a href=\"" + esc(bookPage) + "\">صفحة الكتاب — احصل على الكتاب أو اقرأ أونلاين</a></div>" : "") +
       (fmts || flag ? "<div>" + fmts + flag + "</div>" : "") + "</li>";
   }
   return html + "</ul>";
