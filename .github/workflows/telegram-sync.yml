@@ -167,6 +167,18 @@ jobs:
                   print("newest.json missing and no previous file exists — /new will show its honest empty message")
           PYEOF
           cp ../site/telegram/index.html ../site/telegram.new/index.html
+          # Refresh the static fallback counts on the home page from
+          # the NEW staging manifest (not the old live one), and
+          # regenerate the libraries list from it too. The home-page
+          # numbers are only a fallback for the JS live-refresh in
+          # index.html; scripts/refresh-counts.py rewrites them (and
+          # the maintainer comment) from the manifest totals — never
+          # by hand, no number hardcoded. libraries.html is written
+          # straight into staging: the Publish step swaps staging in
+          # over site/telegram/, so anything not copied into staging
+          # is lost from the deployed site.
+          python3 ../scripts/refresh-counts.py --manifest ../site/telegram.new/index.json
+          python3 ../site/telegram/generate-libraries.py --manifest ../site/telegram.new/index.json --out ../site/telegram.new/libraries.html
           ls -la ../site/telegram.new
 
       - name: Validate before publish
@@ -193,7 +205,11 @@ jobs:
           rm -f telegram/index.db.gz
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/
+          git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/ index.html
+          # (index.html: scripts/refresh-counts.py rewrote its static
+          # Telegram fallback counts from the new manifest in the
+          # Build step, so the deployed home page carries the same
+          # totals as the manifest published alongside it.)
           # Drop the raw seed from the repo if it is still tracked (the
           # transition commit); harmless once it is gone.
           git rm --cached telegram/index.db 2>/dev/null || true

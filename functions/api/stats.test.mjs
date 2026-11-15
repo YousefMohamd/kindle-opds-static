@@ -96,6 +96,18 @@ const withD1 = buildStats(manifest, newest, newspapers, opdsCounts, 99996);
 check("1m D1 count reported alongside manifest count",
   withD1.books_d1.count === 99996 && withD1.books.telegram === t.books);
 
+// The D1 note must say D1 is a partial snapshot import (finishing
+// Thu 2026-11-19 at 323,325 books) with the manifest still growing
+// past it — not just "import still running". No manifest number is
+// quoted as permanent: the manifest total is read live, above.
+check("1m2 D1 note: partial snapshot import, manifest keeps growing",
+  withD1.books_d1.note.includes("snapshot import") &&
+    withD1.books_d1.note.includes("2026-11-19") &&
+    withD1.books_d1.note.includes("323,325") &&
+    withD1.books_d1.note.includes("keeps growing daily") &&
+    withD1.books_d1.note.includes("headline count"),
+  withD1.books_d1.note);
+
 // One unreadable OPDS index: that library null, total null, rest intact.
 const partial = { ...opdsCounts, doab: null };
 const partialStats = buildStats(manifest, newest, newspapers, partial, null);

@@ -20,7 +20,8 @@
 // electronic, hindawi, doab) PLUS the Telegram catalog — unified
 // search. Telegram results come from GET /api/tg-search
 // (functions/api/tg-search.js), which queries the TG_D1 database
-// (D1 + FTS5, 321k books). /book does NOT query D1 itself: the
+// (D1 + FTS5; the D1 snapshot is still being imported — see the
+// `coverage` field on /api/tg-search for the live indexed count).
 // endpoint owns all Telegram search logic (Arabic normalization,
 // FTS5 AND + longest-word fallback, flagged check), so there is one
 // implementation of it and /book stays a thin renderer. /book sends
@@ -59,7 +60,7 @@
 //
 // Graceful degradation (never a 500 from the Telegram half): the
 // tg-search fetch is wrapped so it can only resolve to
-// { available, total, results } — a throw, a non-200 status, a
+// { available, total, coverage, results } — a throw, a non-200 status, a
 // { ok: false } body, or malformed results all yield
 // available:false + no results, and /book falls back to OPDS-only.
 // OPDS failures return a 500 HTML page naming the failed index, with
@@ -91,12 +92,16 @@ const MAX_Q_LEN = 200; // A title/author query longer than this is a 400 page, n
 // NEVER throws and NEVER returns a partial/untrusted result: any
 // failure — endpoint not deployed yet (404), D1 not bound (503),
 // D1 empty, non-JSON or { ok: false } reply — yields
-// { available: false, total: 0, results: [] }, and the caller falls
-// back to OPDS-only. `available: true` means the endpoint answered
-// with ok:true (even with zero results: D1 was searched and is empty
-// for this query). Each result is validated: a title and a t.me post
-// URL are required, anything else is dropped, so a bad endpoint reply
-// can never inject an arbitrary link into the page.
+// { available: false, total: 0, coverage: null, results: [] }, and the
+// caller falls back to OPDS-only. `available: true` means the endpoint
+// answered with ok:true (even with zero results: D1 was searched and
+// is empty for this query). `coverage` is the endpoint's coverage
+// object ({ indexed, target, partial }) passed through validated —
+// null when the endpoint did not send one — so the caller can say
+// honestly that D1 is still a partial snapshot (import finishes
+// 2026-11-19) instead of guessing. Each result is validated: a title
+// and a t.me post URL are required, anything else is dropped, so a
+// bad endpoint reply can never inject an arbitrary link into the page.
 // `origin` is the request origin (same-origin subrequest, like the
 // OPDS index fetches below). Exported for tests.
 export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
@@ -105,10 +110,10 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
     tgUrl.searchParams.set("q", q);
     tgUrl.searchParams.set("limit", String(limit));
     const res = await fetch(tgUrl.toString(), {headers: {"accept": "application/json"}});
-    if (!res.ok) return {available: false, total: 0, results: []};
+    if (!res.ok) return {available: false, total: 0, coverage: null, results: []};
     const data = await res.json();
     if (!data || data.ok !== true || !Array.isArray(data.results)) {
-      return {available: false, total: 0, results: []};
+      return {available: false, total: 0, coverage: null, results: []};
     }
     const results = [];
     for (const r of data.results) {
@@ -147,11 +152,20 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
     return {
       available: true,
       total: Number.isFinite(data.total) ? data.total : results.length,
+      coverage: data.coverage && typeof data.coverage === "object"
+        ? {
+            indexed: Number.isFinite(data.coverage.indexed)
+              ? data.coverage.indexed : null,
+            target: Number.isFinite(data.coverage.target)
+              ? data.coverage.target : null,
+            partial: data.coverage.partial === true,
+          }
+        : null,
       results,
     };
   } catch (e) {
     console.warn("[book] telegram search unavailable:", e && e.message);
-    return {available: false, total: 0, results: []};
+    return {available: false, total: 0, coverage: null, results: []};
   }
 }
 
@@ -294,7 +308,7 @@ export async function onRequest(context) {
     const body = head("بحث")
       + "<p>ابحث في المكتبات الخمس: خازندار، صحوه، المكتبة الإلكترونية، "
       + "هنداوي، DOAB.</p>\n"
-      + "<p class=\"note\">للبحث في فهرس تيليجرام (323 ألف كتاب)، استخدم "
+      + "<p class=\"note\">للبحث في فهرس تيليجرام، استخدم "
       + "<a href=\"/telegram/\">صفحة فهرس تيليجرام</a>.</p>\n"
       + foot;
     return new Response(body, {headers: {
@@ -325,7 +339,7 @@ export async function onRequest(context) {
   // returns early (500 on a missing index) there is no unhandled
   // rejection from the Telegram half.
   const tgPromise = fetchTelegramResults(url.origin, q)
-    .catch(() => ({available: false, total: 0, results: []}));
+    .catch(() => ({available: false, total: 0, coverage: null, results: []}));
   // An OPDS index that cannot be read (missing file, bad JSON) is a
   // 500 — but a 500 the user can act on: a full page naming the
   // library, with links to the Telegram index and home, never a bare
@@ -362,7 +376,7 @@ export async function onRequest(context) {
     if (hits.length >= 100) break;
   }
 
-  // Telegram half: resolves to { available, total, results } — never
+  // Telegram half: resolves to { available, total, coverage, results } — never
   // throws, never 500s the page. available:false means "not searched"
   // (endpoint/D1 not live yet); available:true + 0 results means
   // "searched, nothing found".
@@ -399,15 +413,27 @@ export async function onRequest(context) {
     if (tg.available) {
       // Telegram WAS searched (endpoint + D1 live) and found nothing
       // either — say so, instead of sending the user to the index.
+      // While the D1 import is still running (finishes Thu 2026-11-19)
+      // a missing book may only be missing from D1 so far: say so,
+      // but only when the endpoint reports D1 as still partial — the
+      // note disappears on its own once the import finishes.
       body += "<p>لم نجد «" + esc(q) + "» في كل المكتبات (الخمس + تيليجرام).</p>\n"
-        + "<p>جرّب كلمة أخرى من العنوان أو اسم المؤلف.</p>\n"
-        + foot;
+        + "<p>جرّب كلمة أخرى من العنوان أو اسم المؤلف.</p>\n";
+      if (tg.coverage && tg.coverage.partial) {
+        body += "<p class=\"note\">ملاحظة: فهرس تيليجرام ما زال يُستورَد — "
+          + "يكتمل الخميس 19 نوفمبر 2026، فالكتاب قد يظهر لاحقًا.</p>\n";
+      }
+      body += foot;
     } else {
       // Telegram was NOT searched (endpoint/D1 not live yet) — the
-      // exact page /book rendered before unified search, unchanged.
+      // exact page /book rendered before unified search, unchanged,
+      // except the hardcoded Telegram count is dropped (the count is
+      // shown on the homepage/stats). No partial-import note here:
+      // this branch points at the static /telegram/ index (the full
+      // manifest), not the partial D1 search.
       body += "<p>لم نجد «" + esc(q) + "» في المكتبات الخمس.</p>\n"
         + "<p>الكتاب قد يكون في <a href=\"/telegram/\">فهرس تيليجرام</a> "
-        + "(323 ألف كتاب) — ابحث عنه هناك بالعنوان أو المؤلف.</p>\n"
+        + "— ابحث عنه هناك بالعنوان أو المؤلف.</p>\n"
         + foot;
     }
     return new Response(body, {headers: {

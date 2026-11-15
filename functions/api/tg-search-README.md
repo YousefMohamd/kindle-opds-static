@@ -25,6 +25,7 @@ Success (200):
   "total": 1,
   "limit": 10,
   "offset": 0,
+  "coverage": { "indexed": 149996, "target": 323325, "partial": true },
   "results": [
     {
       "title": "Everyone in This Bank Is a Thief",
@@ -49,6 +50,13 @@ Success (200):
 - `url`: the t.me post link (the only way to get the book).
 - `flagged`: `true` when the book is flagged/commercial (see below).
 - `total`: full match count (may exceed `results.length`).
+- `coverage`: the D1 snapshot — `{ indexed, target, partial }`.
+  `indexed` is a direct `COUNT(*) FROM books` right now; `target`
+  is the D1 final-import target (323,325 books, import finishes
+  2026-11-19); `partial` is true while `indexed < target`. This is
+  NOT the catalog manifest total (326,149 books on 2026-11-14, and
+  growing) — the two numbers must never be conflated. Present on
+  every `ok: true` reply; omitted (not guessed) if the count fails.
 
 Errors (JSON `{ ok: false, error }`):
 - `503` — `TG_D1` not bound (D1 database missing).

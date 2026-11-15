@@ -3,7 +3,9 @@
 //
 //   GET /api/tg-search?q=فن%20التواصل
 //     -> 200 { ok: true, q: "فن التواصل", total: 42, limit: 10,
-//              offset: 0, results: [
+//              offset: 0,
+//              coverage: { indexed: 149996, target: 323325, partial: true },
+//              results: [
 //                { title, author, source, kind, formats, url, flagged }, ... ] }
 //   GET /api/tg-search?source=EBook_Library&q=...  — same search, but only
 //     books whose source (channel/group handle) is exactly EBook_Library.
@@ -63,12 +65,19 @@
 // t.me post link). No book file bytes are ever returned or stored.
 //
 // Totals are D1 counts: while the D1 import is still running (it
-// finishes 2026-11-19) `total` is LOWER than the catalog manifest
-// total (323,325 books) — the endpoint searches only what D1 holds
-// so far, and says nothing more. /api/stats reports both numbers
-// side by side; this endpoint never inflates its total to the
-// manifest, and never claims a book is absent from the catalog when
-// it may only be absent from D1 yet.
+// finishes 2026-11-19) `total` is LOWER than the D1 final-import
+// target (323,325 books) — the endpoint searches only what D1 holds
+// so far, and says nothing more. The catalog manifest total is a
+// DIFFERENT number (326,149 books on 2026-11-14, and growing) —
+// /api/stats reports both numbers side by side; this endpoint never
+// inflates its total to the manifest, and never claims a book is
+// absent from the catalog when it may only be absent from D1 yet.
+// Every ok:true reply therefore also carries `coverage`:
+// { indexed, target, partial } — the D1 indexed count right now, the
+// D1 final-import target (323,325), and whether D1 is still a partial
+// snapshot (indexed < target). Callers (e.g. /book) show the partial
+// note only while partial is true, so it disappears on its own when
+// the import finishes.
 //
 // Free-tier friendly: one D1 query (FTS MATCH, reads ~10-100 rows;
 // 5M rows read/day on Workers Free) + up to `limit` parallel KV gets
@@ -156,6 +165,28 @@ async function isFlagged(env, url) {
   } catch (e) {
     console.warn("[tg-search] flag lookup failed:", e && e.message);
     return false;
+  }
+}
+
+// D1 final-import target (distinct books). The import finishes
+// 2026-11-19; until then D1 holds fewer books and `partial` is true.
+// This is NOT the catalog manifest total (326,149 books on
+// 2026-11-14, and growing) — never conflate the two.
+const D1_FINAL_TARGET = 323325;
+
+// Coverage of the D1 snapshot: how many books D1 holds right now vs
+// the final-import target. Same direct COUNT(*) the endpoint already
+// uses for match totals (and /api/stats uses for books_d1.count).
+// Never throws: on any failure returns null and the caller omits the
+// field, so a failed count can never break a search.
+async function d1Coverage(db) {
+  try {
+    const row = await db.prepare("SELECT COUNT(*) AS n FROM books").bind().first();
+    const indexed = row ? Number(row.n) || 0 : 0;
+    return { indexed, target: D1_FINAL_TARGET, partial: indexed < D1_FINAL_TARGET };
+  } catch (e) {
+    console.warn("[tg-search] coverage count failed:", e && e.message);
+    return null;
   }
 }
 
@@ -277,22 +308,28 @@ export async function onRequest(context) {
     );
   }
 
+  // Coverage is computed once per request and attached to every ok:true
+  // reply below (spread as `...cov`); a failed count yields no field
+  // rather than a broken search.
+  const coverage = await d1Coverage(db);
+  const cov = coverage ? { coverage } : {};
+
   if (!q) {
     // Empty query: without a source there is nothing to list; with a
     // source, browse that library's books (id order, capped by limit).
     if (!source) {
-      return json({ ok: true, q: "", total: 0, limit, offset, results: [] });
+      return json({ ok: true, q: "", total: 0, limit, offset, ...cov, results: [] });
     }
     try {
       const found = await d1Search(db, null, limit, offset, source);
       if (found.total === 0) {
-        return json({ ok: true, q: "", source, total: 0, limit, offset, results: [] });
+        return json({ ok: true, q: "", source, total: 0, limit, offset, ...cov, results: [] });
       }
       const flagged = await Promise.all(
         found.rows.map((r) => isFlagged(env, r.url)),
       );
       return json({
-        ok: true, q: "", source, total: found.total, limit, offset,
+        ok: true, q: "", source, total: found.total, limit, offset, ...cov,
         results: found.rows.map((r, i) => toResult(r, flagged[i])),
       });
     } catch (e) {
@@ -308,7 +345,7 @@ export async function onRequest(context) {
 
   const words = queryWords(q);
   if (words.length === 0) {
-    return json({ ok: true, q, total: 0, limit, offset, results: [] });
+    return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
   }
 
   try {
@@ -320,7 +357,7 @@ export async function onRequest(context) {
       found = await d1Search(db, ftsMatch([longest]), limit, offset, source);
     }
     if (found.total === 0) {
-      return json({ ok: true, q, total: 0, limit, offset, results: [] });
+      return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
     }
     // Flag check per result, in parallel (one KV get each, at most
     // `limit` gets; missing KV binding -> all unflagged).
@@ -334,6 +371,7 @@ export async function onRequest(context) {
       total: found.total,
       limit,
       offset,
+      ...cov,
       results: found.rows.map((r, i) => toResult(r, flagged[i])),
     });
   } catch (e) {

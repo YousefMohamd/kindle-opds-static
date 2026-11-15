@@ -123,14 +123,15 @@ globalThis.fetch = async (u) => {
     if (tgMode === "503") return jsonRes({ ok: false, error: "search unavailable (TG_D1 not bound)" }, 503);
     if (tgMode === "500") return jsonRes({ ok: false, error: "search failed: boom" }, 500);
     if (tgMode === "malformed") return new Response("{not json", { headers: { "content-type": "application/json" } });
-    if (tgMode === "empty") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, results: [] });
+    if (tgMode === "empty") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: [] });
+    if (tgMode === "emptyFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: [] });
     if (tgMode === "xss") {
       return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, results: [
         { title: "<script>alert(1)</script>", author: "a", source: "s", kind: "channel",
           formats: ["EPUB"], url: "https://t.me/s/1", flagged: false },
       ] });
     }
-    return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, results: TG_OK_RESULTS });
+    return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: TG_OK_RESULTS });
   }
   if (idx[url.pathname]) {
     return new Response(idx[url.pathname], { headers: { "content-type": "application/json" } });
@@ -170,6 +171,10 @@ tgMode = "throw";
   check("A2 TG-only title: 200, no-match page", r.status === 200 && r.body.includes("لم نجد"));
   check("A2 TG-only title: old wording (five libraries)", r.body.includes("في المكتبات الخمس"));
   check("A2 TG-only title: /telegram/ link kept", r.body.includes('href="/telegram/"'));
+  check("A2 TG-only title: no hardcoded Telegram count (323 ألف كتاب dropped)",
+    !r.body.includes("323 ألف كتاب"));
+  check("A2 TG-only title: no partial-import note (Telegram was NOT searched)",
+    !r.body.includes("ما زال يُستورَد"));
   check("A2 TG-only title: no Telegram card rendered", !r.body.includes("kotobkhana"));
   check("A2 TG-only title: no send button", !r.body.includes("/api/send-to-kindle"));
 }
@@ -178,6 +183,8 @@ tgMode = "throw";
   const r = await getBook("");
   check("A3 empty query: 200 + five-libraries text",
     r.status === 200 && r.body.includes("ابحث في المكتبات الخمس"));
+  check("A3 empty query: no hardcoded Telegram count (323 ألف كتاب dropped)",
+    !r.body.includes("323 ألف كتاب"));
   check("A3 empty query: tg-search never called", tgCalls === 0, "calls " + tgCalls);
 }
 {
@@ -297,6 +304,19 @@ for (const mode of ["503", "500", "malformed"]) {
   const r = await getBook("Everyone in This Bank Is a Thief");
   check("C3 tg-search ok:true empty: 200, searched-everywhere wording",
     r.status === 200 && r.body.includes("في كل المكتبات (الخمس + تيليجرام)"));
+  check("C3 tg-search ok:true empty: partial-import note shown (D1 still partial)",
+    r.body.includes("ما زال يُستورَد") && r.body.includes("19 نوفمبر 2026")
+    && r.body.includes("قد يظهر لاحقًا"));
+}
+{
+  // Import finished (coverage.partial === false): the same no-match
+  // page, but WITHOUT the partial-import note — it expires on its own.
+  tgMode = "emptyFull";
+  const r = await getBook("Everyone in This Bank Is a Thief");
+  check("C5 tg-search empty + import done: 200, searched-everywhere wording",
+    r.status === 200 && r.body.includes("في كل المكتبات (الخمس + تيليجرام)"));
+  check("C5 tg-search empty + import done: NO partial-import note",
+    !r.body.includes("ما زال يُستورَد") && !r.body.includes("19 نوفمبر 2026"));
 }
 {
   tgMode = "xss";
@@ -312,6 +332,8 @@ console.log("D. fetchTelegramResults unit:");
   const t = await fetchTelegramResults("https://rlibook.tech", "x");
   check("D1 throw -> unavailable, no results",
     t.available === false && t.total === 0 && t.results.length === 0);
+  check("D1 throw -> coverage null (not guessed)",
+    t.coverage === null);
 }
 {
   tgMode = "ok";
@@ -319,6 +341,10 @@ console.log("D. fetchTelegramResults unit:");
   check("D2 ok -> available, total 42, 2 valid results (2 dropped)",
     t.available === true && t.total === 42 && t.results.length === 2,
     JSON.stringify({ available: t.available, total: t.total, n: t.results.length }));
+  check("D2 coverage passed through (indexed/target/partial)",
+    t.coverage && t.coverage.indexed === 149996
+    && t.coverage.target === 323325 && t.coverage.partial === true,
+    JSON.stringify(t.coverage));
   check("D2 flagged flag survives", t.results[1] && t.results[1].flagged === true);
   check("D2 embedded cover survives passthrough",
     t.results[0] && t.results[0].cover.startsWith("data:image/gif;base64,"));

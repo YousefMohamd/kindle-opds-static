@@ -4,18 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>فهرس كتب تيليجرام — Telegram Book Index</title>
+<link rel="stylesheet" href="/site/assets/rlibook.css">
 <style>
-  :root { color-scheme: light; }
-  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
-         max-width: 760px; margin: 0 auto; padding: 1.2rem;
-         line-height: 1.7; color: #1c1c1c; background: #fdfdf8; }
+  /* Page-specific rules only. Buttons, chips, inputs, links, the page
+     frame and the footer come from the shared /site/assets/rlibook.css
+     (F6) — do not re-declare them here. */
   h1 { font-size: 1.5rem; margin-bottom: 0.2rem; }
   .sub { color: #555; font-size: 0.95rem; margin-top: 0; }
   .stats { color: #555; font-size: 0.9rem; }
-  input[type="search"], select {
-    font: inherit; padding: 0.5rem 0.7rem; border: 1px solid #999;
-    border-radius: 6px; background: #fff; }
-  input[type="search"] { width: 100%; box-sizing: border-box; }
   .filters { display: flex; gap: 0.6rem; margin-top: 0.7rem; flex-wrap: wrap; }
   .filters select { flex: 1; min-width: 9rem; }
   #count { margin: 0.9rem 0 0.3rem; color: #444; }
@@ -23,17 +19,10 @@
   li { border-bottom: 1px solid #ddd; padding: 0.7rem 0; }
   .title { font-weight: 700; }
   .meta { color: #555; font-size: 0.9rem; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.4rem; }
-  .chip { display: inline-block; background: #0b5cad; color: #fff;
-          border-radius: 999px; padding: 0.15rem 0.75rem; font-size: 0.9rem;
-          font-weight: 600; text-decoration: none; }
-  .chip:hover, .chip:focus { background: #094a8a; }
-  .chip .sz { font-weight: 400; opacity: 0.85; font-size: 0.85rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .chip .sz { opacity: 0.85; }
   .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
            border-radius: 6px; padding: 0.8rem 1rem; }
-  a { color: #0b5cad; }
-  footer { margin-top: 2rem; color: #666; font-size: 0.85rem;
-           border-top: 1px solid #ddd; padding-top: 0.8rem; }
 </style>
 </head>
 <body>
@@ -67,12 +56,23 @@ TXT) فيتحمل الكتاب من تيليجرام بضغطة واحدة — �
 
 <script>
 "use strict";
-// Same normalization as tbi.books.normalize_arabic: NFKC, strip
-// tashkeel + tatweel, unify alef forms, ة->ه, ى->ي. Display text is
-// never changed; this is only for matching, so a plain query like
-// "متون" finds a filename stored with full tashkeel.
+// Plain ES5-style script on purpose (var, function, .then — no arrow
+// functions, no async/await, no Map/Set, no spread, no
+// String.prototype.includes, no for...of, no URLSearchParams): the
+// oldest Kindle browsers that run any JavaScript at all cope with
+// this, like site/stats/index.html already does. String.normalize is
+// guarded (skipped when missing), and JSON is fetched over fetch()
+// when it exists, else over XMLHttpRequest.
 function norm(s) {
-  return (s || "").normalize("NFKC")
+  var t = (s || "");
+  // Same normalization as tbi.books.normalize_arabic: NFKC, strip
+  // tashkeel + tatweel, unify alef forms, ة->ه, ى->ي. Display text is
+  // never changed; this is only for matching, so a plain query like
+  // "متون" finds a filename stored with full tashkeel.
+  // normalize() is ES2015: on browsers without it, skip normalisation
+  // and fall back to a plain substring match instead of throwing.
+  if (typeof t.normalize === "function") t = t.normalize("NFKC");
+  return t
     // Same set as Python: [\u064B-\u0652\u0670\u0640] (harakat,
     // shadda, superscript alef, tatweel). Written as escapes on
     // purpose: literal Arabic chars here once silently widened the
@@ -82,21 +82,45 @@ function norm(s) {
     .toLowerCase();
 }
 
-let MANIFEST = null;
-let BOOKS = [];          // Books loaded so far (objects, from shards).
-const LOADED = new Set(); // Shard files already loaded.
-let LOADING = null;      // In-flight shard-load promise (or null).
+var MANIFEST = null;
+var BOOKS = [];          // Books loaded so far (objects, from shards).
+var LOADED = {};         // Shard files already loaded (file -> true).
+var LOADED_N = 0;        // Number of shards marked loaded.
+var LOADING = null;      // In-flight shard-load promise (or null).
+function isLoaded(f) { return !!LOADED[f]; }
+function markLoaded(f) {
+  if (!LOADED[f]) { LOADED[f] = true; LOADED_N++; }
+}
+
+// ?source=<handle> — read one query parameter without
+// URLSearchParams (missing on the oldest browsers). Same decoding
+// ("+" -> space, %XX unescaped); a malformed % sequence is left
+// raw instead of throwing, as URLSearchParams would.
+function decodeQuery(s) {
+  try { return decodeURIComponent(s.replace(/\+/g, " ")); }
+  catch (e) { return s; }
+}
+function queryParam(name) {
+  var qs = location.search || "";
+  if (qs.charAt(0) === "?") qs = qs.substring(1);
+  var parts = qs.split("&");
+  for (var i = 0; i < parts.length; i++) {
+    var kv = parts[i].split("=");
+    if (decodeQuery(kv[0] || "") === name) return decodeQuery(kv[1] || "");
+  }
+  return "";
+}
 // ?source=<handle> — browse one library only (from /telegram/libraries.html).
 // Filters the books AND loads only the shards that contain that source,
 // so a single library opens fast on a Kindle instead of loading all 4 shards.
-const SRC = (new URLSearchParams(location.search).get("source") || "").trim();
-const qEl = document.getElementById("q");
-const fmtEl = document.getElementById("fmt");
-const srcEl = document.getElementById("srcbanner");
-const countEl = document.getElementById("count");
-const notfoundEl = document.getElementById("notfound");
-const listEl = document.getElementById("results");
-const statsEl = document.getElementById("stats");
+var SRC = queryParam("source").trim();
+var qEl = document.getElementById("q");
+var fmtEl = document.getElementById("fmt");
+var srcEl = document.getElementById("srcbanner");
+var countEl = document.getElementById("count");
+var notfoundEl = document.getElementById("notfound");
+var listEl = document.getElementById("results");
+var statsEl = document.getElementById("stats");
 
 function esc(s) {
   return String(s == null ? "" : s)
@@ -114,6 +138,38 @@ function loadError(msg) {
   countEl.appendChild(a);
 }
 
+// Fetch JSON over fetch() when it exists, else over XMLHttpRequest
+// (the oldest Kindle browsers have no fetch). On an HTTP error the
+// message names httpErrPrefix, as the old fetch-only code did
+// ("index.json not found" for the manifest, the URL for a shard).
+function xhrJson(url, httpErrPrefix) {
+  return new Promise(function (resolve, reject) {
+    var x = new XMLHttpRequest();
+    x.open("GET", url, true);
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status >= 200 && x.status < 300) {
+        try { resolve(JSON.parse(x.responseText)); }
+        catch (e) { reject(e); }
+      } else {
+        reject(new Error(httpErrPrefix + " (HTTP " + x.status + ")"));
+      }
+    };
+    x.onerror = function () { reject(new Error(httpErrPrefix + " (network error)")); };
+    try { x.send(null); } catch (e) { reject(e); }
+  });
+}
+function getJson(url, httpErrPrefix) {
+  var prefix = httpErrPrefix || url;
+  if (typeof fetch !== "undefined") {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error(prefix + " (HTTP " + r.status + ")");
+      return r.json();
+    });
+  }
+  return xhrJson(url, prefix);
+}
+
 // A shard stores books as compact arrays:
 // [title, author, filename, ext, size, source, sources, date, url].
 // Map one back to the object shape the renderer uses.
@@ -126,7 +182,7 @@ function toBook(a) {
 // Telegram-app link (tg://) for it. The channel/group handle never
 // appears as text in the UI — it lives only inside the button href.
 function tgLink(b) {
-  const m = /^https?:\/\/t\.me\/([^\/]+)\/(\d+)\/?$/.exec(b.url || "");
+  var m = /^https?:\/\/t\.me\/([^\/]+)\/(\d+)\/?$/.exec(b.url || "");
   if (!m) return b.url;
   return "tg://resolve?domain=" + encodeURIComponent(m[1]) + "&post=" + m[2];
 }
@@ -136,34 +192,42 @@ function tgLink(b) {
 // the shards that contain that source (the manifest lists each shard's
 // sources); an unknown source loads nothing and renders "no books yet".
 function neededShards() {
-  const shards = MANIFEST.shards || [];
-  if (!SRC) return shards.map(s => s.file);
-  return shards.filter(s => (s.sources || []).includes(SRC)).map(s => s.file);
+  var shards = MANIFEST.shards || [];
+  if (!SRC) return shards.map(function (s) { return s.file; });
+  return shards.filter(function (s) { return (s.sources || []).indexOf(SRC) !== -1; })
+    .map(function (s) { return s.file; });
 }
 
 // Load every needed shard that is not loaded yet (in parallel).
 // Returns a promise that resolves when they are all in BOOKS.
 // Concurrent calls share the same in-flight promise.
 function loadNeeded() {
-  const need = neededShards().filter(f => !LOADED.has(f));
+  var need = neededShards().filter(function (f) { return !isLoaded(f); });
   if (need.length === 0) return Promise.resolve();
   if (LOADING) return LOADING;
-  const total = neededShards().length;
-  countEl.textContent = "جارٍ تحميل الفهرس… (" + LOADED.size + "/" + total + " ملفات)";
-  LOADING = Promise.all(need.map(f =>
-    fetch(f).then(r => {
-      if (!r.ok) throw new Error(f + " (HTTP " + r.status + ")");
-      return r.json();
-    }).then(d => {
-      for (const a of (d.books || [])) BOOKS.push(toBook(a));
-      LOADED.add(f);
-    })
-  )).finally(() => { LOADING = null; });
+  var total = neededShards().length;
+  countEl.textContent = "جارٍ تحميل الفهرس… (" + LOADED_N + "/" + total + " ملفات)";
+  LOADING = Promise.all(need.map(function (f) {
+    return getJson(f).then(function (d) {
+      var arr = d.books || [];
+      for (var i = 0; i < arr.length; i++) BOOKS.push(toBook(arr[i]));
+      markLoaded(f);
+    });
+  })).then(function () { LOADING = null; }, function (err) { LOADING = null; throw err; });
   return LOADING;
 }
 
-let GROUPS = null;      // Books grouped by (title, author) — built once.
-let GROUPS_FOR = -1;    // BOOKS.length the groups were built for.
+var GROUPS = null;      // Books grouped by (title, author) — built once.
+var GROUPS_FOR = -1;    // BOOKS.length the groups were built for.
+
+// First entry of a group for one format (formats are kept as a plain
+// array of book objects, first seen wins — the old Map keyed by ext).
+function formatOf(g, ext) {
+  for (var i = 0; i < g.formats.length; i++) {
+    if (g.formats[i].ext === ext) return g.formats[i];
+  }
+  return null;
+}
 
 // Group all loaded entries by book (normalized title + author). One
 // group per book; each group keeps one entry per format (the first
@@ -173,41 +237,51 @@ let GROUPS_FOR = -1;    // BOOKS.length the groups were built for.
 // instead of re-scanning every entry.
 function buildGroups() {
   if (GROUPS && GROUPS_FOR === BOOKS.length) return GROUPS;
-  const map = new Map();
-  for (const b of BOOKS) {
-    const key = norm(b.title) + "\0" + norm(b.author || "");
-    let g = map.get(key);
+  var map = {};   // key -> group (every key contains "\0", so it can
+                  // never collide with an Object.prototype member)
+  var list = [];  // groups in first-seen order
+  for (var i = 0; i < BOOKS.length; i++) {
+    var b = BOOKS[i];
+    var key = norm(b.title) + "\0" + norm(b.author || "");
+    var g = map[key];
     if (!g) {
-      g = { title: b.title, author: b.author, formats: new Map(), hayParts: [], sources: new Set() };
-      map.set(key, g);
+      g = { title: b.title, author: b.author, formats: [], hayParts: [], sources: [] };
+      map[key] = g;
+      list.push(g);
     }
     g.hayParts.push(b.filename);
     // Sources this book appears in (its own source + every source that
     // reposted it) — used by the ?source= library filter.
-    if (b.source) g.sources.add(b.source);
-    for (const s of (b.sources || [])) g.sources.add(s);
-    if (!g.formats.has(b.ext)) g.formats.set(b.ext, b);
+    if (b.source && g.sources.indexOf(b.source) === -1) g.sources.push(b.source);
+    var srcs = b.sources || [];
+    for (var j = 0; j < srcs.length; j++) {
+      if (g.sources.indexOf(srcs[j]) === -1) g.sources.push(srcs[j]);
+    }
+    if (!formatOf(g, b.ext)) g.formats.push(b);
   }
-  for (const g of map.values()) {
-    g.hay = norm(g.title + " " + (g.author || "") + " " + g.hayParts.join(" "));
-    delete g.hayParts;
+  for (var k = 0; k < list.length; k++) {
+    var g2 = list[k];
+    g2.hay = norm(g2.title + " " + (g2.author || "") + " " + g2.hayParts.join(" "));
+    delete g2.hayParts;
   }
-  GROUPS = [...map.values()];
+  GROUPS = list;
   GROUPS_FOR = BOOKS.length;
   return GROUPS;
 }
 
 function renderList() {
-  const q = norm(qEl.value.trim());
-  const fmt = fmtEl.value;
+  var q = norm(qEl.value.trim());
+  var fmt = fmtEl.value;
   // The format filter picks which books are shown (books that have
   // that format); the chips of a shown book always list every format
   // available for it. At most 100 books are shown.
-  const hits = [];
-  for (const g of buildGroups()) {
-    if (SRC && !g.sources.has(SRC)) continue;
-    if (fmt && !g.formats.has(fmt)) continue;
-    if (q && !g.hay.includes(q)) continue;
+  var hits = [];
+  var groups = buildGroups();
+  for (var i = 0; i < groups.length; i++) {
+    var g = groups[i];
+    if (SRC && g.sources.indexOf(SRC) === -1) continue;
+    if (fmt && !formatOf(g, fmt)) continue;
+    if (q && g.hay.indexOf(q) === -1) continue;
     hits.push(g);
     if (hits.length >= 100) break;
   }
@@ -221,13 +295,13 @@ function renderList() {
   if (hits.length === 0 && (q || SRC)) {
     notfoundEl.hidden = false;
     if (q) {
-    notfoundEl.innerHTML = "«" + esc(qEl.value.trim()) +
-      "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
-      "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
-      "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
-      "بوت تيليجرام: <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — " +
-      "البوت بيدوّر في القناة مباشرة ويرجع لك الرابط فورًا لو لقاه، " +
-      "ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
+      notfoundEl.innerHTML = "«" + esc(qEl.value.trim()) +
+        "» مش موجود في الفهرس لسه — ممكن يكون في قناة لسه ما اتفهرستش " +
+        "بالكامل (الفهرسة بتمشي من الأحدث للأقدم على دفعات)، أو في قناة " +
+        "لسه ما اتضافتش. جرّب كلمة تانية، أو اطلب <b>بحث بأولوية</b> من " +
+        "بوت تيليجرام: <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — " +
+        "البوت بيدوّر في القناة مباشرة ويرجع لك الرابط فورًا لو لقاه، " +
+        "ولو ما لقاهوش بيحط القناة في أول طابور الفهرسة.";
     } else {
       // A library with no indexed books yet (0 files in the manifest).
       notfoundEl.innerHTML = "مكتبة «" + esc(SRC) + "» لسه ما فيها كتب " +
@@ -238,43 +312,47 @@ function renderList() {
     notfoundEl.hidden = true;
     notfoundEl.textContent = "";
   }
-  listEl.innerHTML = hits.map(g => {
-    const chips = [...g.formats.values()].map(b =>
-      "<a class=\"chip\" href=\"" + esc(tgLink(b)) + "\">" +
-      esc(b.ext.toUpperCase()) +
-      (b.size ? " <span class=\"sz\">" + esc(b.size) + "</span>" : "") +
-      "</a>"
-    ).join("");
-    return "<li><div class=\"title\">" + esc(g.title) + "</div>" +
-      (g.author ? "<div class=\"meta\">" + esc(g.author) + "</div>" : "") +
+  var html = "";
+  for (var j = 0; j < hits.length; j++) {
+    var g2 = hits[j];
+    var chips = "";
+    for (var k = 0; k < g2.formats.length; k++) {
+      var b = g2.formats[k];
+      chips += "<a class=\"chip\" href=\"" + esc(tgLink(b)) + "\">" +
+        esc(b.ext.toUpperCase()) +
+        (b.size ? " <span class=\"sz\">" + esc(b.size) + "</span>" : "") +
+        "</a>";
+    }
+    html += "<li><div class=\"title\">" + esc(g2.title) + "</div>" +
+      (g2.author ? "<div class=\"meta\">" + esc(g2.author) + "</div>" : "") +
       "<div class=\"chips\">" + chips + "</div></li>";
-  }).join("");
+  }
+  listEl.innerHTML = html;
 }
 
 // Ensure the shards for the current filter are loaded, then render.
 function render() {
   if (!MANIFEST) return;
-  loadNeeded().then(renderList).catch(err => {
+  loadNeeded().then(renderList).catch(function (err) {
     loadError("تعذّر تحميل الفهرس: " + err.message);
   });
 }
 
-fetch("index.json").then(r => {
-  if (!r.ok) throw new Error("index.json not found (HTTP " + r.status + ")");
-  return r.json();
-}).then(data => {
+getJson("index.json", "index.json not found").then(function (data) {
   MANIFEST = data;
   // Backward compatibility: an old single-file index.json (with a
   // "books" array) still works — use it directly, no shards.
   if (Array.isArray(data.books)) {
     BOOKS = data.books;
-    for (const s of (data.shards || [])) LOADED.add(s.file);
+    var shards = data.shards || [];
+    for (var i = 0; i < shards.length; i++) markLoaded(shards[i].file);
   }
-  for (const f of (data.formats || [])) {
-    const o = document.createElement("option");
-    o.value = f; o.textContent = f; fmtEl.appendChild(o);
+  var formats = data.formats || [];
+  for (var j = 0; j < formats.length; j++) {
+    var o = document.createElement("option");
+    o.value = formats[j]; o.textContent = formats[j]; fmtEl.appendChild(o);
   }
-  const t = data.totals || {};
+  var t = data.totals || {};
   statsEl.textContent = "الفهرس: " + (t.books || 0) + " كتاب مميز، " +
     (t.files || 0) + " ملف، " + (t.posts || 0) + " بوست، من " +
     (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated_at || data.generated || "؟");
@@ -289,7 +367,7 @@ fetch("index.json").then(r => {
   }
   countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";
   render();
-}).catch(err => {
+}).catch(function (err) {
   loadError("تعذّر تحميل الفهرس: " + err.message);
 });
 

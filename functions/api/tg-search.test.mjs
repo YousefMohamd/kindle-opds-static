@@ -223,5 +223,40 @@ const D1 = mockD1(db);
     && !JSON.stringify(broken.body).includes("boom"));
 }
 
+// 9. coverage: every ok:true reply reports the D1 snapshot honestly.
+// The test DB holds SAMPLE rows (5000 by default), so indexed must be
+// exactly that — a direct COUNT(*), never the manifest total — and
+// partial must be true while indexed < target (323,325).
+{
+  const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("9a search reply carries coverage", !!body.coverage, JSON.stringify(body.coverage));
+  check("9b coverage.indexed is the D1 COUNT(*)",
+    body.coverage && body.coverage.indexed === rows.length,
+    `indexed=${body.coverage && body.coverage.indexed} rows=${rows.length}`);
+  check("9c coverage.target is the D1 final-import target (323,325)",
+    body.coverage && body.coverage.target === 323325,
+    JSON.stringify(body.coverage));
+  check("9d coverage.partial true while D1 is incomplete",
+    body.coverage && body.coverage.partial === true, JSON.stringify(body.coverage));
+  check("9e coverage never claims the manifest total as the D1 total",
+    body.coverage && body.coverage.indexed !== 326149
+    && body.coverage.target !== 326149, JSON.stringify(body.coverage));
+  const { body: bodyEmpty } = await call({ TG_D1: D1 }, "/api/tg-search?q=");
+  check("9f empty-q reply carries coverage too",
+    bodyEmpty.coverage && bodyEmpty.coverage.indexed === rows.length
+    && bodyEmpty.coverage.partial === true, JSON.stringify(bodyEmpty.coverage));
+  const { body: bodyNo } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("zzzqqqxxyy"));
+  check("9g no-match reply carries coverage too",
+    bodyNo.coverage && bodyNo.coverage.indexed === rows.length
+    && bodyNo.coverage.partial === true, JSON.stringify(bodyNo.coverage));
+  const { body: bodyBrowse } = await call({ TG_D1: D1 }, "/api/tg-search?source=kotobkhana&limit=5");
+  check("9h source-browse reply carries coverage too",
+    bodyBrowse.coverage && bodyBrowse.coverage.indexed === rows.length,
+    JSON.stringify(bodyBrowse.coverage));
+  const noD1 = await call({}, "/api/tg-search?q=test");
+  check("9i 503 (no D1) carries no coverage field",
+    noD1.body.coverage === undefined, JSON.stringify(noD1.body));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

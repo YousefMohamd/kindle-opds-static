@@ -68,7 +68,7 @@
 حتى ذلك الحين، إن لم تجد زراً مخصصاً للمصحف، اكتب في البوت رسالة تطلب فيها
 المصحف (اللغة والرواية) — أو حمّل مباشرة من الجدول أدناه.</em></p>
 <p>أو حمّل مباشرة من
-<a href="https://github.com/zeeyado/quran-ebook/releases/latest">صفحة الإصدارات (أحدث إصدار v0.10.0)</a>
+<a href="https://github.com/zeeyado/quran-ebook/releases/latest">صفحة الإصدارات (أحدث إصدار <span id="quran-version">v0.10.0</span>)</a>
 ثم انقل الملف إلى جهازك بـ USB.</p>
 <p>مستخدمو KOReader: تجد المصاحف أيضاً داخل مكتبتك عبر
 <a href="/opds/qurans">كتالوج OPDS: /opds/qurans</a>.</p>
@@ -325,6 +325,33 @@
     document.getElementById("no-qurans").hidden = shown > 0;
   }
   [lang, fmt, nar].forEach(function (s) { s.addEventListener("change", apply); });
+
+  // Latest release tag comes from /api/qurans (tag = QURAN_TAG there).
+  // The v0.10.0 in the markup is only the fallback: with JS off, or if
+  // the fetch fails, the page keeps working with the v0.10.0 links, and
+  // the label then says the latest version could not be verified —
+  // the fallback is never presented as current.
+  var FALLBACK_TAG = "v0.10.0";
+  var versionEl = document.getElementById("quran-version");
+  if (typeof fetch === "function" && versionEl) {
+    fetch("/api/qurans").then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (data) {
+      var tag = data && data.ok && typeof data.tag === "string" ? data.tag : "";
+      if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error("bad tag");
+      versionEl.textContent = tag;
+      if (tag !== FALLBACK_TAG) {
+        // Rewrite only the upstream release download links; the tafsir
+        // links (raw.githubusercontent.com) do not match this selector.
+        document.querySelectorAll('a[href*="/releases/download/"]').forEach(function (a) {
+          a.href = a.href.replace(/\/releases\/download\/[^\/]+\//, "/releases/download/" + tag + "/");
+        });
+      }
+    }).catch(function () {
+      versionEl.textContent = FALLBACK_TAG + " — تعذّر التحقق";
+    });
+  }
 })();
 </script>
 </body>

@@ -12,9 +12,11 @@
 //     the published manifest /site/telegram/index.json and
 //     /site/telegram/newest.json (rebuilt daily by the indexer).
 //   - D1 search index: when the TG_D1 binding exists, SELECT COUNT(*)
-//     FROM books. While the D1 import is still running this is LOWER
-//     than the manifest total, so both numbers are reported side by
-//     side with their source — the manifest is the headline count.
+//     FROM books. D1 is a snapshot import of the manifest, not the live
+//     catalog: it is still partial (finishing Thu 2026-11-19 at 323,325
+//     books) and the manifest keeps growing daily, so the D1 count
+//     stays below the manifest total. Both numbers are reported side
+//     by side with their source — the manifest is the headline count.
 //   - OPDS libraries (khazendar, sahwa, electronic, hindawi, doab):
 //     each library's published search-index.json, counted (array
 //     length) at build time. These are static catalogs, rebuilt only
@@ -185,7 +187,7 @@ export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
       note:
         d1Count === null
           ? "D1 is not bound or not readable — the manifest count above is the live total."
-          : "Live search-index count. While the D1 import is still running this is lower than the manifest total; the manifest is the headline count.",
+          : "Live search-index count. D1 is a snapshot import of the manifest, still partial (finishing Thu 2026-11-19 at 323,325 books); the manifest keeps growing daily, so this stays below the manifest total. The manifest is the headline count.",
     },
     files: {
       telegram: num(t.files),
