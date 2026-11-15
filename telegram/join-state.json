@@ -219,20 +219,20 @@
       "folder": "already_there"
     },
     "muscatnonfiction": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-15T03:52:43.034709+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "OnePageAway": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "already_there"
     },
     "oxford_bookworms_lm": {
       "status": "pending",
