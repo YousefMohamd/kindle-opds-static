@@ -178,7 +178,7 @@ jobs:
           # over site/telegram/, so anything not copied into staging
           # is lost from the deployed site.
           python3 ../scripts/refresh-counts.py --manifest ../site/telegram.new/index.json
-          python3 ../site/telegram/generate-libraries.py --manifest ../site/telegram.new/index.json --out ../site/telegram.new/libraries.html
+          python3 ../scripts/generate-libraries.py --manifest ../site/telegram.new/index.json --out ../site/telegram.new/libraries.html
           ls -la ../site/telegram.new
 
       - name: Validate before publish

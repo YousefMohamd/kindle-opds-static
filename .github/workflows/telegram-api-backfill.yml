@@ -273,6 +273,11 @@ jobs:
         run: |
           tbi export-static --db index.db --out ../site/telegram.new --report index-report.md
           cp ../site/telegram/index.html ../site/telegram.new/index.html
+          # Refresh the home-page fallback counts and regenerate
+          # libraries.html from the new staging manifest, so the
+          # Publish swap does not drop them (same fix as telegram-sync).
+          python3 ../scripts/refresh-counts.py --manifest ../site/telegram.new/index.json
+          python3 ../scripts/generate-libraries.py --manifest ../site/telegram.new/index.json --out ../site/telegram.new/libraries.html
           ls -la ../site/telegram.new
 
       - name: Validate before publish
@@ -300,6 +305,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/
+          # The refreshed home page (scripts/refresh-counts.py rewrote
+          # its static counts from the new manifest) must be committed
+          # too, or the deploy keeps stale numbers.
+          git add index.html
           # The re-scan progress file (mode rescan-formats): the list
           # of sources already re-scanned, so the next chunk dispatch
           # resumes instead of redoing them. Tolerant add: absent on

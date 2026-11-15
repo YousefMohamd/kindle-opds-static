@@ -4,7 +4,7 @@
 The manifest (index.json) is the source of truth: 51 channels + 168
 groups, with per-source post/file counts. Run from the repo root:
 
-    python3 site/telegram/generate-libraries.py
+    python3 scripts/generate-libraries.py
 
 Re-run whenever index.json is regenerated (the indexer export), so the
 list, counts and totals stay in sync. The page is plain static HTML
@@ -15,7 +15,7 @@ list, counts and totals stay in sync. The page is plain static HTML
 Options (the daily telegram-sync workflow regenerates the page from the
 NEW staging manifest, before the staging directory is published):
 
-    python3 site/telegram/generate-libraries.py \
+    python3 scripts/generate-libraries.py \
         --manifest site/telegram.new/index.json \
         --out site/telegram.new/libraries.html
 
@@ -29,7 +29,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "site" / "telegram" / "index.json"
 OUT = ROOT / "site" / "telegram" / "libraries.html"
 
@@ -121,7 +121,7 @@ def main():
 {section("جروبات", groups)}
 <footer>
   <p>القائمة مولّدة من فهرس تيليجرام (آخر تحديث: {generated}). لإعادة التوليد:
-  <code>python3 site/telegram/generate-libraries.py</code></p>
+  <code>python3 scripts/generate-libraries.py</code></p>
   <p><a href="/">← الصفحة الرئيسية</a> • <a href="/telegram/">بحث تيليجرام</a> •
   <a href="https://t.me/RliBook_bot">بوت RliBook @RliBook_bot</a></p>
 </footer>
