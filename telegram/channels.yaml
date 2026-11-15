@@ -304,6 +304,19 @@ groups:
   - name: "ZAmericanEnglishCourse"
   - name: "zamericangroup"
 
+  # Private invite channels — joined by the owner 2026-11-14, resolved
+  # to entity-cache entries 2026-11-16 by the resolve-private-channels
+  # workflow (their invite links cannot be used as config entries:
+  # normalize_link strips them to '+...' which Telethon reads as a
+  # phone number). API-only groups (no Desktop export exists): the
+  # API backfill reads them from the cache, and the preview sync skips
+  # them like EBook_Library. KAYY's AUDIO LIBRARY is audio — NOT
+  # indexed (owner decision 2026-11-15); the 6th invite link is dead.
+  - name: "jami-al-kutub-al-musawwara"
+  - name: "bookstoragebox"
+  - name: "dar-maana"
+  - name: "al-suhuf-wal-majallat-al-ajnabiya"
+
 # Dead — 10 handles that do not exist (info page empty on TWO probes).
 # Do NOT add them as export entries; there is nothing to export.
 # - KOTOBPDFFF
