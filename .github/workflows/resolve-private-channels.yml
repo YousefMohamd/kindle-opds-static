@@ -1,0 +1,115 @@
+# Resolve the 4 joined private Telegram channels to entity-cache entries.
+#
+# ONE-OFF, MANUAL ONLY (workflow_dispatch, no schedule): the 4 private
+# (invite-only) channels the owner joined (2026-11-14) cannot be added
+# to channels.yaml as channel entries — normalize_link strips an invite
+# link to the username "+...", which Telethon cannot resolve. So this
+# workflow resolves each channel's numeric id + access hash once, by
+# calling Telethon get_entity with the FULL invite URL, and commits the
+# result into telegram/entity-cache.json (keyed by the stable name the
+# future channels.yaml group entries must use). Later,
+# `tbi api-backfill --channel <name>` resolves from the cache with no
+# network call. See telegram/scripts/resolve-private-channels.py and
+# ~/workspace/rlibook-private-channels-backfill-blocker.md.
+#
+# KAYY's AUDIO LIBRARY is deliberately NOT in the script — it is audio,
+# not books, and is excluded from indexing permanently.
+#
+# SECRETS (hard condition, set by the owner): the API credentials live
+# ONLY as GitHub Actions secrets — TELEGRAM_API_ID, TELEGRAM_API_HASH,
+# TELEGRAM_SESSION_STRING — the same three the api-backfill workflow
+# uses. They are never in the repo, never in any file that gets pushed,
+# and never printed in any log (this workflow only checks that they are
+# *present*, never their values; the script prints ids + access hashes,
+# which are NOT secrets).
+#
+# Push pattern (same as telegram-api-backfill.yml): the bot commits the
+# updated cache, rebases before pushing (a code push during the run
+# must not lose the work), never force-pushes. A failure step saves a
+# partial resolve the same way (the script stores each channel as it
+# resolves it, so a mid-run failure still leaves entries worth keeping).
+name: resolve-private-channels
+
+on:
+  workflow_dispatch:
+
+# Shares the telegram-jobs concurrency group with the sync and backfill
+# workflows, so this run waits for one of them to finish instead of
+# racing its push.
+concurrency:
+  group: kindle-opds-static-telegram-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-private-channels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the indexer (with the API extra)
+        run: pip install -e ".[api]"
+
+      - name: Secrets check (presence only — values are never printed)
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+        run: |
+          python -c "
+          import os, sys
+          missing = [k for k in ('TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SESSION_STRING') if not os.environ.get(k)]
+          if missing:
+              print('::error::Missing GitHub secret(s): ' + ', '.join(missing) + '. Add them in repo Settings -> Secrets and variables -> Actions (see telegram/README.md \"Telegram API history backfill\").')
+              sys.exit(1)
+          print('API secrets present (values not shown).')
+          "
+
+      - name: Resolve the 4 private channels
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+        run: python3 scripts/resolve-private-channels.py
+
+      - name: Commit + push the updated entity cache
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telegram/entity-cache.json
+          git commit -m "[resolve-private-channels] resolved 4 joined private channels" || echo "nothing to commit"
+          # Rebase before pushing (same as telegram-api-backfill.yml):
+          # a code push during the run must not reject this push and
+          # lose the work. Never force-push. If the rebase conflicts,
+          # fail loudly instead of pushing or skipping.
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the cache cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
+          git push
+
+      - name: Save a partial resolve on failure
+        if: failure()
+        working-directory: .
+        run: |
+          # The script stores each channel as it resolves it, so a
+          # mid-run failure (e.g. a flood wait on the 3rd channel)
+          # still leaves resolved entries in the local cache file.
+          # Commit + push them so the next dispatch resumes instead
+          # of re-resolving. Best-effort: if there is nothing to
+          # commit, or the push fails, the workflow just re-dispatches
+          # (the script is idempotent).
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash origin main || { echo "::warning::Rebase before failure-save failed — the partial resolve cannot be saved."; exit 0; }
+          git add telegram/entity-cache.json 2>/dev/null || true
+          git commit -m "[resolve-private-channels] partial resolve saved on failure" || echo "nothing to commit"
+          git push || echo "could not push the failure save — re-dispatch the workflow (the script is idempotent)"
