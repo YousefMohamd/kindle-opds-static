@@ -1,0 +1,111 @@
+# Build the combined Quran + Tafsir EPUBs and publish them as a GitHub
+# Release (tag quran-tafsir-v1).
+#
+# Triggered MANUALLY ONLY (Actions tab -> "Build Quran+Tafsir Release" ->
+# Run workflow). It never runs on push, pull_request, or a schedule.
+#
+# What it does:
+#   1. Checks out the repo (read-only use of the code).
+#   2. Runs tools/build-quran-tafsir.py build-all (fetches the upstream
+#      Quran EPUBs + tafsir StarDict sets at build time, builds the 51
+#      combined EPUBs + manifest.json).
+#   3. Verifies the outputs (51 EPUBs, manifest.json with 51 entries,
+#      and the ar Hafs + Muyassar sample passes the script's verify step).
+#   4. Creates/updates the GitHub Release "quran-tafsir-v1" and uploads
+#      all 51 EPUBs + manifest.json as assets, using the built-in
+#      GITHUB_TOKEN (no user secret needed).
+#   5. Prints the Release URL + the first 3 asset URLs and curls them
+#      to confirm HTTP 200.
+#
+# What it does NOT do:
+#   - It does NOT push to main, NOT commit anything, NOT deploy anything,
+#     NOT touch any other file. The only thing it creates is the Release
+#     + its assets.
+#
+# Re-running it rebuilds everything from scratch and replaces the
+# Release assets with the new build (same tag, same filenames).
+
+name: Build Quran+Tafsir Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore the input cache (upstream Quran EPUBs + tafsir ZIPs)
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: quran-tafsir-inputs-${{ hashFiles('tools/build-quran-tafsir.py') }}
+          restore-keys: |
+            quran-tafsir-inputs-
+
+      - name: Build the 51 combined EPUBs
+        run: |
+          python3 tools/build-quran-tafsir.py build-all --out-dir out/ --cache-dir cache/
+
+      - name: Verify the outputs (51 EPUBs + manifest + sample)
+        run: |
+          set -e
+          count=$(ls out/*.epub | wc -l)
+          echo "EPUB count: $count"
+          test "$count" -eq 51 || { echo "ERROR: expected 51 EPUBs, got $count"; exit 1; }
+          python3 -c "import json; m=json.load(open('out/manifest.json')); assert m['tag']=='quran-tafsir-v1'; assert len(m['files'])==51, len(m['files']); print('manifest.json: 51 entries, tag quran-tafsir-v1')"
+          python3 tools/build-quran-tafsir.py verify --epub out/quran_hafs_kfgqpc_inline_ar--tafsir-muyassar.epub --tafsir-id muyassar
+          echo "TOTAL SIZE:"
+          du -sh out/
+          echo "VERIFY OK"
+
+      - name: Create the Release and upload the 51 EPUBs + manifest.json
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: quran-tafsir-v1
+          name: "Quran + Tafsir (combined EPUBs) v1"
+          body: |
+            Combined Quran EPUBs with the tafsir embedded as endnotes (RliBook WS1).
+            Tap an ayah number to read its tafsir; the note links back.
+            No plugin, no ZIP, no install steps — on a stock Kindle, in KOReader,
+            or anywhere else that reads EPUB.
+            51 files: one per (Hafs edition x tafsir) combination.
+            ar 7, en 9, ur 16, bn 16, ru 3.
+            Sources: zeeyado/quran-ebook v0.10.0 (GPL-3.0) + tafsir StarDict sets.
+            Built by tools/build-quran-tafsir.py (see the repo).
+          files: |
+            out/*.epub
+            out/manifest.json
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+
+      - name: Print + check the Release and asset URLs
+        run: |
+          base="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1"
+          echo "Release page: https://github.com/YousefMohamd/kindle-opds-static/releases/tag/quran-tafsir-v1"
+          echo "Sample asset URLs (check they return HTTP 200):"
+          for f in quran_hafs_kfgqpc_inline_ar--tafsir-muyassar.epub quran_hafs_kfgqpc_bilin_ar-en-sahih--tafsir-ibn_kathir_en.epub quran_hafs_kfgqpc_bilin_ar-ru-kuliev--tafsir-saddi_ru.epub; do
+            url="$base/$f"
+            echo "  $url"
+            ok=0
+            for i in 1 2 3 4 5; do
+              code=$(curl -s -o /dev/null -w "%{http_code}" -I "$url" || echo "000")
+              if [ "$code" = "200" ]; then ok=1; break; fi
+              echo "    attempt $i: HTTP $code, retrying in 10s..."
+              sleep 10
+            done
+            if [ "$ok" != "1" ]; then echo "ERROR: $url did not return HTTP 200"; exit 1; fi
+            echo "    -> HTTP 200 OK"
+          done
+          echo "ALL CHECKS PASSED"
