@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RliBook — Reply. Read. Fly.</title>
 <style>
   :root { color-scheme: light; }
@@ -40,6 +40,10 @@
   .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
               border-radius: 6px; padding: 0.8rem 1rem; margin-top: 0.8rem; }
 </style>
+<!-- Telegram Mini App (v4.8.44): the official Telegram WebApp script + RliBook's init
+     (theme, Back button, viewport). No-ops outside Telegram. -->
+<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="/site/assets/telegram-webapp.js" defer></script>
 </head>
 <body>
 <img class="logo" src="/site/logo-1024.jpg" alt="RliBook — طائر أزرق يحمل كتاباً" width="220" height="181">
@@ -56,7 +60,7 @@
   </form>
   <p id="status" class="note" role="status"></p>
   <div id="results"></div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «📥 احصل على الكتاب على جهازك» ليصلك رابط تنزيل يعمل 10 دقائق (نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسله إلى Kindle بالإيميل» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «📥 احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -90,8 +94,10 @@
   <h2>جرائد اليوم</h2>
   <!-- NEWSPAPERS-STATIC-BEGIN -->
 <h3>🇪🇬 مصر</h3>
-<ul><li><a href="https://t.me/Arabic_News_Papers/134676" target="_blank" rel="noopener">🇪🇬 الجمهوريه</a> <span class="note"> — 2026-11-16</span></li></ul>
-<p class="links"><a href="/newspapers/#country-SA">🇸🇦 السعودية (7)</a> · <a href="/newspapers/#country-AE">🇦🇪 الإمارات (10)</a> · <a href="/newspapers/#country-QA">🇶🇦 قطر (3)</a> · <a href="/newspapers/#country-KW">🇰🇼 الكويت (10)</a> · <a href="/newspapers/#country-BH">🇧🇭 البحرين (4)</a> · <a href="/newspapers/#country-OM">🇴🇲 عُمان (7)</a> · <a href="/newspapers/#country-LB">🇱🇧 لبنان (1)</a> · <a href="/newspapers/#country-JO">🇯🇴 الأردن (3)</a> · <a href="/newspapers/#country-XX">🌍 غير محدد (11)</a></p>
+<ul><li><a href="https://t.me/Arabic_News_Papers/134630" target="_blank" rel="noopener">🇪🇬 Al Ahram m2</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/Arabic_News_Papers/134633" target="_blank" rel="noopener">🇪🇬 Al Wafd</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251353" target="_blank" rel="noopener">🇪🇬 الأخبار</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251349" target="_blank" rel="noopener">🇪🇬 الأهرام</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251354" target="_blank" rel="noopener">🇪🇬 الجمهورية</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251350" target="_blank" rel="noopener">🇪🇬 الشروق</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251352" target="_blank" rel="noopener">🇪🇬 المساء</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251348" target="_blank" rel="noopener">🇪🇬 المصري اليوم</a> <span class="note"> — 2026-11-15</span></li><li><a href="https://t.me/arabJournalism/251351" target="_blank" rel="noopener">🇪🇬 الوفد</a> <span class="note"> — 2026-11-15</span></li></ul>
+<h3>🌙 المسائية</h3>
+<ul><li><a href="https://t.me/arabJournalism/251347" target="_blank" rel="noopener">🇪🇬 الأهرام المسائي</a> <span class="note"> — 2026-11-15</span></li></ul>
+<p class="links"><a href="/newspapers/#country-SA">🇸🇦 السعودية (5)</a> · <a href="/newspapers/#country-AE">🇦🇪 الإمارات (5)</a> · <a href="/newspapers/#country-QA">🇶🇦 قطر (6)</a> · <a href="/newspapers/#country-KW">🇰🇼 الكويت (10)</a> · <a href="/newspapers/#country-BH">🇧🇭 البحرين (6)</a> · <a href="/newspapers/#country-OM">🇴🇲 عُمان (8)</a> · <a href="/newspapers/#country-GB">🇬🇧 لندن (1)</a> · <a href="/newspapers/#country-JO">🇯🇴 الأردن (3)</a> · <a href="/newspapers/#country-IQ">🇮🇶 العراق (3)</a> · <a href="/newspapers/#country-PS">🇵🇸 فلسطين (2)</a> · <a href="/newspapers/#country-XX">🌍 غير محدد (11)</a></p>
 <!-- NEWSPAPERS-STATIC-END -->
   <p><a href="/newspapers/">كل صحف اليوم حسب البلد ←</a></p>
   <p class="note">كل جريدة رابط مباشر إلى منشورها على تيليجرام — اضغط عليها
@@ -188,6 +194,17 @@ function mimeToFormat(mime) {
   return "";
 }
 
+// "View in bot" deep link for a flagged book (Workstream 2b): the
+// endpoint sends `bot` (t.me/RliBook_bot?start=dl_<handle>_<post>_any)
+// on flagged results only. The link is used only when it matches
+// that exact shape; anything else falls back to the bot home — a
+// tampered endpoint reply can never inject an arbitrary link here.
+function botDeepLink(v) {
+  if (typeof v === "string"
+    && /^https:\/\/t\.me\/RliBook_bot\?start=dl_[A-Za-z0-9_]{1,64}_\d{1,10}_any$/.test(v)) return v;
+  return "https://t.me/RliBook_bot";
+}
+
 function renderGroup(heading, items, tg) {
   if (!items.length) return "";
   var html = "<p class=\"reshead\">" + esc(heading) + " (" + items.length + ")</p><ul class=\"results\">";
@@ -200,8 +217,14 @@ function renderGroup(heading, items, tg) {
     }
     // Flagged (commercial) books have NO source link anywhere on the
     // site — the title links to /book, which points at the bot — so
-    // the flag must not claim a source link exists.
+    // the flag must not claim a source link exists. A flagged book
+    // gets ONE button, "View in bot" (Workstream 2b): the bot deep
+    // link from the endpoint, where the bot shows 🚩 + the source
+    // channel link under the 3/day cap and never downloads it. No
+    // download, no email, no reader button for flagged books.
     var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — اطلبه من البوت</span>" : "";
+    var botBtn = (tg && b.flagged)
+      ? "<div><a class=\"btn\" href=\"" + esc(botDeepLink(b.bot)) + "\">View in bot</a></div>" : "";
     var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
     // Titles open the book page (/book) — for Telegram AND for OPDS
     // titles alike. The book page is the Kindle path (Get on Kindle /
@@ -217,7 +240,7 @@ function renderGroup(heading, items, tg) {
       (b.author ? "<div class=\"meta\">" + esc(b.author) + "</div>" : "") +
       "<div class=\"meta\">" + esc(lib) + "</div>" +
       (!tg ? "<div class=\"meta\"><a href=\"" + esc(bookPage) + "\">صفحة الكتاب — احصل على الكتاب أو اقرأ أونلاين</a></div>" : "") +
-      (fmts || flag ? "<div>" + fmts + flag + "</div>" : "") + "</li>";
+      (fmts || flag ? "<div>" + fmts + flag + "</div>" : "") + botBtn + "</li>";
   }
   return html + "</ul>";
 }

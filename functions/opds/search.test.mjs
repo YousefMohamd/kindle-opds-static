@@ -14,7 +14,7 @@
 // No network, no production D1/KV, no deploy. Exit 0 = all pass.
 
 import { readFileSync } from "node:fs";
-import { onRequest as combinedSearch } from "./search.js";
+import { onRequest as combinedSearch, loadSearchIndex, indexTextMayContain } from "./search.js";
 import { onRequest as khazendarSearch } from "../khazendar/opds/search.js";
 import { onRequest as quransFeed } from "./qurans.js";
 import { onRequest as quransApi } from "../api/qurans.js";
@@ -124,6 +124,122 @@ async function call(fn, method, path, env = {}) {
     r.status === 500 && r.body.includes("/khazendar/search-index.json"),
     `status=${r.status} body=${r.body.slice(0, 80)}`);
   globalThis.fetch = saved;
+}
+
+// 4. REGRESSION (1102): search-index pre-filter.
+// The old code JSON.parse()d every index on every search (44–53 ms
+// CPU for a no-hit query). loadSearchIndex now skips the parse when
+// the needle provably cannot match. These tests FAIL on the old code
+// (no loader; json() is always called) and PASS with the fix — and
+// they pin that skipping never changes the results.
+{
+  const KH_TEXT = idx["/khazendar/search-index.json"];
+  check("4 indexTextMayContain: Arabic needle present -> true",
+    indexTextMayContain(KH_TEXT, "الحب") === true);
+  check("4 indexTextMayContain: Arabic needle absent -> false (skip is safe)",
+    indexTextMayContain(KH_TEXT, "كلمةغيرموجودة") === false);
+  check("4 indexTextMayContain: Latin needle -> true (case could differ, must parse)",
+    indexTextMayContain(KH_TEXT, "love") === true);
+  check("4 indexTextMayContain: uppercase Greek needle -> true (must parse)",
+    indexTextMayContain(KH_TEXT, "ΑΘΉΝΑ") === true);
+  check("4 indexTextMayContain: needle with a quote -> true (JSON escaping could hide it)",
+    indexTextMayContain(KH_TEXT, 'الحب"') === true);
+  check("4 indexTextMayContain: needle with a backslash -> true",
+    indexTextMayContain(KH_TEXT, "الحب\\") === true);
+
+  // A counting JSON.parse proves the no-hit path never parses (the
+  // loader parses the fetched text itself — it never calls res.json()).
+  let parseCalls = 0;
+  const realParse = JSON.parse;
+  JSON.parse = (...a) => { parseCalls++; return realParse(...a); };
+  const countingFetch = async (u) => {
+    const url = new URL(u);
+    const text = idx[url.pathname];
+    if (!text) return new Response("not found", { status: 404 });
+    return new Response(text, { headers: { "content-type": "application/json" } });
+  };
+  const saved = globalThis.fetch;
+  globalThis.fetch = countingFetch;
+  try {
+    parseCalls = 0;
+    const skipped = await loadSearchIndex("https://rlibook.tech", "khazendar", "كلمةغيرموجودة");
+    check("4 loadSearchIndex: no-hit Arabic needle -> { skip: true }, JSON.parse never called",
+      skipped.skip === true && parseCalls === 0, JSON.stringify({ skipped, parseCalls }));
+    parseCalls = 0;
+    const hit = await loadSearchIndex("https://rlibook.tech", "khazendar", "الحب");
+    check("4 loadSearchIndex: hit Arabic needle -> { books }, JSON.parse called once",
+      Array.isArray(hit.books) && hit.books.length > 0 && parseCalls === 1,
+      `books=${hit.books && hit.books.length} parseCalls=${parseCalls}`);
+    parseCalls = 0;
+    const latin = await loadSearchIndex("https://rlibook.tech", "khazendar", "love");
+    check("4 loadSearchIndex: Latin needle -> parsed (JSON.parse called, guard tripped)",
+      parseCalls === 1, `parseCalls=${parseCalls}`);
+    void latin;
+  } finally {
+    globalThis.fetch = saved;
+    JSON.parse = realParse;
+  }
+
+  // Malformed indexes must still error, never read as "no hits" —
+  // even when the needle is absent from the corrupt text.
+  const badFetch = (body) => async () => new Response(body, { headers: { "content-type": "application/json" } });
+  const saved2 = globalThis.fetch;
+  try {
+    globalThis.fetch = badFetch("{not json");
+    const bad = await loadSearchIndex("https://rlibook.tech", "sahwa", "الحب");
+    check("4 loadSearchIndex: invalid JSON -> { error: true }, not a silent skip",
+      bad.error === true, JSON.stringify(bad));
+    globalThis.fetch = badFetch('{"not": "an array"}');
+    const nonArray = await loadSearchIndex("https://rlibook.tech", "khazendar", "الحب");
+    check("4 loadSearchIndex: non-array JSON -> { error: true }",
+      nonArray.error === true, JSON.stringify(nonArray));
+    globalThis.fetch = badFetch('[{"t": "الحب", "a": "", "i": "x", "m": "application/epub+zip"},');
+    const truncated = await loadSearchIndex("https://rlibook.tech", "khazendar", "كلمةغيرموجودة");
+    check("4 loadSearchIndex: truncated array -> { error: true }",
+      truncated.error === true, JSON.stringify(truncated));
+    globalThis.fetch = badFetch("[]");
+    const empty = await loadSearchIndex("https://rlibook.tech", "khazendar", "الحب");
+    check("4 loadSearchIndex: empty array -> skip (no hits, correctly)",
+      empty.skip === true, JSON.stringify(empty));
+  } finally {
+    globalThis.fetch = saved2;
+  }
+
+  // End to end: the combined feed with the fix returns EXACTLY the
+  // same titles as a direct full-parse scan of the local indexes,
+  // for hit, no-hit, Arabic and Latin queries.
+  const unesc = (s) => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  const referenceTitles = (q) => {
+    const needle = q.toLowerCase();
+    const out = [];
+    for (const s of ["khazendar", "sahwa", "electronic", "hindawi", "doab"]) {
+      const books = JSON.parse(idx["/" + s + "/search-index.json"]);
+      for (const b of books) {
+        if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {
+          out.push(b.t);
+          if (out.length >= 100) return out;
+        }
+      }
+      if (out.length >= 100) break;
+    }
+    return out;
+  };
+  for (const q of ["لؤلؤة الحب", "الحب", "كلمةغيرموجودة", "love", "Mobi", "الصلح"]) {
+    const r = await call(combinedSearch, "GET", "/opds/search?q=" + encodeURIComponent(q));
+    const feedTitles = [...r.body.matchAll(/<entry><title>(.*?)<\/title>/g)].map((m) => unesc(m[1]));
+    const expected = referenceTitles(q);
+    check(`4 equivalence: combined search "${q}" returns the same ${expected.length} titles as a full-parse scan`,
+      r.status === 200 && JSON.stringify(feedTitles) === JSON.stringify(expected),
+      `status=${r.status} got=${feedTitles.length} expected=${expected.length}`);
+  }
+  const noHit = await call(combinedSearch, "GET", "/opds/search?q=" + encodeURIComponent("كلمةغيرموجودة"));
+  check("4 no-hit Arabic query: 200 + empty feed (totalResults 0), not a 500",
+    noHit.status === 200 && noHit.body.includes("<opds:totalResults>0</opds:totalResults>"),
+    `status=${noHit.status}`);
+  const noHitLib = await call(khazendarSearch, "GET", "/khazendar/opds/search?q=" + encodeURIComponent("كلمةغيرموجودة"));
+  check("4 no-hit per-library query: 200 + empty feed",
+    noHitLib.status === 200 && noHitLib.body.includes("<opds:totalResults>0</opds:totalResults>"),
+    `status=${noHitLib.status}`);
 }
 
 globalThis.fetch = realFetch;

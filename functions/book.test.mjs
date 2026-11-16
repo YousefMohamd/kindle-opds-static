@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, parseTelegramPostUrl, telegramSendUrl, telegramGetUrl, telegramReaderUrl } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -60,8 +60,12 @@ const TG_OK_RESULTS = [
     source: "kotobkhana",
     kind: "channel",
     formats: ["EPUB"],
-    url: "https://t.me/kotobkhana/7559",
     flagged: false,
+    // Gated links, pre-built by /api/tg-search (Workstream H) — the
+    // raw t.me post URL is never in an endpoint reply any more.
+    get: "/kindle/get?lib=tg&h=kotobkhana&p=7559&f=epub&t=Everyone%20in%20This%20Bank%20Is%20a%20Thief",
+    send: "/api/send-to-kindle?lib=tg&h=kotobkhana&p=7559&f=epub&t=Everyone%20in%20This%20Bank%20Is%20a%20Thief",
+    read: "/site/reader/?lib=tg&h=kotobkhana&p=7559&f=epub&title=Everyone%20in%20This%20Bank%20Is%20a%20Thief",
     // Embedded cover (Block 4 pairing): tiny 1x1 GIF data URI.
     cover: "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
     // Post-text description (first description source).
@@ -73,17 +77,45 @@ const TG_OK_RESULTS = [
     source: "darkromancenovels",
     kind: "channel",
     formats: ["PDF"],
-    url: "https://t.me/darkromancenovels/123",
     flagged: true,
+    get: null,
+    send: null,
+    read: null,
+    // "View in bot" deep link (Workstream 2b) — the bot shows 🚩 +
+    // the source link under the 3/day cap, never a download.
+    bot: "https://t.me/RliBook_bot?start=dl_darkromancenovels_123_any",
   },
   // Invalid records the page must drop, not render:
   { title: "Bad Link Book", author: "", source: "x", kind: "channel",
-    formats: ["EPUB"], url: "https://example.com/evil", flagged: false },
+    formats: ["EPUB"], flagged: false,
+    get: "https://example.com/evil", send: null, read: null },
   { author: "No Title", source: "x", kind: "channel",
-    formats: ["EPUB"], url: "https://t.me/x/1", flagged: false },
+    formats: ["EPUB"], flagged: false },
 ];
 
-let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | xss
+// Workstream 3 (metadata): one TG result per combination — both values,
+// size only, pages only, neither, and junk values that must be dropped.
+// `pages` has no source in the real index today, so these rows stand in
+// for a future endpoint that sends one; `size` matches the real shape.
+const TG_META_RESULTS = [
+  { title: "WS3 Meta Both", author: "Meta Author", source: "kotobkhana",
+    kind: "channel", formats: ["EPUB"], url: "https://t.me/kotobkhana/9001",
+    flagged: false, size: "2.7 MB", pages: 250 },
+  { title: "WS3 Meta Size", author: "Meta Author", source: "kotobkhana",
+    kind: "channel", formats: ["PDF"], url: "https://t.me/kotobkhana/9002",
+    flagged: false, size: "888.9 KB" },
+  { title: "WS3 Meta Pages", author: "Meta Author", source: "kotobkhana",
+    kind: "channel", formats: ["EPUB"], url: "https://t.me/kotobkhana/9003",
+    flagged: false, pages: 132 },
+  { title: "WS3 Meta Neither", author: "Meta Author", source: "kotobkhana",
+    kind: "channel", formats: ["EPUB"], url: "https://t.me/kotobkhana/9004",
+    flagged: false },
+  { title: "WS3 Meta Junk", author: "Meta Author", source: "kotobkhana",
+    kind: "channel", formats: ["EPUB"], url: "https://t.me/kotobkhana/9005",
+    flagged: false, size: "junk", pages: 0 },
+];
+
+let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | okMeta | xss
 let tgCalls = 0;
 let lastTgUrl = "";
 // Ratings mock (Blocks 9): "ok" serves a rating+description for the
@@ -126,10 +158,27 @@ globalThis.fetch = async (u) => {
     if (tgMode === "empty") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: [] });
     if (tgMode === "emptyFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: [] });
     if (tgMode === "okFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_OK_RESULTS });
+    if (tgMode === "okMeta") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 5, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_META_RESULTS });
     if (tgMode === "xss") {
       return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, results: [
         { title: "<script>alert(1)</script>", author: "a", source: "s", kind: "channel",
-          formats: ["EPUB"], url: "https://t.me/s/1", flagged: false },
+          formats: ["EPUB"], flagged: false, get: null, send: null, read: null },
+      ] });
+    }
+    if (tgMode === "badbot") {
+      // Workstream 2b: a flagged record with a tampered bot link is
+      // dropped wholesale; a valid deep link passes through; a
+      // missing bot field is legitimate (bot: null, card falls back
+      // to the bot home link).
+      return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 3, limit: 10, offset: 0, results: [
+        { title: "Good Bot Link", author: "a", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: true, get: null, send: null, read: null,
+          bot: "https://t.me/RliBook_bot?start=dl_testchannel_123_any" },
+        { title: "Tampered Bot Link", author: "a", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: true, get: null, send: null, read: null,
+          bot: "https://example.com/evil" },
+        { title: "No Bot Field", author: "a", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: true, get: null, send: null, read: null },
       ] });
     }
     return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: TG_OK_RESULTS });
@@ -140,9 +189,10 @@ globalThis.fetch = async (u) => {
   return new Response("not found", { status: 404 });
 };
 
-async function getBook(q, extra = "") {
+async function getBook(q, extra = "", ua = null) {
+  const headers = ua ? { "user-agent": ua } : {};
   const res = await onRequest({
-    request: new Request("https://rlibook.tech/book?q=" + encodeURIComponent(q) + extra),
+    request: new Request("https://rlibook.tech/book?q=" + encodeURIComponent(q) + extra, { headers }),
     env: {},
   });
   return { status: res.status, body: await res.text(), cache: res.headers.get("cache-control") };
@@ -157,13 +207,16 @@ tgMode = "throw";
   const r = await getBook("لؤلؤة الحب");
   check("A1 OPDS title: 200", r.status === 200, "status " + r.status);
   check("A1 OPDS title: card + author", r.body.includes("لؤلؤة الحب") && r.body.includes("هربرت جورج ويلز"));
-  check("A1 OPDS title: Get-on-Kindle button (primary, /kindle/get)",
-    r.body.includes("/kindle/get?lib=hindawi")
-    && r.body.includes("احصل على الكتاب على جهازك"));
-  check("A1 OPDS title: email still present as a secondary link (not a button)",
-    r.body.includes("/api/send-to-kindle?lib=hindawi")
-    && r.body.includes("أرسله بالإيميل (لمن أضاف المرسل من قبل)")
-    && !r.body.includes('class="btn" href="/api/send-to-kindle'));
+  check("A1 OPDS title: email is now the PRIMARY button (class btn, /api/send-to-kindle)",
+    r.body.includes('class="btn" href="/api/send-to-kindle?lib=hindawi')
+    && r.body.includes("أرسله إلى Kindle بالإيميل"));
+  check("A1 OPDS title: NO VISIBLE download button without an e-reader UA (WS1b: desktop/no-UA get email + reader only; WS3b: the /kindle/get link is tg-only, hidden outside Telegram)",
+    tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
+    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
+    && !r.body.includes("نزّل الكتاب على جهاز")
+    && !r.body.includes("جرّب تنزيل الكتاب"));
+  check("A1 OPDS title: footer promises email only (no 10-minute download mention)",
+    r.body.includes("بلا حد يومي") && !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("A1 OPDS title: NO direct-download link (removed 2026-11-13)",
     !r.body.includes("تنزيل مباشر")
     && !r.body.includes("https://www.hindawi.org/books/13028368.epub")
@@ -218,30 +271,31 @@ tgMode = "ok";
     r.body.includes("من تيليجرام (2 من 42)"));
   check("B1 TG-only title: source as TEXT, no t.me link anywhere",
     r.body.includes("المصدر: kotobkhana") && !r.body.includes("https://t.me/kotobkhana/7559"));
-  check("B1 TG-only title: Get-on-Kindle button present (lib=tg, handle+post)",
-    r.body.includes("/kindle/get?lib=tg")
+  check("B1 TG-only title: email is the PRIMARY button (class btn, lib=tg, handle+post)",
+    r.body.includes('class="btn" href="/api/send-to-kindle?lib=tg')
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
-    && r.body.includes("احصل على الكتاب على جهازك"));
-  check("B1 TG-only title: email still present as a secondary link",
-    r.body.includes("/api/send-to-kindle?lib=tg")
-    && r.body.includes("أرسله بالإيميل (لمن أضاف المرسل من قبل)"));
-  check("B1 TG-only title: no colour emoji except the Get/Read buttons (F2: old Kindle shows tofu)",
-    !r.body.includes("📧") && !r.body.includes("📚") && !r.body.includes("⚑")
-    && r.body.includes("📥") && r.body.includes("📖"));
+    && r.body.includes("أرسله إلى Kindle بالإيميل"));
+  check("B1 TG-only title: NO VISIBLE Get-on-Kindle button without an e-reader UA (WS1b; WS3b: the link is tg-only, hidden outside Telegram)",
+    tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
+    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=tg")
+    && !r.body.includes("نزّل الكتاب على جهاز")
+    && !r.body.includes("جرّب تنزيل الكتاب"));
+  check("B1 TG-only title: no VISIBLE 📥 without an e-reader UA (F2: old Kindle shows tofu) — only the 📖 reader button (the 📥 lives only inside tg-only paragraphs)",
+    !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("📥") && r.body.includes("📖"));
   check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
     r.body.includes("/site/reader/?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
     && r.body.includes("📖 اقرأ أونلاين"));
-  check("B1 TG-only title: Get on Kindle comes first, then Read online, then the email link",
-    r.body.indexOf("احصل على الكتاب على جهازك") !== -1
-    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("اقرأ أونلاين")
-    && r.body.indexOf("اقرأ أونلاين") < r.body.indexOf("أرسله بالإيميل"));
-  check("B1 TG-only title: delivery footer note present (TG cards have Get buttons)",
-    r.body.includes("رابط تنزيل يعمل 10 دقائق"));
-  check("B1 TG-only title: telegram note explains the Get button fetches from Telegram",
-    r.body.includes("يجلب الملف من تيليجرام"));
-  check("B1 TG-only title: no 'Kindle' label anywhere on the page",
-    !r.body.includes("كيندلي") && !r.body.includes("Kindle"));
+  check("B1 TG-only title: email button comes first, then Read online (the Get in between is tg-only, hidden outside Telegram)",
+    r.body.indexOf("أرسله إلى Kindle بالإيميل") !== -1
+    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.indexOf("اقرأ أونلاين")
+    && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
+  check("B1 TG-only title: NO delivery footer note without an e-reader UA (no download button rendered)",
+    !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
+  check("B1 TG-only title: NO telegram download note without an e-reader UA",
+    !r.body.includes("يجلب الملف من تيليجرام"));
+  check("B1 TG-only title: the word Kindle appears only in the email button label (2026-11-16: the button now names Kindle explicitly)",
+    (r.body.match(/Kindle/g) || []).length === 1 && !r.body.includes("كيندلي"));
   check("B1 TG-only title: count line is 2", r.body.includes("وجدنا 2 نتيجة لـ"));
   check("B1 tg-search called with q + limit=10",
     lastTgUrl.includes("/api/tg-search?q=") && lastTgUrl.includes("limit=10"), lastTgUrl);
@@ -273,7 +327,7 @@ tgMode = "ok";
   const r = await getBook("الحب");
   check("B2 combined query: OPDS + Telegram both present",
     r.body.includes("وجدنا 102 نتيجة لـ") && r.body.includes("من تيليجرام"));
-  const opdsPos = r.body.indexOf("احصل على الكتاب على جهازك");
+  const opdsPos = r.body.indexOf("أرسله إلى Kindle بالإيميل");
   const tgPos = r.body.indexOf("من تيليجرام");
   check("B2 combined query: OPDS cards before Telegram section",
     opdsPos !== -1 && tgPos !== -1 && opdsPos < tgPos);
@@ -281,13 +335,17 @@ tgMode = "ok";
     !r.body.includes("تنزيل مباشر")
     && !r.body.includes("drive.google.com/uc?id=")
     && !r.body.includes("hindawi.org/books/"));
-  check("B2 combined query: delivery footer note present (OPDS half shown)",
-    r.body.includes("رابط تنزيل يعمل 10 دقائق"));
+  check("B2 combined query: NO VISIBLE /kindle/get link without an e-reader UA (WS1b; WS3b: tg-only)",
+    tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
+    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="));
+  check("B2 combined query: NO delivery footer note without an e-reader UA (WS1b)",
+    !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("B2 combined query: OPDS EPUB cards have a Read online button",
     r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("اقرأ أونلاين"));
-  check("B2 combined query: Get on Kindle comes first on the OPDS card",
-    r.body.indexOf("احصل على الكتاب على جهازك") !== -1
-    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("اقرأ أونلاين"));
+  check("B2 combined query: email button comes first on the OPDS card, then Read online (the Get in between is tg-only)",
+    r.body.indexOf("أرسله إلى Kindle بالإيميل") !== -1
+    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.indexOf("اقرأ أونلاين")
+    && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
@@ -295,14 +353,12 @@ tgMode = "ok";
     r.body.includes("تجاري") && !r.body.includes("⚑"));
   check("B3 flagged card: NO t.me link for the flagged book",
     !r.body.includes("https://t.me/darkromancenovels/123"));
-  check("B3 flagged card: points at the bot instead",
-    r.body.includes("هذا الكتاب تجاري (عليه علامة)")
-    && r.body.includes("الموقع لا يتيح تحميله أو إرساله")
-    && r.body.includes("قناة النشر")
-    && r.body.includes("@RliBook_bot"));
-  check("B3 flagged card: reason comes BEFORE the bot direction",
+  check("B3 flagged card: points at the bot instead — ONE 'View in bot' button",
+    r.body.includes("View in bot")
+    && r.body.includes("https://t.me/RliBook_bot?start=dl_darkromancenovels_123_any"));
+  check("B3 flagged card: reason comes BEFORE the bot button",
     r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
-    && r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") < r.body.indexOf("قناة النشر"));
+    && r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") < r.body.indexOf("View in bot"));
   check("B3 flagged card: NO send button for the flagged book",
     !r.body.includes("h=darkromancenovels"));
   check("B3 flagged card: NO Read online button for the flagged book",
@@ -330,7 +386,8 @@ for (const mode of ["503", "500", "malformed"]) {
   const r = await getBook("لؤلؤة الحب");
   check("C2 tg-search 503 + OPDS hit: OPDS card intact, 200",
     r.status === 200 && r.body.includes("لؤلؤة الحب")
-    && r.body.includes("/kindle/get?lib=hindawi")
+    && tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
+    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
     && r.body.includes("/api/send-to-kindle?lib=hindawi"));
 }
 {
@@ -380,10 +437,32 @@ console.log("D. fetchTelegramResults unit:");
     && t.coverage.target === 323325 && t.coverage.partial === true,
     JSON.stringify(t.coverage));
   check("D2 flagged flag survives", t.results[1] && t.results[1].flagged === true);
+  check("D2 bot deep link survives passthrough",
+    t.results[1] && t.results[1].bot === "https://t.me/RliBook_bot?start=dl_darkromancenovels_123_any");
+  check("D2 non-flagged result carries bot: null",
+    t.results[0] && t.results[0].bot === null);
   check("D2 embedded cover survives passthrough",
     t.results[0] && t.results[0].cover.startsWith("data:image/gif;base64,"));
   check("D2 post-text description survives passthrough",
     t.results[0] && t.results[0].description.includes("سرقة بنك"));
+}
+{
+  // Workstream 2b: a tampered bot link drops the whole record;
+  // a missing bot field is legitimate (bot: null).
+  tgMode = "badbot";
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  check("D2b tampered bot link drops the record",
+    t.available === true && t.results.length === 2
+    && t.results.every((r) => r.title !== "Tampered Bot Link"),
+    JSON.stringify(t.results.map((r) => r.title)));
+  check("D2b valid bot link survives",
+    t.results.some((r) => r.title === "Good Bot Link"
+      && r.bot === "https://t.me/RliBook_bot?start=dl_testchannel_123_any"));
+  check("D2b missing bot field -> bot null (card falls back to bot home)",
+    t.results.some((r) => r.title === "No Bot Field" && r.bot === null));
+  const r = await getBook("Good Bot Link");
+  check("D2b flagged card without a bot field still renders a View in bot button",
+    r.body.includes("View in bot") && r.body.includes("https://t.me/RliBook_bot"));
 }
 
 // ============ G. Enrichment: cover + rating + description ==========
@@ -502,63 +581,102 @@ console.log("E. OPDS failure behaviour unchanged:");
   globalThis.fetch = saved; // restore the standard mock for later sections
 }
 
-// ============ F. telegramSendUrl / parseTelegramPostUrl unit ========
-console.log("F. Telegram send-URL helpers:");
+// ============ F. Gated-link validation in fetchTelegramResults =====
+// (Workstream H: /api/tg-search returns pre-built gated links; the
+// raw t.me post URL never reaches this page. A tampered reply must
+// not inject an arbitrary link, and a `url` field — even a real one —
+// must never be rendered.)
+console.log("F. Telegram gated-link validation:");
 {
-  check("F1 parse public post", JSON.stringify(parseTelegramPostUrl("https://t.me/kotobkhana/7559"))
-    === JSON.stringify({ handle: "kotobkhana", postId: 7559 }));
-  check("F1 parse lowercases handle",
-    parseTelegramPostUrl("https://t.me/KotobKhana/7559").handle === "kotobkhana");
-  check("F1 parse private-group c/ link -> null",
-    parseTelegramPostUrl("https://t.me/c/123456/789") === null);
-  check("F1 parse non-t.me -> null", parseTelegramPostUrl("https://example.com/x/1") === null);
-  check("F1 parse missing post id -> null", parseTelegramPostUrl("https://t.me/kotobkhana") === null);
-  const u = telegramSendUrl(
-    { title: "Test Book", formats: ["EPUB"], url: "https://t.me/kotobkhana/7559", flagged: false }, "");
-  check("F2 send URL: lib=tg + handle + post + format",
-    u === "/api/send-to-kindle?lib=tg&amp;h=kotobkhana&amp;p=7559&amp;f=epub&amp;t=Test%20Book",
-    u);
-  check("F2 send URL: fp passthrough",
-    telegramSendUrl(
-      { title: "T", formats: ["PDF"], url: "https://t.me/s/1", flagged: false }, "&amp;fp=FP1")
-      .includes("&amp;fp=FP1"));
-  check("F2 flagged -> null",
-    telegramSendUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/s/1", flagged: true }, "") === null);
-  check("F2 MOBI format -> null (email refuses it)",
-    telegramSendUrl({ title: "T", formats: ["MOBI"], url: "https://t.me/s/1", flagged: false }, "") === null);
-  check("F2 no formats -> null",
-    telegramSendUrl({ title: "T", formats: [], url: "https://t.me/s/1", flagged: false }, "") === null);
-  check("F2 private-group link -> null",
-    telegramSendUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }, "") === null);
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") {
+      return jsonRes({ ok: true, q: "x", total: 4, limit: 10, offset: 0, results: [
+        { title: "Good Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: false,
+          get: "/kindle/get?lib=tg&h=s&p=1&f=epub&t=Good%20Book",
+          send: "/api/send-to-kindle?lib=tg&h=s&p=1&f=epub&t=Good%20Book",
+          read: "/site/reader/?lib=tg&h=s&p=1&f=epub&title=Good%20Book" },
+        { title: "Evil Link Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: false,
+          get: "https://evil.example/x", send: null, read: null },
+        { title: "Url Field Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: false,
+          url: "https://t.me/s/2", get: null, send: null, read: null },
+        { title: "Mobi Book", author: "", source: "s", kind: "channel",
+          formats: ["MOBI"], flagged: false, get: null, send: null, read: null },
+      ] });
+    }
+    if (url.pathname === "/api/ratings") {
+      return jsonRes({ ok: true, title: "", rating: null, description: null });
+    }
+    return saved(u);
+  };
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  check("F1 valid gated links pass through",
+    t.results.length === 3
+    && t.results[0].get === "/kindle/get?lib=tg&h=s&p=1&f=epub&t=Good%20Book"
+    && t.results[0].send !== null && t.results[0].read !== null,
+    JSON.stringify(t.results.map((r) => r.title)));
+  check("F1 tampered link drops the whole record (never rendered)",
+    !t.results.some((r) => r.title === "Evil Link Book"));
+  check("F1 a url field is ignored (never a link, never rendered)",
+    t.results.some((r) => r.title === "Url Field Book")
+    && t.results.find((r) => r.title === "Url Field Book").get === null
+    && !("url" in t.results.find((r) => r.title === "Url Field Book")));
+  check("F1 linkless MOBI book still renders (with the bot note, no buttons)",
+    t.results.some((r) => r.title === "Mobi Book"
+      && r.get === null && r.send === null && r.read === null));
+  globalThis.fetch = saved;
+}
+{
+  // Fingerprint rides along on the Get + Send links (a catalog user
+  // never re-types their reader email). The Get link only renders
+  // for an e-reader UA (WS1b), so the Get check uses a Kobo UA.
+  tgMode = "ok";
+  const KOBO_UA_F2 = "Kobo Touch 0390/4.45.23684";
+  const r = await getBook("Everyone in This Bank Is a Thief", "&fp=FP1", KOBO_UA_F2);
+  check("F2 fp passthrough on the Telegram Get link (Kobo UA)",
+    r.body.includes("/kindle/get?lib=tg") && r.body.includes("fp=FP1"),
+    r.body.slice(r.body.indexOf("/kindle/get?lib=tg"), r.body.indexOf("/kindle/get?lib=tg") + 120));
+  check("F2 fp passthrough on the Telegram Send link",
+    r.body.includes("/api/send-to-kindle?lib=tg") && r.body.includes("fp=FP1"));
 }
 
-// ============ H. telegramReaderUrl unit (Block 11b reader) =========
-console.log("H. Telegram reader-URL helper:");
+// ============ H. Reader-link validation (Block 11b reader) =========
+// The reader link comes pre-built from /api/tg-search; a tampered or
+// missing one must never produce a Read button for a book that cannot
+// be read online.
+console.log("H. Telegram reader-link validation:");
 {
-  const u = telegramReaderUrl(
-    { title: "Test Book", formats: ["EPUB"], url: "https://t.me/kotobkhana/7559", flagged: false });
-  check("H1 reader URL: lib=tg + handle + post + f=epub + title",
-    u === "/site/reader/?lib=tg&amp;h=kotobkhana&amp;p=7559&amp;f=epub&amp;title=Test%20Book",
-    u);
-  check("H1 reader URL: EPUB among other formats still works",
-    telegramReaderUrl(
-      { title: "T", formats: ["PDF", "EPUB"], url: "https://t.me/s/1", flagged: false })
-      !== null);
-  check("H1 PDF-only -> null (reader opens EPUB only)",
-    telegramReaderUrl(
-      { title: "T", formats: ["PDF"], url: "https://t.me/s/1", flagged: false }) === null);
-  check("H1 MOBI-only -> null",
-    telegramReaderUrl(
-      { title: "T", formats: ["MOBI"], url: "https://t.me/s/1", flagged: false }) === null);
-  check("H1 no formats -> null",
-    telegramReaderUrl(
-      { title: "T", formats: [], url: "https://t.me/s/1", flagged: false }) === null);
-  check("H1 flagged -> null (flagged books never reach the reader)",
-    telegramReaderUrl(
-      { title: "T", formats: ["EPUB"], url: "https://t.me/s/1", flagged: true }) === null);
-  check("H1 private-group link -> null",
-    telegramReaderUrl(
-      { title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }) === null);
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") {
+      return jsonRes({ ok: true, q: "x", total: 2, limit: 10, offset: 0, results: [
+        { title: "Evil Read Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: false,
+          get: "/kindle/get?lib=tg&h=s&p=3&f=epub&t=Evil%20Read%20Book",
+          send: null, read: "https://evil.example/read" },
+        { title: "Pdf Only Book", author: "", source: "s", kind: "channel",
+          formats: ["PDF"], flagged: false,
+          get: "/kindle/get?lib=tg&h=s&p=4&f=pdf&t=Pdf%20Only%20Book",
+          send: "/api/send-to-kindle?lib=tg&h=s&p=4&f=pdf&t=Pdf%20Only%20Book",
+          read: null },
+      ] });
+    }
+    if (url.pathname === "/api/ratings") {
+      return jsonRes({ ok: true, title: "", rating: null, description: null });
+    }
+    return saved(u);
+  };
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  check("H1 tampered reader link drops the whole record",
+    !t.results.some((r) => r.title === "Evil Read Book"));
+  check("H1 PDF-only book: Get + Send kept, Read null (reader opens EPUB only)",
+    t.results.some((r) => r.title === "Pdf Only Book" && r.get !== null && r.send !== null && r.read === null));
+  globalThis.fetch = saved;
 }
 
 // ============ I. Review fixes (Area 2): query cap, malformed index,
@@ -632,24 +750,47 @@ console.log("I. Review fixes (Area 2):");
 }
 
 // ============ J. Kindle delivery (Get on Kindle) contract =========
-// The primary button is /kindle/get; email is a secondary link;
-// every dynamic response is no-store (design §6.2.5).
+// The PRIMARY button is the email send (/api/send-to-kindle,
+// unlimited); the download button (5/day) renders only for an
+// e-reader UA (WS1b: Kobo/PocketBook/generic get a device label,
+// Kindle keeps "📥 احصل على الكتاب على جهازك"); every dynamic
+// response is no-store (design §6.2.5).
 console.log("J. Kindle delivery contract:");
 tgMode = "throw";
 {
-  const r = await getBook("لؤلؤة الحب");
+  // Kobo UA: the download button is present (device label), the
+  // Get URL carries lib + id + format + title.
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const r = await getBook("لؤلؤة الحب", "", KOBO_UA);
   check("J1 OPDS card: Get URL carries lib + id + format + title",
     r.body.includes("/kindle/get?lib=hindawi")
     && r.body.includes("f=epub") && r.body.includes("t="),
     r.body.slice(r.body.indexOf("/kindle/get"), r.body.indexOf("/kindle/get") + 120));
-  check("J1 OPDS card: Get button is a .btn, email link is a plain link",
-    r.body.includes('class="btn" href="/kindle/get')
-    && !r.body.includes('class="btn" href="/api/send-to-kindle'));
+  check("J1 OPDS card: email button is a .btn and comes first; Kobo download button is a .btn below it",
+    r.body.includes('class="btn" href="/api/send-to-kindle')
+    && r.body.includes('class="btn" href="/kindle/get')
+    // lastIndexOf: the banner at the top of the page quotes the
+    // same label, so the FIRST occurrence is the banner, not the
+    // button — the button is the LAST occurrence.
+    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"));
   check("J1 hit page: cache-control: no-store",
     r.cache === "no-store", r.cache);
-  check("J1 hit page: footer explains the 10-minute link + sendtokindle upload",
+  check("J1 hit page (Kobo): footer explains the 10-minute link + on-device download, NO sendtokindle",
     r.body.includes("رابط تنزيل يعمل 10 دقائق")
-    && r.body.includes("amazon.com/sendtokindle"));
+    && r.body.includes("فينزّل الكتاب مباشرة في مكتبتك")
+    && !r.body.includes("amazon.com/sendtokindle"));
+  check("J1 hit page: footer states email is unlimited + download is 5/day",
+    r.body.includes("بلا حد يومي")
+    && r.body.includes("5 كتب في اليوم"));
+}
+{
+  // No-UA page: the same footer promises email only — no download
+  // sentence, no sendtokindle mention (WS1b).
+  const r = await getBook("لؤلؤة الحب");
+  check("J1b hit page (no UA): footer is email-only",
+    r.body.includes("بلا حد يومي")
+    && !r.body.includes("رابط تنزيل يعمل 10 دقائق")
+    && !r.body.includes("amazon.com/sendtokindle"));
 }
 {
   const r = await getBook("");
@@ -662,25 +803,39 @@ tgMode = "throw";
     r.status === 400 && r.cache === "no-store", "status " + r.status + " cache " + r.cache);
 }
 {
-  // telegramGetUrl unit: same eligibility as telegramSendUrl, but
-  // the delivery page instead of the email endpoint.
-  const u = telegramGetUrl(
-    { title: "Test Book", formats: ["EPUB"], url: "https://t.me/kotobkhana/7559", flagged: false }, "");
-  check("J4 get URL: lib=tg + handle + post + format + title",
-    u === "/kindle/get?lib=tg&amp;h=kotobkhana&amp;p=7559&amp;f=epub&amp;t=Test%20Book",
-    u);
-  check("J4 get URL: fp passthrough",
-    telegramGetUrl(
-      { title: "T", formats: ["PDF"], url: "https://t.me/s/1", flagged: false }, "&amp;fp=FP1")
-      .includes("&amp;fp=FP1"));
-  check("J4 flagged -> null",
-    telegramGetUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/s/1", flagged: true }, "") === null);
-  check("J4 MOBI format -> null (delivery page cannot complete it)",
-    telegramGetUrl({ title: "T", formats: ["MOBI"], url: "https://t.me/s/1", flagged: false }, "") === null);
-  check("J4 no formats -> null",
-    telegramGetUrl({ title: "T", formats: [], url: "https://t.me/s/1", flagged: false }, "") === null);
-  check("J4 private-group link -> null",
-    telegramGetUrl({ title: "T", formats: ["EPUB"], url: "https://t.me/c/1/2", flagged: false }, "") === null);
+  // Get-link eligibility now lives in /api/tg-search (the endpoint
+  // builds the link or nulls it); this page only renders what the
+  // endpoint returns. Pin the contract through fetchTelegramResults:
+  // a valid gated link passes through, a flagged book and a MOBI
+  // book arrive with a null Get link (the delivery page could not
+  // complete them).
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") {
+      return jsonRes({ ok: true, q: "x", total: 3, limit: 10, offset: 0, results: [
+        { title: "Good Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: false,
+          get: "/kindle/get?lib=tg&h=s&p=1&f=epub&t=Good%20Book",
+          send: null, read: null },
+        { title: "Flagged Book", author: "", source: "s", kind: "channel",
+          formats: ["EPUB"], flagged: true, get: null, send: null, read: null },
+        { title: "Mobi Book", author: "", source: "s", kind: "channel",
+          formats: ["MOBI"], flagged: false, get: null, send: null, read: null },
+      ] });
+    }
+    return saved(u);
+  };
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  const good = t.results.find((r) => r.title === "Good Book");
+  check("J4 get link passes through (lib=tg + handle + post + format + title)",
+    good && good.get === "/kindle/get?lib=tg&h=s&p=1&f=epub&t=Good%20Book",
+    good && good.get);
+  check("J4 flagged -> Get null",
+    t.results.find((r) => r.title === "Flagged Book").get === null);
+  check("J4 MOBI format -> Get null (delivery page cannot complete it)",
+    t.results.find((r) => r.title === "Mobi Book").get === null);
+  globalThis.fetch = saved;
 }
 {
   // A flagged Telegram card gets NEITHER a Get button NOR an email
@@ -692,6 +847,344 @@ tgMode = "throw";
     !r.body.includes("/kindle/get?lib=tg&amp;h=darkromancenovels"));
   check("J5 flagged card: NO email link for the flagged book",
     !r.body.includes("/api/send-to-kindle?lib=tg&amp;h=darkromancenovels"));
+}
+
+// ============ K. REGRESSION (1102): index pre-filter =============
+// /book used to JSON.parse() all five search indexes (~3 MB) on
+// every search — 44–53 ms CPU for a no-hit query. The shared loader
+// now skips the parse for a library the needle provably cannot
+// match. Count JSON.parse calls end to end: a no-hit Arabic query
+// must parse NOTHING (tg-search is mocked to throw, so the page is
+// OPDS-only), while a hit query parses only the libraries that
+// contain the needle.
+{
+  const realParse = JSON.parse;
+  let parseCalls = 0;
+  JSON.parse = (...a) => { parseCalls++; return realParse(...a); };
+  try {
+    tgMode = "throw";
+    parseCalls = 0;
+    const noHit = await getBook("كلمةغيرموجودة");
+    check("K no-hit Arabic query: 200 no-match page, ZERO index parses",
+      noHit.status === 200 && noHit.body.includes("لم نجد") && parseCalls === 0,
+      `status=${noHit.status} parseCalls=${parseCalls}`);
+    parseCalls = 0;
+    const hit = await getBook("لؤلؤة الحب");
+    check("K hit query: 200 + the book, parses only the library that contains it",
+      hit.status === 200 && hit.body.includes("لؤلؤة الحب") && parseCalls === 1,
+      `status=${hit.status} parseCalls=${parseCalls}`);
+    parseCalls = 0;
+    const latin = await getBook("love");
+    check("K Latin query: parses (guard trips — case could differ)",
+      latin.status === 200 && parseCalls >= 1, `parseCalls=${parseCalls}`);
+  } finally {
+    JSON.parse = realParse;
+  }
+}
+
+// ================= L. E-reader family banner (Workstream E) =========
+// A Kobo/PocketBook/generic UA gets a one-line banner at the top of
+// the results page; Kindle/desktop get none. WS1b: the banner now
+// names the device download button, and the button itself is gated
+// — Kobo/PocketBook/generic get a device label, Kindle keeps the
+// existing "احصل على الكتاب على جهازك" label, desktop/no-UA get no
+// download button at all.
+console.log("L. E-reader family banner:");
+{
+  tgMode = "throw";
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const POCKETBOOK_UA = "Mozilla/5.0 (Linux like Android; en_US) AppleWebKit/534.34 PocketBook/515 (screen 600x800; FW W515.4.4.540) Mobile";
+  const GENERIC_UA = "eReader/2.0 (compatible)";
+  const KINDLE_UA = "Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+";
+  const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+  const kobo = await getBook("لؤلؤة الحب", "", KOBO_UA);
+  check("L1 Kobo UA: banner present, Kobo download button present (device label), generic label absent",
+    kobo.status === 200 && kobo.body.includes("أنت على جهاز Kobo")
+    && kobo.body.includes("نزّل الكتاب على جهاز Kobo")
+    && kobo.body.includes("/kindle/get?lib=")
+    && !kobo.body.includes("احصل على الكتاب على جهازك"), "status " + kobo.status);
+  const pb = await getBook("لؤلؤة الحب", "", POCKETBOOK_UA);
+  check("L2 PocketBook UA: banner present, PocketBook download button present",
+    pb.status === 200 && pb.body.includes("أنت على جهاز PocketBook")
+    && pb.body.includes("نزّل الكتاب على جهاز PocketBook")
+    && pb.body.includes("/kindle/get?lib="), "status " + pb.status);
+  const gen = await getBook("لؤلؤة الحب", "", GENERIC_UA);
+  check("L3 generic UA: try-direct banner, labelled unverified, try-download button present",
+    gen.status === 200 && gen.body.includes("يبدو أنك على قارئ إلكتروني")
+    && gen.body.includes("لم نتحقق من جهازك تحديدًا")
+    && gen.body.includes("جرّب تنزيل الكتاب على جهازك")
+    && gen.body.includes("/kindle/get?lib="), "status " + gen.status);
+  const kindle = await getBook("لؤلؤة الحب", "", KINDLE_UA);
+  check("L4 Kindle UA: NO new banner (Kindle pages already speak Kindle); existing Get button kept (phone → Send to Kindle, not a direct download)",
+    kindle.status === 200 && !kindle.body.includes("أنت على جهاز Kobo")
+    && !kindle.body.includes("أنت على جهاز PocketBook")
+    && !kindle.body.includes("يبدو أنك على قارئ إلكتروني")
+    && kindle.body.includes("احصل على الكتاب على جهازك")
+    && kindle.body.includes("/kindle/get?lib="), "status " + kindle.status);
+  const desktop = await getBook("لؤلؤة الحب", "", DESKTOP_UA);
+  check("L5 desktop UA: NO banner, NO VISIBLE download button (email + reader only; WS3b: tg-only)",
+    desktop.status === 200 && !desktop.body.includes("أنت على جهاز Kobo")
+    && !desktop.body.includes("يبدو أنك على قارئ إلكتروني")
+    && tgOnlyGetLinks(desktop.body).all === tgOnlyGetLinks(desktop.body).tgOnly
+    && !desktop.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
+    && desktop.body.includes("/api/send-to-kindle?lib="), "status " + desktop.status);
+  const noUa = await getBook("لؤلؤة الحب");
+  check("L6 no UA: NO banner, NO VISIBLE download button (existing behaviour unchanged; WS3b: tg-only)",
+    noUa.status === 200 && !noUa.body.includes("أنت على جهاز Kobo")
+    && tgOnlyGetLinks(noUa.body).all === tgOnlyGetLinks(noUa.body).tgOnly
+    && !noUa.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + noUa.status);
+}
+
+// ============ M. E-reader download button gate (Workstream 1b) ====
+// The download button is a UA gate, not a proof of device: Kobo /
+// PocketBook / generic UAs get a device-labelled button under the
+// email button; Kindle keeps the existing button (its path is
+// phone → Send to Kindle, never a direct download); desktop,
+// mobile, and no-UA visitors get NO VISIBLE download button on
+// the page (every /kindle/get link is inside a tg-only paragraph,
+// hidden outside Telegram — WS3b; no download wording in the
+// footer). A spoofed UA sees the button on purpose (M6) — the
+// gate deters ordinary users; the 10-minute token + 5/day cap +
+// flag denylist in dl-token.js are what bound abuse (those are
+// covered by functions/api/dl-token.test.mjs + get.test.mjs,
+// run unchanged — see the WS1b doc).
+// WS3b helper: count /kindle/get links on a page and how many sit
+// inside a tg-only paragraph. A desktop/mobile page must have every
+// get link tg-only (all === tgOnly) and NO plain visible button.
+function tgOnlyGetLinks(body) {
+  const all = (body.match(/\/kindle\/get\?lib=/g) || []).length;
+  const tgOnly = (body.match(/class="tg-only"><a class="btn" href="\/kindle\/get\?lib=/g) || []).length;
+  return { all, tgOnly };
+}
+
+console.log("M. E-reader download button gate (WS1b):");
+{
+  tgMode = "ok";
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const POCKETBOOK_UA = "Mozilla/5.0 (Linux like Android; en_US) AppleWebKit/534.34 PocketBook/515 (screen 600x800; FW W515.4.4.540) Mobile";
+  const GENERIC_UA = "eReader/2.0 (compatible)";
+  const KINDLE_UA = "Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+";
+  const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+  const IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+  const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
+
+  const kobo = await getBook("Everyone in This Bank Is a Thief", "", KOBO_UA);
+  check("M1 Kobo UA: Kobo button on the Telegram card, under the email button (banner quotes the label too, hence >= 2)",
+    kobo.status === 200
+    && kobo.body.includes("نزّل الكتاب على جهاز Kobo")
+    && (kobo.body.match(/نزّل الكتاب على جهاز Kobo/g) || []).length >= 2
+    // lastIndexOf: the banner quotes the same label, so the button
+    // is the LAST occurrence; it must sit after email, before Read.
+    && kobo.body.indexOf("أرسله إلى Kindle بالإيميل") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo")
+    && kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < kobo.body.indexOf("اقرأ أونلاين"),
+    "status " + kobo.status);
+  check("M1 Kobo UA: Telegram download note + footer download note present, no sendtokindle",
+    kobo.body.includes("يجلب الملف من تيليجرام")
+    && kobo.body.includes("رابط تنزيل يعمل 10 دقائق")
+    && !kobo.body.includes("amazon.com/sendtokindle"));
+  const pb = await getBook("Everyone in This Bank Is a Thief", "", POCKETBOOK_UA);
+  check("M2 PocketBook UA: PocketBook button present, Kobo label absent",
+    pb.status === 200 && pb.body.includes("نزّل الكتاب على جهاز PocketBook")
+    && !pb.body.includes("نزّل الكتاب على جهاز Kobo")
+    && pb.body.includes("رابط تنزيل يعمل 10 دقائق"), "status " + pb.status);
+  const gen = await getBook("Everyone in This Bank Is a Thief", "", GENERIC_UA);
+  check("M3 generic UA: try-download button present, no device name claimed in the button",
+    gen.status === 200 && gen.body.includes("جرّب تنزيل الكتاب على جهازك")
+    && !gen.body.includes("نزّل الكتاب على جهاز Kobo")
+    && !gen.body.includes("نزّل الكتاب على جهاز PocketBook"), "status " + gen.status);
+  const kindle = await getBook("Everyone in This Bank Is a Thief", "", KINDLE_UA);
+  check("M4 Kindle UA: existing Get button kept (phone → Send to Kindle), footer keeps the sendtokindle steps",
+    kindle.status === 200 && kindle.body.includes("احصل على الكتاب على جهازك")
+    && kindle.body.includes("/kindle/get?lib=")
+    && kindle.body.includes("amazon.com/sendtokindle")
+    && !kindle.body.includes("نزّل الكتاب على جهاز"), "status " + kindle.status);
+  const desktop = await getBook("Everyone in This Bank Is a Thief", "", DESKTOP_UA);
+  const dLinks = tgOnlyGetLinks(desktop.body);
+  check("M5 desktop UA: NO VISIBLE download button — every /kindle/get link is inside a tg-only paragraph (hidden outside Telegram)",
+    desktop.status === 200 && dLinks.all > 0 && dLinks.all === dLinks.tgOnly
+    && !desktop.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
+    && !desktop.body.includes("نزّل الكتاب على جهاز")
+    && !desktop.body.includes("جرّب تنزيل الكتاب")
+    && !desktop.body.includes("رابط تنزيل يعمل 10 دقائق")
+    && !desktop.body.includes("يجلب الملف من تيليجرام")
+    && desktop.body.includes("/api/send-to-kindle?lib=")
+    && desktop.body.includes("اقرأ أونلاين"), "status " + desktop.status + " links=" + JSON.stringify(dLinks));
+  const iphone = await getBook("لؤلؤة الحب", "", IPHONE_UA);
+  const iLinks = tgOnlyGetLinks(iphone.body);
+  check("M5b iPhone UA: NO visible download button (every /kindle/get link is tg-only)",
+    iphone.status === 200 && iLinks.all === iLinks.tgOnly
+    && !iphone.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + iphone.status + " links=" + JSON.stringify(iLinks));
+  const android = await getBook("لؤلؤة الحب", "", ANDROID_UA);
+  const aLinks = tgOnlyGetLinks(android.body);
+  check("M5c Android UA: NO visible download button (every /kindle/get link is tg-only)",
+    android.status === 200 && aLinks.all === aLinks.tgOnly
+    && !android.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + android.status + " links=" + JSON.stringify(aLinks));
+  const spoofed = await getBook("لؤلؤة الحب", "", DESKTOP_UA + " Kobo");
+  check("M6 HONEST LIMIT: a desktop UA with 'Kobo' appended DOES see the Kobo button (UA is spoofable — the gate deters, it does not prove)",
+    spoofed.status === 200 && spoofed.body.includes("نزّل الكتاب على جهاز Kobo")
+    && spoofed.body.includes("/kindle/get?lib="), "status " + spoofed.status);
+  check("M6b spoofed UA: no tg-only duplicate (the visible button is the only one)",
+    !spoofed.body.includes("class=\"tg-only\""), "status " + spoofed.status);
+  check("M1b Kobo UA: no tg-only button either (visible button only)",
+    !kobo.body.includes("class=\"tg-only\""));
+  check("M7 Kobo UA: flagged Telegram card still gets NO download button (flag denylist beats the UA gate)",
+    kobo.body.includes("كتاب تجاري تجريبي")
+    && !kobo.body.includes("/kindle/get?lib=tg&amp;h=darkromancenovels")
+    && !kobo.body.includes("/kindle/get?lib=tg&h=darkromancenovels"));
+  check("M8 ereaderDownloadLabel unit: kobo/pocketbook/generic/kindle/desktop",
+    ereaderDownloadLabel("kobo") === "📥 نزّل الكتاب على جهاز Kobo"
+    && ereaderDownloadLabel("pocketbook") === "📥 نزّل الكتاب على جهاز PocketBook"
+    && ereaderDownloadLabel("generic") === "📥 جرّب تنزيل الكتاب على جهازك"
+    && ereaderDownloadLabel("kindle") === "📥 احصل على الكتاب على جهازك"
+    && ereaderDownloadLabel(null) === ""
+    && ereaderDownloadLabel("desktop") === "");
+}
+{
+  // Kobo UA + OPDS MOBI book (mocked index): still NO download
+  // button — format eligibility is unchanged (WS-E §6 known
+  // limitation, NOT fixed here: a Kobo could read MOBI directly,
+  // but the Get button is hidden for MOBI/AZW3 books).
+  tgMode = "throw";
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    const url = new URL(u);
+    if (url.pathname === "/api/tg-search") throw new Error("down");
+    if (url.pathname === "/khazendar/search-index.json") {
+      return new Response(JSON.stringify([
+        { t: "Mobi Test Book", a: "Author", i: "1MPnTH-P5PD3KCwkQd8Swayi2my_RD1Uq", m: "application/x-mobipocket-ebook" },
+      ]), { headers: { "content-type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/search-index.json")) {
+      return new Response("[]", { headers: { "content-type": "application/json" } });
+    }
+    return saved(u);
+  };
+  const r = await getBook("Mobi Test", "", "Kobo Touch 0390/4.45.23684");
+  check("M9 Kobo UA + OPDS MOBI card: NO download button (eligibility unchanged), bot note instead",
+    r.status === 200 && r.body.includes("Mobi Test Book")
+    && !r.body.includes("/kindle/get?lib=khazendar")
+    && r.body.includes("لا يمكن إرسال هذا الكتاب من الموقع"), "status " + r.status);
+  globalThis.fetch = saved;
+}
+
+// --- N. Mini App hub tg-only button (WS3b) ---------------------------
+// Inside Telegram the same /kindle/get button is rendered a second
+// time with class "tg-only" — hidden by default, revealed only when
+// telegram-webapp.js adds html.tg-webapp. It renders ONLY when the
+// UA gate hid the download button, so the two never duplicate.
+console.log("N. Mini App hub tg-only button (WS3b):");
+{
+  tgMode = "ok";
+  const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+  const KINDLE_UA = "Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+";
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const desktop = await getBook("Everyone in This Bank Is a Thief", "", DESKTOP_UA);
+  const dLinks = tgOnlyGetLinks(desktop.body);
+  check("N1 desktop UA: tg-only /kindle/get button present (hidden outside Telegram)",
+    desktop.status === 200 && dLinks.all > 0 && dLinks.all === dLinks.tgOnly,
+    "status " + desktop.status + " links=" + JSON.stringify(dLinks));
+  check("N1 desktop UA: tg-only button uses the generic Kindle-flow label",
+    desktop.body.includes("class=\"tg-only\"><a class=\"btn\" href=\"/kindle/get?lib=")
+    && desktop.body.includes("احصل على الكتاب على جهازك"));
+  check("N1 desktop UA: Mini App loader scripts + tg-only CSS in the head",
+    desktop.body.includes("https://telegram.org/js/telegram-web-app.js")
+    && desktop.body.includes("/site/assets/telegram-webapp.js")
+    && desktop.body.includes(".tg-only{display:none}")
+    && desktop.body.includes("html.tg-webapp .tg-only{display:block}"));
+  const kobo = await getBook("Everyone in This Bank Is a Thief", "", KOBO_UA);
+  check("N2 Kobo UA: visible Kobo button present, NO tg-only button (no duplication)",
+    kobo.status === 200 && kobo.body.includes("نزّل الكتاب على جهاز Kobo")
+    && !kobo.body.includes("class=\"tg-only\""));
+  const kindle = await getBook("Everyone in This Bank Is a Thief", "", KINDLE_UA);
+  check("N3 Kindle UA: visible Get button present, NO tg-only button (no duplication)",
+    kindle.status === 200 && kindle.body.includes("احصل على الكتاب على جهازك")
+    && !kindle.body.includes("class=\"tg-only\""));
+  check("N4 flagged card: no tg-only button for the flagged book",
+    kobo.body.includes("كتاب تجاري تجريبي")
+    && !kobo.body.includes("class=\"tg-only\"><a class=\"btn\" href=\"/kindle/get?lib=tg&amp;h=darkromancenovels"));
+}
+
+// Workstream 3: file size (from the index) + page count (no source
+// today) render UNDER the format line, only when known — never an
+// invented number, never "?" or "0", never a placeholder.
+console.log("O. Book metadata (Workstream 3):");
+{
+  // Unit: formatFileSize.
+  check("O1 formatFileSize passes the indexer text through",
+    formatFileSize("2.7 MB") === "2.7 MB" && formatFileSize("888.9 KB") === "888.9 KB"
+    && formatFileSize("23 MB") === "23 MB" && formatFileSize("512 B") === "512 B");
+  check("O2 formatFileSize normalizes comma decimals + missing space + lowercase unit",
+    formatFileSize("12,3 MB") === "12.3 MB" && formatFileSize("2.7MB") === "2.7 MB"
+    && formatFileSize("2.7 mb") === "2.7 MB");
+  check("O3 formatFileSize formats a byte count (one decimal)",
+    formatFileSize(2831155) === "2.7 MB" && formatFileSize(512) === "512 B"
+    && formatFileSize(1536) === "1.5 KB");
+  check("O4 formatFileSize drops unknown/invalid sizes (never a fake number)",
+    formatFileSize("") === null && formatFileSize("junk") === null
+    && formatFileSize("0") === null && formatFileSize(null) === null
+    && formatFileSize(undefined) === null && formatFileSize(-5) === null
+    && formatFileSize("12.3 TB") === null && formatFileSize("12.3 XB") === null);
+  // Unit: validatePages.
+  check("O5 validatePages keeps a positive integer, drops the rest",
+    validatePages(250) === 250 && validatePages("132") === 132
+    && validatePages(0) === null && validatePages(-3) === null
+    && validatePages(12.5) === null && validatePages("junk") === null
+    && validatePages(null) === null && validatePages(undefined) === null);
+  // Unit: formatBookMeta — the four display cases.
+  check("O6 formatBookMeta both values",
+    formatBookMeta({ size: "2.7 MB", pages: 250 }) === "الحجم: 2.7 MB · عدد الصفحات: 250");
+  check("O7 formatBookMeta size only",
+    formatBookMeta({ size: "888.9 KB" }) === "الحجم: 888.9 KB");
+  check("O8 formatBookMeta pages only",
+    formatBookMeta({ pages: 132 }) === "عدد الصفحات: 132");
+  check("O9 formatBookMeta neither -> empty (caller renders no line)",
+    formatBookMeta({}) === "" && formatBookMeta({ size: "junk", pages: 0 }) === ""
+    && formatBookMeta() === "");
+  // Unit: fetchTelegramResults passes size/pages through, drops junk.
+  tgMode = "okMeta";
+  const tg = await fetchTelegramResults("https://rlibook.tech", "WS3");
+  check("O10 fetchTelegramResults: 5 results parsed",
+    tg.available === true && tg.results.length === 5, "got " + tg.results.length);
+  const byTitle = Object.fromEntries(tg.results.map((r) => [r.title, r]));
+  check("O11 fetchTelegramResults: both values kept",
+    byTitle["WS3 Meta Both"].size === "2.7 MB" && byTitle["WS3 Meta Both"].pages === 250);
+  check("O12 fetchTelegramResults: size-only kept, pages absent",
+    byTitle["WS3 Meta Size"].size === "888.9 KB" && !("pages" in byTitle["WS3 Meta Size"]));
+  check("O13 fetchTelegramResults: pages-only kept, size absent",
+    byTitle["WS3 Meta Pages"].pages === 132 && !("size" in byTitle["WS3 Meta Pages"]));
+  check("O14 fetchTelegramResults: neither -> no keys at all",
+    !("size" in byTitle["WS3 Meta Neither"]) && !("pages" in byTitle["WS3 Meta Neither"]));
+  check("O15 fetchTelegramResults: junk size + pages 0 dropped, never shown",
+    !("size" in byTitle["WS3 Meta Junk"]) && !("pages" in byTitle["WS3 Meta Junk"]));
+  // End-to-end: the rendered page.
+  const r = await getBook("WS3");
+  check("O16 meta E2E: 200 + all five TG cards",
+    r.status === 200 && ["WS3 Meta Both", "WS3 Meta Size", "WS3 Meta Pages",
+      "WS3 Meta Neither", "WS3 Meta Junk"].every((t) => r.body.includes(t)),
+    "status " + r.status);
+  check("O17 meta E2E: both-values line under the format line",
+    r.body.includes("الحجم: 2.7 MB · عدد الصفحات: 250"));
+  check("O18 meta E2E: size-only and pages-only lines present",
+    r.body.includes("الحجم: 888.9 KB") && r.body.includes("عدد الصفحات: 132"));
+  check("O19 meta E2E: exactly 3 meta lines (neither + junk get none)",
+    (r.body.match(/<p class=\"meta\">/g) || []).length === 3,
+    "meta lines: " + ((r.body.match(/<p class=\"meta\">/g) || []).length));
+  check("O20 meta E2E: labels appear exactly twice each (no duplicates, no leakage)",
+    (r.body.match(/الحجم:/g) || []).length === 2
+    && (r.body.match(/عدد الصفحات:/g) || []).length === 2);
+  check("O21 meta E2E: no placeholder, no invented number anywhere",
+    !r.body.includes("؟") && !r.body.includes("حجم غير معروف")
+    && !r.body.includes("عدد الصفحات: 0") && !r.body.includes("junk"));
+  check("O22 meta E2E: meta line sits under the format line, before the source line",
+    r.body.indexOf("الحجم: 2.7 MB") > r.body.indexOf("WS3 Meta Both")
+    && r.body.indexOf("الحجم: 2.7 MB") < r.body.indexOf("المصدر: kotobkhana"));
+  // OPDS cards: no size/pages in their indexes -> no meta line at all.
+  tgMode = "throw";
+  const rOpds = await getBook("لؤلؤة الحب");
+  check("O23 OPDS card: no metadata line (indexes carry no size/pages)",
+    rOpds.status === 200 && !rOpds.body.includes('<p class="meta">')
+    && !rOpds.body.includes("الحجم:") && !rOpds.body.includes("عدد الصفحات:"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

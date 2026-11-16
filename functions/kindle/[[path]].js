@@ -1,8 +1,10 @@
 // Cloudflare Pages Function: /kindle/* proxy to the RliBook bot Worker,
 // PLUS the local Kindle entry page at the bare /kindle and /kindle/
-// paths (kindleEntryPage — Kindle layout when the UA contains an
-// e-reader substring, standard layout + note otherwise; never a
-// block page). Route: GET /kindle/* (functions/kindle/[[path]].js —
+// paths (kindleEntryPage — a per-family layout: Kindle, Kobo,
+// PocketBook, or generic e-reader banner + steps when the UA
+// contains an e-reader substring, standard layout + note otherwise;
+// never a block page). Per-family contract:
+// docs/ereader-detection.md. Route: GET /kindle/* (functions/kindle/[[path]].js —
 // catch-all under /kindle/, so /kindle, /kindle/, /kindle/menu,
 // /kindle/search… all land here).
 //
@@ -38,17 +40,24 @@ const PUBLIC_ORIGIN = "https://rlibook.tech";
 const WORKER_KINDLE = WORKER_BASE + "/kindle/";
 const PUBLIC_KINDLE = PUBLIC_ORIGIN + "/kindle/";
 
-// E-reader detection (Kindle delivery, design §3.1): the User-Agent
-// contains one of these substrings (case-insensitive). Only
-// "Kindle" is the verified-required one; the others are best-effort
-// conveniences and are never presented as verified. This is a
-// SUBSTRING match on purpose — UA strings vary by firmware and by
-// desktop mode, and an exact match would silently exclude real
-// Kindles. It is also trivially spoofable (any desktop browser can
-// send a Kindle UA), so it gates only the ENTRY-PAGE LAYOUT, never
+// E-reader detection (Kindle delivery, design §3.1; per-family
+// behaviour: docs/ereader-detection.md). The User-Agent contains
+// one of these substrings (case-insensitive). Only "Kindle" is the
+// verified-required one; "Kobo" and "PocketBook" are verified by
+// independent sources (their browsers download EPUBs directly);
+// "eReader" and "EBRD" are unverified catch-all tokens — no device
+// was found that sends them — and map to the "generic" family, never
+// to a named device. This is a SUBSTRING match on purpose — UA
+// strings vary by firmware and by desktop mode, and an exact match
+// would silently exclude real devices. It is also trivially
+// spoofable (any desktop browser can send a Kindle UA), so it gates
+// only the ENTRY-PAGE LAYOUT and the delivery instructions, never
 // a download: see the note on isEReaderUA's limits in the docs.
+// Tolino and Boox were added by the WS-I compatibility audit
+// (2026-11-16): their users previously got the standard layout even
+// though the page already had a Kindle layout for other readers.
 // Exported for tests (functions/kindle/ua.test.mjs).
-export const EREADER_UA_SUBSTRINGS = ["Kindle", "Kobo", "eReader", "EBRD", "PocketBook"];
+export const EREADER_UA_SUBSTRINGS = ["Kindle", "Kobo", "eReader", "EBRD", "PocketBook", "Tolino", "Boox"];
 
 export function isEReaderUA(ua) {
   const s = (ua || "").toLowerCase();
@@ -58,22 +67,144 @@ export function isEReaderUA(ua) {
   return false;
 }
 
+// Per-family behaviour table (docs/ereader-detection.md §2 — the
+// strict contract; every field is labelled verified / assumed /
+// unverified there). Fields:
+//   delivery: "phone" (Kindle — the file goes via a phone/computer
+//     + Send to Kindle), "direct" (tap the short link on the device
+//     itself), "direct-try" (generic — try direct, unverified).
+//   directDownload: false / true / "try" (generic — attempt, not a
+//     promise).
+//   ourEmailLinkWorks: only Kindle — the /api/send-to-kindle link
+//     sends to a Kindle address. Kobo has no email service at all;
+//     PocketBook has its own Send-to-PocketBook address, which we
+//     never ask for and never send to.
+//   usb: Kindle false — Amazon removed "Download & transfer via
+//     USB" 2025-02-26. Kobo/PocketBook true.
+//   koreader: Kindle "jailbreak-only"; Kobo/PocketBook "native"
+//     (no jailbreak); generic "unknown".
+//   nativeFormats: formats the device opens natively (null where
+//     not applicable — Kindle goes through Amazon conversion,
+//     generic is unknown). Kobo: EPUB/PDF/MOBI/TXT (not DOC/DOCX,
+//     not AZW3). PocketBook: EPUB/PDF/MOBI/AZW3/DOC/DOCX/TXT.
+export const EREADER_FAMILIES = {
+  kindle: {
+    id: "kindle", label: "Kindle", delivery: "phone",
+    directDownload: false, ourEmailLinkWorks: true,
+    hasOwnEmailService: true, usb: false, koreader: "jailbreak-only",
+    nativeFormats: null,
+  },
+  kobo: {
+    id: "kobo", label: "Kobo", delivery: "direct",
+    directDownload: true, ourEmailLinkWorks: false,
+    hasOwnEmailService: false, usb: true, koreader: "native",
+    nativeFormats: ["epub", "pdf", "mobi", "txt"],
+  },
+  pocketbook: {
+    id: "pocketbook", label: "PocketBook", delivery: "direct",
+    directDownload: true, ourEmailLinkWorks: false,
+    hasOwnEmailService: true, usb: true, koreader: "native",
+    nativeFormats: ["epub", "pdf", "mobi", "azw3", "doc", "docx", "txt"],
+  },
+  generic: {
+    id: "generic", label: "قارئ إلكتروني", delivery: "direct-try",
+    directDownload: "try", ourEmailLinkWorks: false,
+    hasOwnEmailService: false, usb: true, koreader: "unknown",
+    nativeFormats: null,
+  },
+};
+
+// Which e-reader family sent this UA, or null (not an e-reader).
+// Priority order Kindle → Kobo → PocketBook → generic: no real
+// device UA contains two family tokens, so the order only matters
+// for spoofed UAs. "eReader" and "EBRD" both map to "generic" —
+// neither is a verified device (docs/ereader-detection.md §2.4–
+// §2.5); the page never prints "EBRD" to the user. Consistent
+// with isEReaderUA: family !== null exactly when isEReaderUA is
+// true (asserted in ua.test.mjs §5). Exported for tests and for
+// functions/kindle/get.js + functions/book.js.
+export function detectEReaderFamily(ua) {
+  const s = (ua || "").toLowerCase();
+  if (s.includes("kindle")) return "kindle";
+  if (s.includes("kobo")) return "kobo";
+  if (s.includes("pocketbook")) return "pocketbook";
+  if (s.includes("ereader") || s.includes("ebrd")) return "generic";
+  return null;
+}
+
 // The Kindle entry page, served LOCALLY for the bare /kindle and
 // /kindle/ paths (no Worker round-trip). Plain HTML, no JavaScript,
 // `cache-control: no-store`: large buttons, a search form (GET
 // /book — the same search the site already serves), and the short
-// version of how to get a book on the device. A Kindle UA gets the
-// Kindle layout + banner; any other visitor gets the same content
-// in the standard layout with a note — never a block page (the
+// version of how to get a book on the device. The banner + steps
+// depend on the detected family (docs/ereader-detection.md §4.1):
+// Kindle gets the phone → Send-to-Kindle steps (its browser cannot
+// download EPUBs); Kobo/PocketBook get direct-download steps (their
+// browsers save the file into the library); generic gets a labelled
+// try-direct version; any other visitor gets the same content in
+// the standard layout with a note — never a block page (the
 // delivery page is reachable without the Kindle UA by design).
 // Exported for tests.
 export function kindleEntryPage(request) {
   const ua = request.headers.get("user-agent") || "";
-  const isKindle = isEReaderUA(ua);
-  const banner = isKindle
-    ? "<p><b>أنت على جهاز Kindle — هذه الصفحة مخصصة لجهازك.</b></p>\n"
-    : "<p class=\"note\">هذه الصفحة مخصصة لأجهزة Kindle والقارئات الإلكترونية — "
+  const family = detectEReaderFamily(ua);
+  const fam = family ? EREADER_FAMILIES[family] : null;
+  let banner;
+  let steps;
+  if (family === "kindle") {
+    banner = "<p><b>أنت على جهاز Kindle — هذه الصفحة مخصصة لجهازك.</b></p>\n";
+    steps = "<ol>\n"
+      + "<li>ابحث عن الكتاب واضغط «احصل على الكتاب على جهازك».</li>\n"
+      + "<li>افتح الرابط القصير من هاتفك أو حاسوبك ونزّل الملف (10 دقائق).</li>\n"
+      + "<li>ارفع الملف في amazon.com/sendtokindle واختر جهازك.</li>\n"
+      + "<li>افتح الواي فاي — سيظهر الكتاب في مكتبتك خلال دقائق.</li>\n"
+      + "</ol>\n"
+      + "<p class=\"note\">متصفح Kindle لا ينزّل ملفات EPUB مباشرة — لهذا ننزّلها على الهاتف أولًا. "
+      + "أو اقرأ الكتاب الآن في المتصفح من زر «اقرأ أونلاين» في صفحة الكتاب.</p>\n";
+  } else if (family === "kobo" || family === "pocketbook") {
+    // Direct download on the device (verified: Kobo browser saves
+    // the file into the library; PocketBook browser downloads
+    // directly — touch-screen models). No Send-to-Kindle step and
+    // no email step: both are Kindle-only (Kobo has no email
+    // service at all; PocketBook's own address is the user's, not
+    // ours).
+    banner = "<p><b>أنت على جهاز " + fam.label
+      + " — هذه الصفحة مخصصة لجهازك، ويمكنك تنزيل الكتب مباشرة عليه.</b></p>\n";
+    steps = "<ol>\n"
+      + "<li>ابحث عن الكتاب واضغط «نزّل الكتاب على جهاز " + fam.label + "».</li>\n"
+      + "<li>اضغط الرابط القصير هنا على جهازك نفسه — سينزّل الكتاب مباشرة في مكتبتك.</li>\n"
+      + "<li>إن لم ينزّل المتصفح الملف، افتح الرابط نفسه من هاتفك أو حاسوبك وانقل الملف عبر USB.</li>\n"
+      + "</ol>\n"
+      + (family === "kobo"
+        ? "<p class=\"note\">متصفح Kobo موجود في: الإعدادات ← الميزات التجريبية (Beta features) ← متصفح الويب. "
+          + "لا يوجد إيميل لإرسال الكتب إلى Kobo — التنزيل المباشر أو USB هما الطريقتان.</p>\n"
+        : "<p class=\"note\">التنزيل المباشر من المتصفح موثّق لأجهزة PocketBook ذات الشاشة اللمسية — "
+          + "إن كان جهازك بلا لمس، انقل الملف عبر USB.</p>\n")
+      + "<p class=\"note\">أو اقرأ الكتاب الآن في المتصفح من زر «اقرأ أونلاين» في صفحة الكتاب.</p>\n";
+  } else if (family === "generic") {
+    // Unverified token (eReader/EBRD): say so on the page, offer
+    // a direct-download attempt first, USB as the fallback.
+    banner = "<p><b>يبدو أنك على قارئ إلكتروني.</b></p>\n"
+      + "<p class=\"note\">لم نتحقق من جهازك تحديدًا — جرّب التنزيل المباشر أولًا، وإن لم يعمل فانقل الملف عبر USB.</p>\n";
+    steps = "<ol>\n"
+      + "<li>ابحث عن الكتاب واضغط «جرّب تنزيل الكتاب على جهازك».</li>\n"
+      + "<li>اضغط الرابط القصير هنا على جهازك نفسه — كثير من القارئات تنزّل الكتاب مباشرة في المكتبة.</li>\n"
+      + "<li>إن لم ينزّل المتصفح الملف، افتح الرابط نفسه من هاتفك أو حاسوبك وانقل الملف عبر USB.</li>\n"
+      + "</ol>\n"
+      + "<p class=\"note\">أو اقرأ الكتاب الآن في المتصفح من زر «اقرأ أونلاين» في صفحة الكتاب.</p>\n";
+  } else {
+    banner = "<p class=\"note\">هذه الصفحة مخصصة لأجهزة Kindle والقارئات الإلكترونية — "
       + "يمكنك البحث والقراءة من هنا أيضًا، والتنزيل يتم عبر صفحة «احصل على الكتاب».</p>\n";
+    steps = "<ol>\n"
+      + "<li>ابحث عن الكتاب واضغط «احصل على الكتاب على جهازك».</li>\n"
+      + "<li>افتح الرابط القصير من هاتفك أو حاسوبك ونزّل الملف (10 دقائق).</li>\n"
+      + "<li>ارفع الملف في amazon.com/sendtokindle واختر جهازك.</li>\n"
+      + "<li>افتح الواي فاي — سيظهر الكتاب في مكتبتك خلال دقائق.</li>\n"
+      + "</ol>\n"
+      + "<p class=\"note\">ليس لديك Kindle؟ بعد الخطوة 2 افتح الملف في أي تطبيق قراءة على هاتفك أو حاسوبك — وصل الكتاب إليك، ولا حاجة للخطوتين 3 و 4.</p>\n"
+      + "<p class=\"note\">متصفح Kindle لا ينزّل ملفات EPUB مباشرة — لهذا ننزّلها على الهاتف أولًا. "
+      + "أو اقرأ الكتاب الآن في المتصفح من زر «اقرأ أونلاين» في صفحة الكتاب.</p>\n";
+  }
   const body = "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
     + "<meta charset=\"utf-8\">\n"
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
@@ -92,14 +223,7 @@ export function kindleEntryPage(request) {
     + "<input type=\"submit\" value=\"بحث\"></form>\n"
     + "<p><a class=\"btn\" href=\"/book\">ابحث في المكتبات</a></p>\n"
     + "<h2>كيف تحصل على كتاب على جهازك؟</h2>\n"
-    + "<ol>\n"
-    + "<li>ابحث عن الكتاب واضغط «احصل على الكتاب على جهازك».</li>\n"
-    + "<li>افتح الرابط القصير من هاتفك أو حاسوبك ونزّل الملف (10 دقائق).</li>\n"
-    + "<li>ارفع الملف في amazon.com/sendtokindle واختر جهازك.</li>\n"
-    + "<li>افتح الواي فاي — سيظهر الكتاب في مكتبتك خلال دقائق.</li>\n"
-    + "</ol>\n"
-    + "<p class=\"note\">متصفح Kindle لا ينزّل ملفات EPUB مباشرة — لهذا ننزّلها على الهاتف أولًا. "
-    + "أو اقرأ الكتاب الآن في المتصفح من زر «اقرأ أونلاين» في صفحة الكتاب.</p>\n"
+    + steps
     + "<p><a href=\"/\">← الرئيسية</a> · "
     + "<a href=\"/telegram/\">فهرس تيليجرام</a> · "
     + "<a href=\"https://t.me/RliBook_bot\">البوت @RliBook_bot</a></p>\n"

@@ -21,10 +21,15 @@
 //      Kindle UA, standard layout + note otherwise — never a block
 //      page), WITHOUT calling the Worker; proxied HTML responses
 //      carry cache-control: no-store.
+//   8. NEW (Workstream E, e-reader families): the entry page is
+//      per-family — Kobo/PocketBook get a direct-download banner +
+//      steps (no amazon.com/sendtokindle link: Kindle-only),
+//      generic (eReader/EBRD) gets a labelled try-direct banner
+//      that never prints "EBRD", desktop stays the standard note.
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production Worker, no deploy.
 
-import { onRequest, rewriteKindleLinks, rewriteLocation, kindleEntryPage, isEReaderUA } from "./[[path]].js";
+import { onRequest, rewriteKindleLinks, rewriteLocation, kindleEntryPage, isEReaderUA, detectEReaderFamily } from "./[[path]].js";
 
 let pass = 0;
 let fail = 0;
@@ -223,6 +228,10 @@ async function call(method, path, ua) {
   check("7g desktop UA: same entry page, standard layout + note, no banner",
     res2.status === 200 && body2.includes("مخصصة لأجهزة Kindle")
     && !body2.includes("أنت على جهاز Kindle"));
+  check("7g2 desktop UA: non-Kindle note says step 2 is the end (WS-I 2026-11-16)",
+    body2.includes("ليس لديك Kindle؟") && body2.includes("ولا حاجة للخطوتين 3 و 4"));
+  check("7g3 Kindle UA: no non-Kindle note",
+    !body.includes("ليس لديك Kindle؟"));
   check("7h desktop UA: still no Worker call, still no-store",
     res2.headers.get("cache-control") === "no-store");
   const res3 = await call("POST", "/kindle", KINDLE_UA);
@@ -230,6 +239,55 @@ async function call(method, path, ua) {
     res3.status === 405, `status=${res3.status}`);
   check("7j kindleEntryPage + isEReaderUA are exported",
     typeof kindleEntryPage === "function" && typeof isEReaderUA === "function");
+}
+
+// 8. Entry page per family (Workstream E): Kobo/PocketBook get a
+// direct-download banner + steps (their browsers save the file);
+// generic (eReader/EBRD) gets a labelled try-direct banner that
+// never prints "EBRD" (not a device); none of them shows the
+// Kindle-only amazon.com/sendtokindle step.
+{
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const POCKETBOOK_UA = "Mozilla/5.0 (Linux like Android; en_US) AppleWebKit/534.34 PocketBook/515 (screen 600x800; FW W515.4.4.540) Mobile";
+  const EREADER_UA = "eReader/2.0 (compatible)";
+  const EBRD_UA = "Mozilla/5.0 EBRD/1.0";
+  lastCall = null;
+  const koboRes = await call("GET", "/kindle", KOBO_UA);
+  const koboBody = await koboRes.text();
+  check("8a Kobo UA: entry page served locally (Worker not called)",
+    lastCall === null && koboRes.status === 200, `status=${koboRes.status}`);
+  check("8b Kobo UA: Kobo banner shown, direct-download steps, no Kindle banner",
+    koboBody.includes("أنت على جهاز Kobo") && koboBody.includes("مباشرة")
+    && !koboBody.includes("أنت على جهاز Kindle"));
+  check("8c Kobo UA: NO amazon.com/sendtokindle step (Kindle-only)",
+    !koboBody.includes("amazon.com/sendtokindle"));
+  check("8d Kobo UA: browser location note (Beta features) + no email promise",
+    koboBody.includes("Beta features") && !koboBody.includes("أرسله بالإيميل"));
+  check("8e Kobo UA: search form present, no-store, no <script>",
+    koboBody.includes('<form method="get" action="/book">')
+    && koboRes.headers.get("cache-control") === "no-store"
+    && !koboBody.toLowerCase().includes("<script"));
+  const pbRes = await call("GET", "/kindle/", POCKETBOOK_UA);
+  const pbBody = await pbRes.text();
+  check("8f PocketBook UA: PocketBook banner + direct-download steps, no sendtokindle",
+    pbBody.includes("أنت على جهاز PocketBook") && pbBody.includes("مباشرة")
+    && !pbBody.includes("amazon.com/sendtokindle"));
+  check("8g PocketBook UA: touch-screen note present",
+    pbBody.includes("الشاشة اللمسية"));
+  const genRes = await call("GET", "/kindle", EREADER_UA);
+  const genBody = await genRes.text();
+  check("8h generic (eReader) UA: try-direct banner, labelled unverified, no sendtokindle",
+    genBody.includes("يبدو أنك على قارئ إلكتروني") && genBody.includes("لم نتحقق من جهازك تحديدًا")
+    && !genBody.includes("amazon.com/sendtokindle"));
+  const ebrdRes = await call("GET", "/kindle", EBRD_UA);
+  const ebrdBody = await ebrdRes.text();
+  check("8i EBRD UA: generic flow, and the page never prints 'EBRD'",
+    ebrdBody.includes("يبدو أنك على قارئ إلكتروني") && !ebrdBody.includes("EBRD"));
+  check("8j detectEReaderFamily is exported",
+    typeof detectEReaderFamily === "function"
+    && detectEReaderFamily(KOBO_UA) === "kobo"
+    && detectEReaderFamily(POCKETBOOK_UA) === "pocketbook"
+    && detectEReaderFamily(EBRD_UA) === "generic");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

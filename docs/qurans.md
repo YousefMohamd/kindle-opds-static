@@ -32,10 +32,25 @@
   no calligraphic surah headers, single waqf marker type, dictionaries
   keyed to Hafs so lookups misalign in 50 surahs; no bilingual/interactive/
   WBW for Warsh yet).
-- **Tafsir: 20 tafsirs in 6 languages** via the **KOReader Quran Helper
-  plugin** (long-press an ayah number marker; each tafsir is a separate
-  StarDict dictionary in `koreader/data/dict/`; install as many as you
-  like — **the user chooses the tafsir they like**):
+- **Tafsir: 20 tafsirs in 6 languages, EMBEDDED in the Quran file
+  (WS1 2026-11-16, supersedes the old plugin route):** each tafsir is
+  built into a Quran EPUB as endnotes (one note per commentary chunk;
+  every ayah number links to its note, EPUB3 noteref/footnote). The
+  user downloads ONE file — «المصحف + التفسير» — opens it, taps any
+  ayah number, and reads the tafsir. No plugin, no ZIP, no install
+  steps; works on a stock Kindle, in KOReader, or any EPUB reader.
+  The 19 combined files (all tafsirs except Kurdish) are prebuilt
+  once, offline, by `tools/build-quran-tafsir.py` (Python stdlib
+  only: parses the StarDict set, injects the notes, verifies every
+  link) and published as GitHub Release assets on the RliBook repo
+  under tag `quran-tafsir-v1` — nothing hosted on our server.
+  The old route still exists for KOReader users who already use it:
+  each tafsir is ALSO a StarDict dictionary (`koreader/data/dict/`,
+  read by the Quran Helper plugin on long-press) — but it is no
+  longer what the bot or the page recommends. **The user chooses
+  the tafsir they like**; Warsh has no combined build (its ayah
+  numbering differs from the Hafs numbering the tafsir keys use),
+  and Kurdish has none (no Kurdish Quran edition in the catalogue):
   - Arabic (7): al-Muyassar, al-Sa'di, al-Baghawi, Ibn Kathir, al-Wasit
     (Tantawi), al-Qurtubi, al-Tabari
   - English (3): Tazkirul Quran (Wahiduddin Khan), Ibn Kathir (Abridged),
@@ -48,6 +63,12 @@
     from `raw.githubusercontent.com/zeeyado/quran-ebook/main/release/
     quran_tafsir_<name>_v1.1.zip` (verified 200). Sizes taken from the
     upstream README table.
+  - Two upstream facts the build had to handle: an abridged tafsir may
+    not cover every ayah — Ibn Kathir (English) has 6,231/6,236 (no
+    Al-Fil) and Tazkirul Quran 5,784/6,236 — uncovered ayahs simply
+    get no link; and the fragments are HTML, not XHTML (bare `<br>`,
+    unquoted attributes, a custom `<quran ref=/S/A>` cross-reference
+    element, one `<b<` typo) — the builder normalises them.
 - **KOReader plugin extras:** per-instance word dictionary, grammar
   dictionaries (WBW + syntax + i'rab), surah overviews, juz'/surah name
   in the status bar.
@@ -82,27 +103,38 @@ features most proprietary readers mishandle.
   against the real v0.10.0 asset list at generation time; the generator
   (`/tmp/gen-qurans.mjs`, kept outside the repo) refuses to emit a missing
   file. Filters: `?lang=&format=&narration=`; `?tafsir=<lang>` returns
-  tafsirs only. The full 42-language list lives only at the upstream
-  Releases — we do not mirror it.
+  tafsirs only. Every tafsir entry carries `combined` (the Quran EPUB
+  with that tafsir embedded: file + URL on the RliBook release
+  `quran-tafsir-v1`, or null for Kurdish). The full 42-language list
+  lives only at the upstream Releases — we do not mirror it.
 - OPDS (`functions/opds/qurans.js`): acquisition feed at `/opds/qurans`
-  (49 Quran entries + 20 tafsir entries; acquisition links point at the
-  upstream release EPUBs / raw tafsir zips). `?lang=` filters. The exact
+  (49 Quran entries + 20 tafsir entries + 19 combined Quran + tafsir
+  entries; acquisition links point at the upstream release EPUBs / raw
+  tafsir zips / RliBook combined EPUBs). `?lang=` filters. The exact
   file route takes precedence over the `functions/opds/[[fp]].js` catch-all
   in Pages routing — verify live after deploy.
-- Bot (NOT built here — v4.8.43 follow-up, see blocks-open-questions.md):
-  button "اطلب المصحف الالكتروني" under "Add or send a book", only after
-  the user links their email; questionnaire (language → format → narration
-  → tafsir); the bot fetches the chosen EPUB from the GitHub Release at
-  send time and sends it by email (Kindle/PocketBook) or gives USB steps.
+- Bot (v4.8.43+; WS1 2026-11-16): button "اطلب المصحف الالكتروني" under
+  "Add or send a book"; questionnaire (language → format → narration
+  → tafsir → delivery); a picked tafsir delivers the COMBINED Quran +
+  tafsir EPUB (one file, tafsir inside) by email (Kindle/PocketBook)
+  or as a Telegram document for USB. Warsh offers "no tafsir" only
+  (no combined Warsh build). If the combined file cannot be fetched,
+  the plain Quran goes out with the combined download link.
 
 ## Files (Block 13)
 
 - `site/qurans/index.html` — the Qurans page (brand colours, Arabic RTL,
   static tables generated from the verified catalogue + JS filters).
+  Each tafsir links its combined «المصحف + التفسير» EPUB first, then
+  its StarDict ZIP. The JS version check rewrites ONLY upstream
+  zeeyado release links — never the combined RliBook release links.
 - `functions/api/qurans.js` + `functions/api/qurans-data.js` — JSON catalogue.
-- `functions/api/qurans.test.mjs` — 17 checks.
+- `functions/api/qurans.test.mjs` — 22 checks.
 - `functions/opds/qurans.js` — OPDS acquisition feed.
-- `functions/opds/qurans.test.mjs` — 10 checks.
+- `functions/opds/qurans.test.mjs` — 12 checks.
+- `tools/build-quran-tafsir.py` — builds the 51 combined Quran + tafsir
+  EPUBs (Hafs only; every edition × tafsir pair) + `manifest.json`
+  (file, size, sha256, release URL) for the `quran-tafsir-v1` release.
 - `docs/qurans.md` — this file.
 
 ## Open items (also in blocks-open-questions.md)

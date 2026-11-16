@@ -6,6 +6,8 @@
 // Download links are the Hindawi EPUB links, https://www.hindawi.org/books/<booknr>.epub,
 // the same pattern as the static catalog. No Drive links here.
 // No Drive write, no Mac server involved.
+import { loadSearchIndex } from "../../opds/search.js";
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   if (context.request.method !== "GET") {
@@ -17,20 +19,17 @@ export async function onRequest(context) {
   if (!q) {
     return new Response('<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog"><title>Search ' + lib + '</title><id>urn:search:' + lib + '</id><updated>2026-11-05T00:00:00Z</updated></feed>', {headers: {"content-type": "application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8"}});
   }
-  const idxUrl = new URL("/" + lib + "/search-index.json", url.origin);
+  const needle = q.toLowerCase();
+  // Shared loader (functions/opds/search.js): fetches the index as
+  // text and skips the JSON.parse when the needle provably cannot
+  // match anything in it — parsing a ~1 MB index on every search
+  // cost ~10–17 ms CPU against the 10 ms budget (1102 shape).
   // A missing or malformed index is a 500 naming the problem — never an
   // uncaught throw (a bare 500 from the runtime) and never partial
   // results presented as complete.
-  let books;
-  try {
-    const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
-    if (!res.ok) return new Response("search index not found", {status: 500});
-    books = await res.json();
-    if (!Array.isArray(books)) return new Response("search index not found", {status: 500});
-  } catch (e) {
-    return new Response("search index not found", {status: 500});
-  }
-  const needle = q.toLowerCase();
+  const loaded = await loadSearchIndex(url.origin, lib, needle);
+  if (loaded.error) return new Response("search index not found", {status: 500});
+  const books = loaded.skip ? [] : loaded.books;
   const hits = [];
   for (const b of books) {
     if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {

@@ -358,11 +358,12 @@ getJson("index.json", "index.json not found").then(function (data) {
     (t.sources || 0) + " مصدر. آخر تحديث: " + (data.generated_at || data.generated || "؟");
   if (SRC) {
     // One-library view: name it, and give the next steps (all libraries,
-    // open in Telegram, clear the filter) — never a dead end.
+    // clear the filter) — never a dead end. No link to the channel
+    // itself: a t.me/<handle> link would let a reader join the channel
+    // and download books straight from Telegram, bypassing the gate.
     srcEl.hidden = false;
     srcEl.innerHTML = "مكتبة <b>" + esc(SRC) + "</b> — الكتب من هذه المكتبة وحدها. " +
       "<a href=\"libraries.html\">كل مكتبات تلجرام</a> • " +
-      "<a href=\"https://t.me/" + encodeURIComponent(SRC) + "\">فتح في تيليجرام</a> • " +
       "<a href=\"/telegram/\">إلغاء التصفية</a>";
   }
   countEl.textContent = "اكتب كلمة للبحث، أو اختر صيغة للتصفح.";

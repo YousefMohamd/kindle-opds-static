@@ -50,14 +50,31 @@
 //     it is public-domain / CC. Do NOT present it as a completed
 //     legal check.
 //
+// Hidden gate (owner-only /hide, Workstream 2b): a KV key
+// `hidden:<handle>:<post_id>` (set by the owner's /hide in the
+// bot, or a manual KV put) means the book was REMOVED -> 403
+// "hidden", no token. This is checked AFTER the flag gate and
+// BEFORE any counter is taken (a refused mint never burns quota).
+// Hidden is NOT flagged: a flagged book still mints nothing
+// either (403 "flagged"), but the two refusals are distinct —
+// flagged books are commercial and the bot points at the source
+// channel; hidden books are removed from search entirely. Like
+// the flag check, a KV outage fails CLOSED for Telegram books.
+// OPDS books are never hidden (they have no post identity to
+// report). User reports NEVER hide: an approved report sets
+// `flag:` instead — the hidden key is owner-only.
+//
 // Mint caps (Kindle delivery, design §4.3 — same overLimit pattern
 // as functions/api/send-to-kindle.js, same accepted KV race):
-//   * 20 tokens/day per IP (all minting).
-//   * 20 tokens/day per fingerprint (fp present — a catalog user).
-//   * 5 tokens/day per IP when anonymous (no fp) — the bulk-scraping
-//     vector is anonymous minting, so the anonymous budget is the
-//     tight one. A refused mint (flag / not configured) never burns
-//     quota: caps are checked AFTER validation, flag and config.
+//   * 5 tokens/day per IP (all minting).
+//   * 5 tokens/day per fingerprint (fp present — a catalog user).
+//   * 5 tokens/day per IP when anonymous (no fp).
+//   The download cap is 5 books/day per user (2026-11-16: the
+//   primary Kindle path is now Send-to-Kindle by email, which is
+//   unlimited; the download path is the secondary route for
+//   phone/computer users, capped at 5/day). A refused mint (flag /
+//   hidden / not configured) never burns quota: caps are checked
+//   AFTER validation, flag, hidden and config.
 //   * No KV binding -> caps fail open (mint, count nothing), so a
 //     missing KV binding never locks out legitimate users. Abuse in
 //     that state is bounded by the 10-minute token life and the
@@ -69,6 +86,13 @@
 // short link. No KV binding -> short is null (the token + url are
 // still returned). The code is random (16 chars); it carries no part
 // of the token, so nothing secret ever appears in a URL or a log.
+// SINGLE-USE (2026-11-16, reversal of D5): the /k/ resolver deletes
+// the entry on first successful resolve (resolveAndConsumeShortLink),
+// so a replay 404s. A failed first tap burns the link; the user
+// mints a fresh one (1 of 5/day). The raw signed proxy URL inside
+// the target stays replayable within its 10 minutes — closing that
+// needs a proxy-repo change; the short link is the only link users
+// ever see, so consuming it closes the realistic replay path.
 //
 // Env (Pages dashboard -> Settings -> Functions -> Environment variables;
 // secrets, never in the repo, never in chat):
@@ -83,19 +107,28 @@
 //   PROXY_TOKEN_TTL_SECONDS (optional, default 600, clamped 60..3600)
 // KV binding (optional, same namespace the bot + OPDS feed use):
 //   RLIBOOK_KV — flag denylist keys `flag:<handle>:<post_id>`,
+//                hidden keys `hidden:<handle>:<post_id>` (owner
+//                /hide only — never set by user reports),
 //                mint counters `dlt:*:<YYYY-MM-DD>`,
 //                short links `k:<code>`.
 //
-// Free-tier friendly: 1 KV get for the flag check + up to 2 counter
-// ops + 1 short-link write per mint, no catalog fetch, no heavy work.
-// Zero D1 writes.
+// Free-tier friendly: 1 KV get for the flag check + 1 for the hidden
+// check + up to 2 counter ops + 1 short-link write per mint, no
+// catalog fetch, no heavy work. Zero D1 writes.
 
-const ALLOWED_FORMATS = new Set(["epub", "pdf", "mobi", "azw3", "kfx", "txt"]);
+const ALLOWED_FORMATS = new Set(["epub", "pdf", "mobi", "azw3", "kfx", "txt", "doc", "docx"]);
 const DEFAULT_TTL_SECONDS = 600;
 const SHORT_TTL_SECONDS = 600;
-export const MINT_CAP_PER_IP = 20;
+// Reader tokens (the plain-HTML reader, /read) live 1 hour: long
+// enough to read several chapters, short enough that a shared link
+// dies on its own. They are minted by /kindle/get and by
+// /api/read-token, and verified by functions/read.js — never by the
+// download proxy (the extra "k":"read" field makes the proxy reject
+// them as download tokens, so a reader token can never download).
+export const READER_TOKEN_TTL_SECONDS = 3600;
+export const MINT_CAP_PER_IP = 5;
 export const MINT_CAP_ANONYMOUS = 5;
-export const MINT_CAP_FINGERPRINTED = 20;
+export const MINT_CAP_FINGERPRINTED = 5;
 
 // OPDS libraries — MIRRORED from functions/api/send-to-kindle.js
 // (LIBS + resolveAcquisitionUrl). send-to-kindle.js is frozen (the
@@ -142,6 +175,15 @@ function b64urlEncode(bytes) {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function b64urlDecode(str) {
+  const clean = String(str).replace(/-/g, "+").replace(/_/g, "/");
+  const padded = clean + "=".repeat((4 - (clean.length % 4)) % 4);
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 function normalizeHandle(handle) {
   return (handle || "").trim().replace(/^@+/, "").toLowerCase();
 }
@@ -178,6 +220,146 @@ export async function makeToken(signingKey, handle, postId, fmt, ttlSeconds, now
     new TextEncoder().encode(payloadB64),
   );
   return `v1.${payloadB64}.${b64urlEncode(new Uint8Array(sig))}`;
+}
+
+/** Mint a reader token for one parsed book (the /read gate).
+ *  Same v1 scheme as makeToken, plus the "k":"read" purpose field,
+ *  so a reader token is useless as a download token and vice versa.
+ *  Single-book, 1-hour life (READER_TOKEN_TTL_SECONDS). No KV, no
+ *  caps: reading is free and unlimited — the gate only proves the
+ *  link came from /kindle/get or /api/read-token within the hour.
+ *  `own` (personal books, 2026-11-16): when true the payload carries
+ *  "o":1 — the reader treats the book as the user's own file (no
+ *  flag gate on renewal, no download cap on the download mint that
+ *  produced the link). The flag is set ONLY from a server-side
+ *  isPersonalBook check (fp + title against the private feed), never
+ *  from a client claim. Exported for /kindle/get, /api/read-token
+ *  and tests. */
+export async function makeReaderToken(signingKey, handle, postId, fmt,
+  ttlSeconds = READER_TOKEN_TTL_SECONDS, nowSeconds = Math.floor(Date.now() / 1000),
+  own = false) {
+  const exp = nowSeconds + ttlSeconds;
+  const pJson = typeof postId === "number" ? String(postId) : JSON.stringify(postId);
+  const payloadJson = `{"exp":${exp},"f":${JSON.stringify(fmt)},"h":${JSON.stringify(handle)},"k":"read","p":${pJson}${own ? `,"o":1` : ""}}`;
+  const payloadB64 = b64urlEncode(new TextEncoder().encode(payloadJson));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(signingKey),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payloadB64),
+  );
+  return `v1.${payloadB64}.${b64urlEncode(new Uint8Array(sig))}`;
+}
+
+/** Verify a reader token for one parsed book. The signature is
+ *  checked FIRST (over the raw payload segment, before the payload
+ *  is trusted at all); then expiry, purpose, format and the exact
+ *  book identity. Any failure — bad shape, bad signature, expired,
+ *  wrong book, wrong purpose — is false, never a throw. */
+export async function verifyReaderToken(signingKey, token, book,
+  nowSeconds = Math.floor(Date.now() / 1000)) {
+  try {
+    if (!signingKey || typeof token !== "string") return false;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[0] !== "v1") return false;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(signingKey),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+    const sigOk = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      b64urlDecode(parts[2]),
+      new TextEncoder().encode(parts[1]),
+    );
+    if (!sigOk) return false;
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[1])));
+    if (!payload || payload.k !== "read") return false;
+    if (!Number.isFinite(payload.exp) || payload.exp <= nowSeconds) return false;
+    if (payload.f !== book.fmt) return false;
+    const handle = book.kind === "tg" ? book.handle : book.lib;
+    const postId = book.kind === "tg" ? book.postId : book.id;
+    if (payload.h !== handle) return false;
+    if (String(payload.p) !== String(postId)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Is this reader token a PERSONAL-book token (payload "o":1)?
+ *  Verifies the signature + expiry + purpose first (the same checks
+ *  as verifyReaderToken, minus the book-identity match — the caller
+ *  already verified the token for THIS book). Any failure is false,
+ *  never a throw. Used by /read for renewal: an own token renews
+ *  without any flag re-check. */
+export async function readerTokenOwn(signingKey, token,
+  nowSeconds = Math.floor(Date.now() / 1000)) {
+  try {
+    if (!signingKey || typeof token !== "string") return false;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[0] !== "v1") return false;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(signingKey),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+    const sigOk = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      b64urlDecode(parts[2]),
+      new TextEncoder().encode(parts[1]),
+    );
+    if (!sigOk) return false;
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[1])));
+    if (!payload || payload.k !== "read") return false;
+    if (!Number.isFinite(payload.exp) || payload.exp <= nowSeconds) return false;
+    return payload.o === 1;
+  } catch {
+    return false;
+  }
+}
+
+/** Is this book the caller's OWN (personal upload)? Verifies the
+ *  server-side private feed: `fp:<fp>` -> { tg_id }, then
+ *  `priv:<tg_id>` -> [{ title, ... }]. True when one private record
+ *  has the same title (case-insensitive, trimmed). No KV binding,
+ *  bad fingerprint, or no match -> false. A KV error fails CLOSED
+ *  (false — the caller falls back to the library rules).
+ *  KNOWN CAVEAT (title match, not identity): priv records carry no
+ *  handle/post (OPDS FEED FINDING 1), so the match is by title only.
+ *  A flagged catalog book sharing a title with one of the user's
+ *  private books bypasses the flag gate FOR THAT USER ONLY (their
+ *  own copy is what they read). A future bot change recording
+ *  handle/post/format in priv records would close it. */
+export async function isPersonalBook(env, fp, title) {
+  const fpClean = (fp || "").trim();
+  const titleClean = (title || "").trim().toLowerCase();
+  if (!fpClean || !titleClean) return false;
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv) return false;
+  try {
+    const fpRec = await kv.get("fp:" + fpClean, "json");
+    const tgId = fpRec && (fpRec.tg_id ?? fpRec.tgId);
+    if (!tgId) return false;
+    const priv = await kv.get("priv:" + tgId, "json");
+    if (!Array.isArray(priv)) return false;
+    return priv.some((r) => r && typeof r.title === "string"
+      && r.title.trim().toLowerCase() === titleClean);
+  } catch {
+    return false;
+  }
 }
 
 /** Validate book identity from query params. Two forms, plus the
@@ -276,16 +458,37 @@ function clampTtl(env) {
   return Math.max(60, Math.min(3600, Math.floor(ttl)));
 }
 
+/** Hidden check for one Telegram book (owner-only /hide,
+ *  Workstream 2b). True = hidden/removed, no token. Same shape as
+ *  isFlaggedBook: no KV binding -> false, a KV error -> TRUE (fail
+ *  closed: an outage must never mint a token for a book that might
+ *  be hidden). OPDS books are never hidden and never reach this
+ *  function. Reports never set the hidden key. */
+export async function isHiddenBook(env, handle, postId) {
+  if (!env.RLIBOOK_KV) return false;
+  try {
+    const v = await env.RLIBOOK_KV.get(`hidden:${handle}:${postId}`);
+    return v !== null && v !== undefined;
+  } catch {
+    return true;
+  }
+}
+
 /** Mint a download token for one parsed book. The single minting
  *  implementation shared by GET /api/dl-token and the delivery page
- *  (/kindle/get). Order matters: config and flag refusals happen
+ *  (/kindle/get). Order matters: config, flag and hidden refusals happen
  *  BEFORE any counter is taken, so a refused mint never burns quota.
  *  `opts.ip` is the client IP (cf-connecting-ip); `opts.fp` is the
- *  catalog fingerprint when present (a fingerprinted user gets the
- *  generous 20/day budget, an anonymous IP gets 5/day).
- *  Returns { ok: true, token, exp, ttl, url } or
+ *  catalog fingerprint when present. Every user gets 5 downloads/day
+ *  (per IP and per fingerprint — the same 5/day budget either way).
+ *  `opts.own` (personal books, 2026-11-16): when true the book is
+ *  the caller's own file (server-verified via isPersonalBook, never
+ *  a client claim) — the flag check and the mint counters are
+ *  SKIPPED (your own file: no cap, no flag gate). The hidden check
+ *  still applies: an owner-hidden book stays hidden even for its
+ *  owner. Returns { ok: true, token, exp, ttl, url } or
  *  { ok: false, status, error } with error one of: not_configured,
- *  proxy_not_configured, flagged, mint_cap_ip, mint_cap_user.
+ *  proxy_not_configured, flagged, hidden, mint_cap_ip, mint_cap_user.
  *  `url` is the signed proxy URL for Telegram books (null when the
  *  proxy base is unset — impossible here, that is proxy_not_configured)
  *  and null for OPDS books (see the file header: no proxy URL exists
@@ -299,8 +502,12 @@ export async function mintTokenForBook(env, book, opts = {}) {
   if (book.kind === "tg" && !base) {
     return { ok: false, status: 503, error: "proxy_not_configured" };
   }
-  if (book.kind === "tg" && (await isFlaggedBook(env, book.handle, book.postId))) {
+  const own = opts.own === true;
+  if (!own && book.kind === "tg" && (await isFlaggedBook(env, book.handle, book.postId))) {
     return { ok: false, status: 403, error: "flagged" };
+  }
+  if (book.kind === "tg" && (await isHiddenBook(env, book.handle, book.postId))) {
+    return { ok: false, status: 403, error: "hidden" };
   }
 
   const ttl = clampTtl(env);
@@ -308,10 +515,11 @@ export async function mintTokenForBook(env, book, opts = {}) {
 
   // Mint caps — KV-bound only; without KV they fail open (mint,
   // count nothing). The IP cap is checked first; if the user cap
-  // then refuses, the IP count is refunded.
+  // then refuses, the IP count is refunded. SKIPPED entirely for
+  // own books (opts.own): your own file costs no quota.
   let ipKey = null;
   let ipCounted = false;
-  if (env.RLIBOOK_KV) {
+  if (!own && env.RLIBOOK_KV) {
     const ip = sanitizeIp(opts.ip);
     ipKey = "ip:" + ip;
     try {
@@ -372,7 +580,9 @@ export async function storeShortLink(env, code, targetUrl, exp) {
 
 /** Resolve a short code to its target, or null when unknown, expired
  *  or malformed. Expired entries are null even if KV has not evicted
- *  them yet (the TTL deletes them within 10 minutes anyway). */
+ *  them yet (the TTL deletes them within 10 minutes anyway).
+ *  READ-ONLY: it does not consume the link — the /k/ resolver uses
+ *  resolveAndConsumeShortLink below. Tests use this one. */
 export async function resolveShortLink(env, code) {
   if (!env.RLIBOOK_KV) return null;
   let entry = null;
@@ -384,6 +594,39 @@ export async function resolveShortLink(env, code) {
   if (!entry || entry.v !== 1 || typeof entry.url !== "string" || !entry.url) return null;
   if (!Number.isFinite(entry.exp) || entry.exp * 1000 <= Date.now()) return null;
   return { url: entry.url, exp: entry.exp };
+}
+
+/** Resolve AND CONSUME a short code: the first successful resolve
+ *  deletes `k:<code>` from KV, so a replay (a shared or re-tapped
+ *  link) 404s. This is the single-use gate the /k/ resolver uses
+ *  (2026-11-16: REVERSAL of design decision D5 — D5 kept links
+ *  re-usable for 10 minutes on the grounds that a failed first tap
+ *  would burn the link; the research review concluded a single-use
+ *  link + per-device 5/day budget is the stronger free-tier gate.
+ *  Tradeoff, stated plainly: a failed first tap (a dropped download)
+ *  DOES burn the link — the user mints a fresh one from the delivery
+ *  page, costing 1 of their 5/day. A delete failure never blocks the
+ *  redirect: the 10-minute expiry still bounds the link.
+ *  HONEST LIMIT: KV has no atomic get-and-delete, so two requests in
+ *  the same instant can both read before either deletes. Single-use
+ *  holds for every normal tap/share/replay; it is not a cryptographic
+ *  guarantee. AND the raw signed proxy URL inside the target is
+ *  itself replayable within its 10-minute life — true single-use of
+ *  the underlying token needs a change in the download-proxy repo
+ *  (out of scope here); the short link is the only link users see,
+ *  so consuming it closes the realistic replay path. */
+export async function resolveAndConsumeShortLink(env, code) {
+  const entry = await resolveShortLink(env, code);
+  if (!entry) return null;
+  if (env.RLIBOOK_KV) {
+    try {
+      await env.RLIBOOK_KV.delete("k:" + code);
+    } catch {
+      // Delete failed — the redirect still happens; the entry dies
+      // on its 10-minute TTL. Never fail a legitimate download.
+    }
+  }
+  return entry;
 }
 
 /** Build the short link for a freshly minted token: the download
@@ -416,7 +659,13 @@ export async function onRequest(context) {
 
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const fp = (url.searchParams.get("fp") || "").trim();
-  const result = await mintTokenForBook(env, book, { ip, fp });
+  // Personal books (2026-11-16): `fp` + `t` (title) let the caller
+  // prove the book is their own upload — verified server-side
+  // against the private feed (isPersonalBook), never trusted from
+  // the claim alone. Own books skip the flag gate and the mint caps
+  // in mintTokenForBook (the hidden check still applies).
+  const own = await isPersonalBook(env, fp, url.searchParams.get("t") || "");
+  const result = await mintTokenForBook(env, book, { ip, fp, own });
   if (!result.ok) {
     return json(result.status, { ok: false, error: result.error });
   }

@@ -6,13 +6,76 @@
 //              offset: 0,
 //              coverage: { indexed: 149996, target: 323325, partial: true },
 //              results: [
-//                { title, author, source, kind, formats, url, flagged }, ... ] }
+//                { title, author, source, kind, formats, flagged,
+//                  size, get, send, read, bot }, ... ] }
+//     Each result carries GATED links only: `get` (the /kindle/get
+//     delivery page, token-gated + capped), `send` (the Send-to-Kindle
+//     email endpoint) and `read` (the browser reader) — or null when
+//     the book cannot take that path (flagged books get no links at
+//     all). `size` is the book file's size as recorded in the Telegram
+//     index (D1 books.size, from the indexer's size_text — e.g. "2.7 MB").
+//     It is present only when the index holds a size for the book; a
+//     book with no recorded size carries NO `size` key at all (never
+//     an invented number, never "0" or "?"). There is NO page count
+//     in the index (no `pages` column in D1, no page count in the
+//     Telegram shards or the OPDS indexes), so this endpoint never
+//     returns one — see functions/book.js formatBookMeta for the
+//     display rule (unknown field = omitted).
+//     all). A flagged book carries `bot` instead: the bot deep link
+//     (https://t.me/RliBook_bot?start=dl_<handle>_<post>_any) the
+//     website renders as its single "View in bot" button — the bot
+//     shows the book with 🚩 + the source channel link under the
+//     3/day flag-query cap and never downloads it. Non-flagged
+//     books carry bot: null. The raw t.me post URL is NEVER in a
+//     public response: it is a direct, ungated download of
+//     the book file, and handing it out would bypass the token gate and
+//     the 5/day cap. The bot is the one caller that needs it (its
+//     flagged flow points at the source channel): it sends
+//     `x-rlibook-bot-key` with the shared secret (env TG_SEARCH_BOT_KEY,
+//     same pattern as the converter's CONVERTER_SECRET) and gets `url`
+//     back as well.
+//   GET /api/tg-search?h=<handle>&p=<post_id>
+//     -> 200 { ok: true, book: { title, author, source, kind,
+//              formats, flagged, get, send, read } | null, coverage }
+//     Single-book lookup by Telegram post (the bot's dl_ deep link
+//     resolves the book's format through this instead of trusting
+//     the link). The post URL is NOT unique per book (one post can
+//     hold several files) — the first row by id wins, and the
+//     caller must treat a multi-file post as one format only.
+//     A hidden post (owner /hide) returns { ok: true, book: null },
+//     the same as an unknown post — the title must not leak through
+//     a "removed" notice.
+//
+// Hidden books (owner-only /hide, Workstream 2b): DIFFERENT from
+// flagged. A flagged book is commercial and still SHOWN (🚩 badge
+// + "View in bot", under the bot's 3/day cap). A hidden book was
+// removed by the owner directly (/hide in the bot, or a manual KV
+// put of `hidden:<handle>:<post_id>`), and is REMOVED from search
+// entirely: the row is dropped from the results AND from `total`
+// (adjusted by the hidden rows on the returned page — hidden books
+// on later pages still count, so `total` is a visible-on-this-page
+// adjustment, not a full recount). User reports NEVER hide: an
+// approved report sets `flag:` instead (see below). A hidden book
+// never appears on the website or in the bot — no flag marker, no
+// link, no "removed" notice (the title itself must not leak
+// through a notice). dl-token.js refuses a token for a hidden book
+// (403 "hidden"); send-to-kindle.js and read-token.js refuse it too.
+//
+// Flagged (commercial) books: the endpoint IDENTIFIES them, it does not
 //   GET /api/tg-search?source=EBook_Library&q=...  — same search, but only
 //     books whose source (channel/group handle) is exactly EBook_Library.
 //     Powers the per-library browse links on /telegram/libraries.html.
 //     With source= and no q, returns that library's books (newest first
 //     is NOT guaranteed — FTS rank needs a query; empty-q source browse
 //     lists by id order, capped by limit).
+//   GET /api/tg-search?h=<handle>&p=<post_id>  — single-book lookup
+//     (Workstream C): the one book at that post, or { ok: true,
+//     book: null } when the post is unknown. The bot's
+//     /start dl_<handle>_<post>_any deep link resolves the book's
+//     real format through it instead of trusting the link. A post
+//     holds one file, so formats has exactly one entry; flagged
+//     comes from the same KV denylist as search. Takes precedence
+//     over q when both are given (a lookup is not a search).
 //
 // What it searches: the Telegram catalog (321k distinct books from 51
 // channels + 168 groups), held in a Cloudflare D1 database (SQLite +
@@ -51,6 +114,25 @@
 // the bot's own matchFlagged check on the query remains the primary
 // flag gate.
 //
+// Hidden (owner-removed) books: a KV key `hidden:<handle>:<post_id>`
+// means the book is REMOVED from search entirely — it never appears
+// in results, `total` drops by the hidden rows on the page, and the
+// single-book lookup answers `book: null` exactly as if the post did
+// not exist (no title leaks). Set by the owner's /hide command or by
+// an approved user report (value = the approving report's rid, or
+// `manual:<ownerId>:<timestamp>` for a manual hide). A KV failure
+// fails OPEN here (the book stays visible — search must never fail
+// because the hide check did); dl-token.js fails CLOSED at mint
+// time instead, so a hidden book still cannot be downloaded even
+// if it slips through a search. The bot's /flags + /hide + /unhide
+// (src/control-panel.ts) manage these keys; the catalog file
+// (KOReader) is unaffected and still lists every file.
+//
+// File size: each result carries `size` ("2.7 MB") when the index
+// recorded one, and no `size` key at all when it did not (see
+// validateSize below). Never a `pages` key — the index has no page
+// counts and this endpoint does not invent them.
+//
 // Env (Pages dashboard -> Settings -> Functions):
 //   D1 binding  TG_D1       (required) — the Telegram catalog database.
 //                            Create it (wrangler d1 create rlibook-tg),
@@ -58,11 +140,26 @@
 //                            populate with telegram/tbi/d1_sync.py.
 //   KV binding  RLIBOOK_KV  (optional) — the shared namespace the bot +
 //                            OPDS feed use; flag denylist keys
-//                            `flag:<handle>:<post_id>`. Missing -> all
-//                            results report flagged: false.
+//                            `flag:<handle>:<post_id>` and owner-hide
+//                            keys `hidden:<handle>:<post_id>`.
+//                            Missing -> all results report flagged:
+//                            false and hidden: false.
+//   Secret      TG_SEARCH_BOT_KEY (optional) — the shared secret the
+//                            Telegram bot sends as the `x-rlibook-bot-key`
+//                            header so the endpoint returns the raw t.me
+//                            post URL (`url`) in results. Public callers
+//                            (no header, or a wrong one) never get `url`
+//                            — only the gated links. Unset -> nobody gets
+//                            `url` (the bot degrades to the plain-flag
+//                            rendering) and nothing else changes.
+//                            Generate once (openssl rand -hex 32) and set
+//                            the SAME value as a Worker secret for the bot
+//                            and as a Pages env var here. Never in the repo.
 //
-// Response is metadata + links only (title, author, source, format,
-// t.me post link). No book file bytes are ever returned or stored.
+// Response is metadata + gated links only (title, author, source,
+// format, the /kindle/get + email + reader links). No book file bytes
+// are ever returned or stored, and the raw t.me post URL is returned
+// only to an authenticated bot caller (see above).
 //
 // Totals are D1 counts: while the D1 import is still running (it
 // finishes 2026-11-19) `total` is LOWER than the D1 final-import
@@ -147,6 +244,48 @@ function ftsMatch(words) {
   return words.map(ftsPhrase).join(" AND ");
 }
 
+// -- file size -------------------------------------------------------
+// The index records each book file's size (Telegram file_size, via
+// the indexer: files.size_bytes + files.size_text -> shard `size` ->
+// D1 books.size). The stored text is already human-readable
+// ("2.7 MB", "888.9 KB" — the indexer's parse_size/format_size
+// shapes: digits, optional decimal with "." or ",", unit B/KB/MB/GB).
+// validateSize() accepts ONLY that shape (or a byte count, for a
+// caller that holds bytes): anything else — an empty string, junk,
+// a negative or non-finite number — yields "" (no size), so a bad
+// value can never reach a reader as a fake size. Exported for tests
+// and shared with functions/book.js's display rule (unknown = omitted).
+const SIZE_TEXT_RE = /^\d+(?:[.,]\d+)?\s*(B|KB|MB|GB)$/i;
+
+export function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return "";
+  let size = n;
+  for (const unit of ["B", "KB", "MB", "GB"]) {
+    if (size < 1024 || unit === "GB") {
+      const text = size.toFixed(1).replace(/\.0$/, "");
+      return `${text} ${unit}`;
+    }
+    size /= 1024;
+  }
+  return "";
+}
+
+/** A size value -> display text ("2.7 MB") or "" when unknown/invalid.
+ *  Accepts the indexer's size text ("2.7 MB", "888.9 KB") or a byte
+ *  count (number). Never invents: "" means "no size recorded". */
+export function validateSize(value) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!SIZE_TEXT_RE.test(text)) return "";
+    const m = /^(\d+(?:[.,]\d+)?)\s*(B|KB|MB|GB)$/i.exec(text);
+    // Rebuild normalized: "." decimal separator, one space, upper-case unit.
+    return `${m[1].replace(",", ".")} ${m[2].toUpperCase()}`;
+  }
+  if (typeof value === "number") return formatBytes(value);
+  return "";
+}
+
 // Parse a t.me post URL into { handle, postId } for the flag key.
 // Handles https://t.me/<handle>/<post_id> (trailing query/fragment
 // ignored). Returns null for any other shape (private-group c/ links,
@@ -171,6 +310,69 @@ async function isFlagged(env, url) {
     console.warn("[tg-search] flag lookup failed:", e && e.message);
     return false;
   }
+}
+
+// The bot username is hardcoded here, as in functions/book.js and
+// index.html (no env var carries it today). The deep link is the
+// website's "View in bot" button for flagged books: it opens the
+// bot at the book's dl_ deep link, where the bot shows 🚩 + the
+// source channel link under the 3/day flag-query cap and never
+// downloads the book. It carries no raw t.me post URL — only the
+// bot's own deep link — so it cannot bypass the token gate.
+const BOT_USERNAME = "RliBook_bot";
+
+/** The "View in bot" deep link for one Telegram row, or null when
+ *  the row has no public post (private-group c/ links, tg://
+ *  links, missing URL). Exported for tests. */
+export function botDeepLink(row) {
+  const parsed = parsePostUrl(row && row.url);
+  if (!parsed || parsed.handle === "c") return null;
+  return `https://t.me/${BOT_USERNAME}?start=dl_${parsed.handle}_${parsed.postId}_any`;
+}
+
+// Hidden check (owner-only /hide, Workstream 2b). A key
+// `hidden:<handle>:<post_id>` means the book is REMOVED from
+// search. Same shape as isFlagged; a KV failure fails OPEN here
+// (the book stays visible — search must never fail because the
+// hide check did; dl-token.js fails CLOSED at mint time instead,
+// so a hidden book still cannot be downloaded). Reports never
+// set this key — an approved report sets `flag:` instead.
+async function isHidden(env, url) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv) return false;
+  const parsed = parsePostUrl(url);
+  if (!parsed) return false;
+  try {
+    const v = await kv.get(`hidden:${parsed.handle}:${parsed.postId}`);
+    return v !== null;
+  } catch (e) {
+    console.warn("[tg-search] hidden lookup failed:", e && e.message);
+    return false;
+  }
+}
+
+// Flag + hide for one page of rows: hidden rows are dropped (never
+// returned), the rest are mapped with their flagged boolean and
+// bot deep link. Returns { results, hiddenCount } — hiddenCount
+// adjusts `total` (see the header: only the hidden rows on THIS
+// page are subtracted).
+async function visibleResults(env, rows, includeUrl) {
+  const checks = await Promise.all(
+    rows.map(async (r) => ({
+      flagged: await isFlagged(env, r.url),
+      hidden: await isHidden(env, r.url),
+    })),
+  );
+  const results = [];
+  let hiddenCount = 0;
+  rows.forEach((r, i) => {
+    if (checks[i].hidden) {
+      hiddenCount++;
+      return;
+    }
+    results.push(toResult(r, checks[i].flagged, includeUrl));
+  });
+  return { results, hiddenCount };
 }
 
 // D1 final-import target (distinct books). The import finishes
@@ -265,7 +467,7 @@ async function d1Search(db, match, limit, offset, source) {
     if (total === 0) return { total: 0, rows: [] };
     const { results } = await db
       .prepare(
-        "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.url, b.date " +
+        "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
           "FROM books b WHERE 1=1" + srcClause + " ORDER BY b.id LIMIT ? OFFSET ?",
       )
       .bind(...srcParams, limit, offset)
@@ -283,7 +485,7 @@ async function d1Search(db, match, limit, offset, source) {
   if (total === 0) return { total: 0, rows: [] };
   const { results } = await db
     .prepare(
-      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.url, b.date " +
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
         "FROM books_fts f JOIN books b ON b.id = f.rowid " +
         "WHERE f.books_fts MATCH ?" + srcClause + " ORDER BY f.rank LIMIT ? OFFSET ?",
     )
@@ -292,18 +494,93 @@ async function d1Search(db, match, limit, offset, source) {
   return { total, rows: results || [] };
 }
 
-function toResult(row, flagged) {
+function toResult(row, flagged, includeUrl) {
   const author = row.author && String(row.author).trim() ? row.author : null;
   const ext = (row.ext || "").trim().toUpperCase();
-  return {
+  const links = gatedLinks(row, !!flagged);
+  const out = {
     title: row.title,
     author,
     source: row.source,
     kind: row.kind || "channel",
     formats: ext ? [ext] : [],
-    url: row.url,
     flagged: !!flagged,
+    get: links.get,
+    send: links.send,
+    read: links.read,
+    // Flagged books only: the "View in bot" deep link (null for
+    // every other book — they have get/send/read instead).
+    bot: flagged ? botDeepLink(row) : null,
   };
+  // File size when the index recorded one (validateSize: "" when
+  // unknown/invalid). No `size` key at all when there is none, and
+  // never a `pages` key — the index has no page counts.
+  const size = validateSize(row.size);
+  if (size) out.size = size;
+  // The raw post URL is a direct, ungated download — only an
+  // authenticated bot caller gets it (see isBotRequest). Every other
+  // caller gets the gated links above and nothing else.
+  if (includeUrl) out.url = row.url;
+  return out;
+}
+
+/** True when the request carries the bot's shared secret, so the
+ *  response may include the raw t.me post URL. The header must match
+ *  env.TG_SEARCH_BOT_KEY exactly; when the secret is unset (or the
+ *  header is absent/wrong) this is false — fail closed, never open. */
+export function isBotRequest(request, env) {
+  const secret = ((env && env.TG_SEARCH_BOT_KEY) || "").trim();
+  if (!secret) return false;
+  const sent = (request.headers.get("x-rlibook-bot-key") || "").trim();
+  if (!sent || sent.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < secret.length; i++) diff |= secret.charCodeAt(i) ^ sent.charCodeAt(i);
+  return diff === 0;
+}
+
+// Formats the website's delivery paths accept (same set as
+// functions/book.js TG_SENDABLE_FORMATS): a Telegram book in any
+// other format gets no `get`/`send` link — the endpoints would
+// refuse it anyway — and a note pointing at the bot instead.
+const SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
+
+/** The gated links for one Telegram row, or nulls. Flagged books get
+ *  no links at all (website rule: flagged = shown, never readable or
+ *  downloadable here — the bot is the flagged path). A private-group
+ *  post (t.me/c/...) has no public handle, so it gets no links either:
+ *  the delivery page could not fetch it. Exported for tests. */
+export function gatedLinks(row, flagged) {
+  const none = { get: null, send: null, read: null };
+  if (flagged) return none;
+  const parsed = parsePostUrl(row.url);
+  if (!parsed || parsed.handle === "c") return none;
+  const fmt = (row.ext || "").trim().toLowerCase();
+  const title = encodeURIComponent(row.title || "");
+  const base = `lib=tg&h=${encodeURIComponent(parsed.handle)}&p=${parsed.postId}`;
+  const out = { ...none };
+  if (SENDABLE_FORMATS.has(fmt)) {
+    out.get = `/kindle/get?${base}&f=${fmt}&t=${title}`;
+    out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}`;
+  }
+  if (fmt === "epub") {
+    out.read = `/site/reader/?${base}&f=epub&title=${title}`;
+  }
+  return out;
+}
+
+/** One D1 lookup by Telegram post: the first book row for that post
+ *  URL, by id. A post can hold several files — the first row wins
+ *  (see the route docs). Returns the row or null. Exported for tests. */
+export async function d1LookupByPost(db, handle, postId) {
+  const url = `https://t.me/${handle}/${postId}`;
+  const { results } = await db
+    .prepare(
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
+        "FROM books b WHERE b.url = ? COLLATE NOCASE ORDER BY b.id LIMIT 1",
+    )
+    .bind(url)
+    .all();
+  return (results && results[0]) || null;
 }
 
 export async function onRequest(context) {
@@ -361,6 +638,10 @@ export async function onRequest(context) {
     );
   }
 
+  // Only an authenticated bot caller gets the raw t.me post URL in
+  // results (see isBotRequest). Everyone else gets the gated links.
+  const includeUrl = isBotRequest(request, env);
+
   // Coverage is computed once per request and attached to every ok:true
   // reply below (spread as `...cov`); a failed count yields no field
   // rather than a broken search. The count comes from the KV cache
@@ -368,6 +649,43 @@ export async function onRequest(context) {
   // cache miss, at most once an hour.
   const coverage = await d1Coverage(db, env);
   const cov = coverage ? { coverage } : {};
+
+  // Single-book lookup by Telegram post (?h=&p=): the bot's dl_ deep
+  // link resolves the book's format through this instead of trusting
+  // the link. Both params are required; a bad handle or post id is a
+  // 400, an unknown post is { ok: true, book: null } (not a 404 —
+  // the caller treats "unknown post" as "cannot confirm the format").
+  // The book carries the same fields as a search result (gated links
+  // for everyone, `url` only for an authenticated bot caller).
+  const hParam = (url.searchParams.get("h") || "").trim();
+  const pParam = (url.searchParams.get("p") || "").trim();
+  if (hParam || pParam) {
+    if (!SOURCE_RE.test(hParam) || !/^\d{1,10}$/.test(pParam)) {
+      return json(
+        { ok: false, error: "bad post — use ?h=<channel handle>&p=<post id>" },
+        400,
+      );
+    }
+    try {
+      const row = await d1LookupByPost(db, hParam.toLowerCase(), pParam);
+      if (!row) {
+        return json({ ok: true, ...cov, book: null });
+      }
+      // Owner-hide: a hidden post reads as "unknown post" — the
+      // same null, no "removed" notice, no title leak.
+      if (await isHidden(env, row.url)) {
+        return json({ ok: true, ...cov, book: null });
+      }
+      const flagged = await isFlagged(env, row.url);
+      return json({ ok: true, ...cov, book: toResult(row, flagged, includeUrl) });
+    } catch (e) {
+      console.warn("[tg-search] post lookup failed:", e && e.message);
+      return json(
+        { ok: false, error: "search failed — try again later" },
+        500,
+      );
+    }
+  }
 
   if (!q) {
     // Empty query: without a source there is nothing to list; with a
@@ -380,12 +698,12 @@ export async function onRequest(context) {
       if (found.total === 0) {
         return json({ ok: true, q: "", source, total: 0, limit, offset, ...cov, results: [] });
       }
-      const flagged = await Promise.all(
-        found.rows.map((r) => isFlagged(env, r.url)),
-      );
+      // Hidden rows (owner /hide) are dropped before the reply;
+      // `total` is adjusted by the hidden rows on this page only.
+      const { results, hiddenCount } = await visibleResults(env, found.rows, includeUrl);
       return json({
-        ok: true, q: "", source, total: found.total, limit, offset, ...cov,
-        results: found.rows.map((r, i) => toResult(r, flagged[i])),
+        ok: true, q: "", source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov,
+        results,
       });
     } catch (e) {
       // Never leak the database error to the caller (it can carry
@@ -415,19 +733,19 @@ export async function onRequest(context) {
       return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
     }
     // Flag check per result, in parallel (one KV get each, at most
-    // `limit` gets; missing KV binding -> all unflagged).
-    const flagged = await Promise.all(
-      found.rows.map((r) => isFlagged(env, r.url)),
-    );
+    // `limit` gets; missing KV binding -> all unflagged). Hidden
+    // rows (owner /hide) are dropped before the reply, and `total`
+    // is adjusted by the hidden rows on this page only.
+    const { results, hiddenCount } = await visibleResults(env, found.rows, includeUrl);
     return json({
       ok: true,
       q,
       ...(source ? { source } : {}),
-      total: found.total,
+      total: Math.max(0, found.total - hiddenCount),
       limit,
       offset,
       ...cov,
-      results: found.rows.map((r, i) => toResult(r, flagged[i])),
+      results,
     });
   } catch (e) {
     // Never leak the database error to the caller (it can carry

@@ -16,18 +16,21 @@
 //   3. the legacy Telegram form (h+p, no lib) is unchanged;
 //   4. flag-denylist refusal: a KV `flag:` key present -> 403, and
 //      the refusal burns no mint quota;
-//   5. mint caps: 21st mint from one IP in a day -> 429; 6th
-//      anonymous mint from one IP -> 429 (5/day anonymous); 20
-//      fingerprinted mints ok, 21st -> 429; a refused mint does
-//      not consume quota;
+//   5. mint caps: 6th mint from one IP in a day -> 429 (5/day for
+//      everyone — anonymous, per-IP and fingerprinted alike);
+//      a refused mint does not consume quota;
 //   6. PROXY_SIGNING_KEY unset -> 503; proxy base unset -> 503 for
 //      Telegram books but OPDS books still mint (url null, short
 //      present); no KV binding -> mint still succeeds (fail open),
 //      short null;
 //   7. short links: a minted token carries a /k/<16-char> short
 //      link that resolves (via resolveShortLink) to the right target
-//      — the signed proxy URL for Telegram books, the public
-//      acquisition URL for OPDS books.
+//   8. Single-use short links (resolveAndConsumeShortLink):
+//   9. Personal books (2026-11-16): makeReaderToken own flag +
+//      readerTokenOwn; isPersonalBook (fp -> tg_id -> priv title
+//      match); mintTokenForBook own skips the flag gate + the mint
+//      caps but keeps the hidden check; /api/dl-token end-to-end
+//      with fp+t proving own.
 // Exit 0 = all pass; non-zero = failure. No network, no production
 // KV, no deploy. The signing key below is FAKE test data.
 
@@ -39,9 +42,19 @@ import {
   resolveOpdsAcquisitionUrl,
   makeShortCode,
   resolveShortLink,
+  resolveAndConsumeShortLink,
+  storeShortLink,
+  isFlaggedBook,
+  isHiddenBook,
   MINT_CAP_PER_IP,
   MINT_CAP_ANONYMOUS,
   MINT_CAP_FINGERPRINTED,
+  makeReaderToken,
+  verifyReaderToken,
+  readerTokenOwn,
+  isPersonalBook,
+  mintTokenForBook,
+  READER_TOKEN_TTL_SECONDS,
 } from "./dl-token.js";
 
 let pass = 0;
@@ -155,6 +168,12 @@ console.log("2. OPDS acceptance + validation:");
   const badFmt = await call({ lib: "hindawi", id: "13028368", f: "exe" }, env, "10.0.0.5");
   check("2e bad format -> 400 bad_format",
     badFmt.status === 400 && badFmt.body.error === "bad_format", JSON.stringify(badFmt.body));
+  const docx = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "docx" }, env, "10.0.0.7");
+  check("2e2 doc/docx mint: 200 ok (book cards link them; send-to-kindle accepts them)",
+    docx.status === 200 && docx.body.ok === true, JSON.stringify(docx.body));
+  const doc = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "doc" }, env, "10.0.0.8");
+  check("2e3 doc mints: 200 ok",
+    doc.status === 200 && doc.body.ok === true, JSON.stringify(doc.body));
   const noFmt = await call({ lib: "hindawi", id: "13028368" }, env, "10.0.0.6");
   check("2f missing format -> 400 bad_format (the API requires f=)",
     noFmt.status === 400 && noFmt.body.error === "bad_format", JSON.stringify(noFmt.body));
@@ -230,6 +249,51 @@ console.log("4. Flag denylist:");
     opds.status === 200 && opds.body.ok === true, "status " + opds.status);
 }
 
+// ================= 4b. owner-hide denylist (Workstream 2b) =============
+// An owner /hide sets `hidden:` — never a user report (an approved
+// report sets `flag:` instead). The gate sits after the flag gate
+// and before any counter, like the flag gate.
+console.log("4b. Owner-hide denylist:");
+{
+  const kv = makeKv({ "hidden:kotobkhana:7559": "owner" });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const r = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub" }, env, "10.0.2.5");
+  check("4d hidden Telegram book -> 403 hidden",
+    r.status === 403 && r.body.error === "hidden", "status " + r.status + " " + JSON.stringify(r.body));
+  check("4d hidden mint wrote no short link",
+    ![...kv.map.keys()].some((k) => k.startsWith("k:")), [...kv.map.keys()].join(","));
+  // The refusal burned no quota: 5 anonymous mints still succeed.
+  let okCount = 0;
+  for (let i = 0; i < 5; i++) {
+    const rr = await call({ lib: "tg", h: "kotobkhana", p: String(9000 + i), f: "epub" }, env, "10.0.2.5");
+    if (rr.status === 200) okCount++;
+  }
+  check("4e refused hidden mint burned no quota (5 anonymous mints still succeed)",
+    okCount === 5, "ok=" + okCount);
+  // Flag gate runs first: a book with both keys gets "flagged".
+  const kvBoth = makeKv({ "flag:kotobkhana:7559": "1", "hidden:kotobkhana:7559": "owner" });
+  const envBoth = { RLIBOOK_KV: kvBoth, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const rb = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub" }, envBoth, "10.0.2.6");
+  check("4f flagged + hidden -> 403 flagged (flag gate first)",
+    rb.status === 403 && rb.body.error === "flagged", "status " + rb.status);
+  // isHiddenBook unit checks (exported): present -> true, absent ->
+  // false, no KV -> false, KV outage -> true (fail closed).
+  check("4g isHiddenBook: key present -> true",
+    (await isHiddenBook(env, "kotobkhana", 7559)) === true);
+  check("4g isHiddenBook: key absent -> false",
+    (await isHiddenBook(env, "kotobkhana", 7558)) === false);
+  check("4g isHiddenBook: no KV binding -> false",
+    (await isHiddenBook({}, "kotobkhana", 7559)) === false);
+  check("4g isHiddenBook: KV outage -> true (fail closed)",
+    (await isHiddenBook({ RLIBOOK_KV: { get: async () => { throw new Error("down"); } } }, "kotobkhana", 7559)) === true);
+  check("4g isFlaggedBook: KV outage -> true (fail closed)",
+    (await isFlaggedBook({ RLIBOOK_KV: { get: async () => { throw new Error("down"); } } }, "kotobkhana", 7559)) === true);
+  // OPDS books are never hidden (no post identity).
+  const opds = await call({ lib: "hindawi", id: "13028368", f: "epub" }, env, "10.0.2.7");
+  check("4h OPDS books are never hidden",
+    opds.status === 200 && opds.body.ok === true, "status " + opds.status);
+}
+
 // ================= 5. mint caps ======================================
 console.log("5. Mint caps:");
 {
@@ -244,21 +308,21 @@ console.log("5. Mint caps:");
   check("5a anonymous: 5 mints ok, 6th -> 429 mint_cap_user",
     JSON.stringify(statuses) === JSON.stringify([200, 200, 200, 200, 200, 429]),
     JSON.stringify(statuses));
-  check("5a caps are 5 anonymous / 20 per IP / 20 fingerprinted",
-    MINT_CAP_ANONYMOUS === 5 && MINT_CAP_PER_IP === 20 && MINT_CAP_FINGERPRINTED === 20);
+  check("5a caps are 5 anonymous / 5 per IP / 5 fingerprinted",
+    MINT_CAP_ANONYMOUS === 5 && MINT_CAP_PER_IP === 5 && MINT_CAP_FINGERPRINTED === 5);
 }
 {
-  // Fingerprinted: 20/day per fp (and 20/day per IP — both bind at
-  // 21). The 21st mint -> 429.
+  // Fingerprinted: 5/day per fp (and 5/day per IP — both bind at
+  // 6). The 6th mint -> 429.
   const kv = makeKv();
   const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
   let statuses = [];
-  for (let i = 0; i < 21; i++) {
+  for (let i = 0; i < 6; i++) {
     const r = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: "fp_test_user_1" }, env, "10.0.3.2");
     statuses.push(r.status);
   }
-  check("5b fingerprinted: 20 mints ok, 21st -> 429",
-    statuses.slice(0, 20).every((s) => s === 200) && statuses[20] === 429,
+  check("5b fingerprinted: 5 mints ok, 6th -> 429",
+    statuses.slice(0, 5).every((s) => s === 200) && statuses[5] === 429,
     JSON.stringify(statuses));
 }
 {
@@ -308,6 +372,176 @@ console.log("6. Config / no-KV behaviour:");
     env: { PROXY_SIGNING_KEY: KEY },
   });
   check("6e POST -> 405", post.status === 405, "status " + post.status);
+}
+
+// ================= 7. reader tokens ================================
+console.log("7. Reader tokens (makeReaderToken / verifyReaderToken):");
+{
+  const NOW = Math.floor(Date.now() / 1000);
+  const book = { kind: "opds", lib: "hindawi", id: "13028368", fmt: "epub" };
+  const tok = await makeReaderToken(KEY, "hindawi", "13028368", "epub", 3600, NOW);
+  check("7a shape v1.<payload>.<sig>, ttl constant is 3600",
+    tok.startsWith("v1.") && tok.split(".").length === 3 && READER_TOKEN_TTL_SECONDS === 3600, tok.slice(0, 20));
+  check("7a fresh token verifies for its book",
+    (await verifyReaderToken(KEY, tok, book, NOW)) === true);
+  check("7a token does not verify for another book",
+    (await verifyReaderToken(KEY, tok, { kind: "opds", lib: "hindawi", id: "99999999", fmt: "epub" }, NOW)) === false);
+  check("7a token does not verify for another format",
+    (await verifyReaderToken(KEY, tok, { kind: "opds", lib: "hindawi", id: "13028368", fmt: "pdf" }, NOW)) === false);
+  check("7a token does not verify after expiry",
+    (await verifyReaderToken(KEY, tok, book, NOW + 3601)) === false);
+  check("7a token does not verify with another key",
+    (await verifyReaderToken("other-key-0123456789abcdef01234567", tok, book, NOW)) === false);
+  check("7a token does not verify with no key",
+    (await verifyReaderToken("", tok, book, NOW)) === false);
+  check("7a garbage / null / wrong-shape tokens are false, never a throw",
+    (await verifyReaderToken(KEY, "garbage", book, NOW)) === false
+    && (await verifyReaderToken(KEY, null, book, NOW)) === false
+    && (await verifyReaderToken(KEY, "v1.aaa", book, NOW)) === false);
+  const tgTok = await makeReaderToken(KEY, "kotobkhana", 7559, "pdf", 3600, NOW);
+  check("7b Telegram token verifies for its book (numeric post id)",
+    (await verifyReaderToken(KEY, tgTok, { kind: "tg", handle: "kotobkhana", postId: 7559, fmt: "pdf" }, NOW)) === true);
+  const dlTok = await makeToken(KEY, "hindawi", "13028368", "epub", 600, NOW);
+  check("7c a download token is NOT a reader token (no k:read)",
+    (await verifyReaderToken(KEY, dlTok, book, NOW)) === false);
+  check("7c a reader token is not a download token shape (payload has k:read)",
+    JSON.parse(Buffer.from(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8")).k === "read");
+}
+
+// ================= 8. single-use short links ========================
+console.log("8. Single-use short links (resolveAndConsumeShortLink):");
+{
+  const NOW = Math.floor(Date.now() / 1000);
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv };
+  const code = "Ab3dEf9hJk2mNn4p";
+  const target = PROXY + "/dl?h=kotobkhana&p=7559&f=epub&t=v1.abc.def";
+  await storeShortLink(env, code, target, NOW + 600);
+  const first = await resolveAndConsumeShortLink(env, code);
+  check("8a first resolve returns the target",
+    first !== null && first.url === target, JSON.stringify(first));
+  check("8b entry deleted from KV after first resolve",
+    !kv.map.has("k:" + code));
+  const replay = await resolveAndConsumeShortLink(env, code);
+  check("8c replay -> null (single-use)", replay === null);
+  check("8d read-only resolveShortLink still sees nothing after consume",
+    (await resolveShortLink(env, code)) === null);
+  const unknown = await resolveAndConsumeShortLink(env, "ZZZZZZZZZZZZZZZZ");
+  check("8e unknown code -> null", unknown === null);
+  // Expired entry is null AND is not deleted by the consume path
+  // (nothing to consume — resolveShortLink already rejects it).
+  kv.map.set("k:ExpiredCode123456",
+    JSON.stringify({ v: 1, url: target, exp: NOW - 10 }));
+  const expired = await resolveAndConsumeShortLink(env, "ExpiredCode123456");
+  check("8f expired entry -> null", expired === null);
+  // Malformed entry (no url) -> null.
+  kv.map.set("k:BadEntry12345678", JSON.stringify({ v: 1, exp: NOW + 600 }));
+  const bad = await resolveAndConsumeShortLink(env, "BadEntry12345678");
+  check("8g malformed entry -> null", bad === null);
+  // No KV binding -> null.
+  const noKv = await resolveAndConsumeShortLink({}, code);
+  check("8h no KV binding -> null", noKv === null);
+}
+
+// ================= 9. Personal books (own) ==========================
+console.log("9. Personal books (own flag + isPersonalBook):");
+{
+  const now = Math.floor(Date.now() / 1000);
+  const ownTok = await makeReaderToken(KEY, "kotobkhana", 7559, "epub",
+    READER_TOKEN_TTL_SECONDS, now, true);
+  const ownPayload = verifyHmac(ownTok, KEY);
+  check("9a own reader token carries payload o:1",
+    ownPayload !== null && ownPayload.o === 1, JSON.stringify(ownPayload));
+  const libTok = await makeReaderToken(KEY, "kotobkhana", 7559, "epub",
+    READER_TOKEN_TTL_SECONDS, now);
+  const libPayload = verifyHmac(libTok, KEY);
+  check("9b library reader token carries no o field",
+    libPayload !== null && !("o" in libPayload), JSON.stringify(libPayload));
+  check("9c readerTokenOwn(own token) -> true",
+    (await readerTokenOwn(KEY, ownTok)) === true);
+  check("9d readerTokenOwn(library token) -> false",
+    (await readerTokenOwn(KEY, libTok)) === false);
+  const tampered = ownTok.slice(0, -2) + "xx";
+  check("9e readerTokenOwn(tampered token) -> false",
+    (await readerTokenOwn(KEY, tampered)) === false);
+  const expired = await makeReaderToken(KEY, "kotobkhana", 7559, "epub",
+    READER_TOKEN_TTL_SECONDS, now - 4000, true);
+  check("9e2 readerTokenOwn(expired token) -> false",
+    (await readerTokenOwn(KEY, expired)) === false);
+}
+{
+  // fp:abc123 -> { tg_id: 777 }; priv:777 lists the user's books.
+  const kv = makeKv({
+    "fp:abc123": JSON.stringify({ tg_id: 777, created_at: "2026-11-01T00:00:00Z" }),
+    "priv:777": JSON.stringify([
+      { title: "My Book", author: "Me", source: "upload", added_at: "2026-11-01T00:00:00Z" },
+      { title: "Another Title", author: "X", source: "upload", added_at: "2026-11-02T00:00:00Z" },
+    ]),
+  });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  check("9f isPersonalBook: fp + exact title -> true",
+    (await isPersonalBook(env, "abc123", "My Book")) === true);
+  check("9g isPersonalBook: fp + other title -> false",
+    (await isPersonalBook(env, "abc123", "Not Mine")) === false);
+  check("9h isPersonalBook: unknown fp -> false",
+    (await isPersonalBook(env, "nope", "My Book")) === false);
+  check("9i isPersonalBook: title match is case-insensitive + trimmed",
+    (await isPersonalBook(env, "abc123", "  my book ")) === true);
+  check("9j isPersonalBook: no KV binding -> false",
+    (await isPersonalBook({ PROXY_SIGNING_KEY: KEY }, "abc123", "My Book")) === false);
+  check("9j2 isPersonalBook: empty fp/title -> false",
+    (await isPersonalBook(env, "", "My Book")) === false
+    && (await isPersonalBook(env, "abc123", "")) === false);
+}
+{
+  const book = { kind: "tg", handle: "kotobkhana", postId: 7559, fmt: "epub" };
+  const kv = makeKv({
+    "flag:kotobkhana:7559": "1",
+    "fp:abc123": JSON.stringify({ tg_id: 777 }),
+    "priv:777": JSON.stringify([{ title: "My Book", source: "upload", added_at: "2026-11-01" }]),
+  });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const ownMint = await mintTokenForBook(env, book, { ip: "10.9.0.1", fp: "abc123", own: true });
+  check("9k mintTokenForBook own + flagged book -> ok (flag gate skipped)",
+    ownMint.ok === true && !!ownMint.token, JSON.stringify(ownMint));
+  const counted = [...kv.map.keys()].some((k) => k.startsWith("dlt:"));
+  check("9l own mint burns no quota (no dlt:* counter)",
+    counted === false, [...kv.map.keys()].join(","));
+  const libMint = await mintTokenForBook(env, book, { ip: "10.9.0.2", fp: "abc123" });
+  check("9m library mint of the same flagged book -> 403 flagged",
+    libMint.ok === false && libMint.error === "flagged", JSON.stringify(libMint));
+}
+{
+  const book = { kind: "tg", handle: "kotobkhana", postId: 7559, fmt: "epub" };
+  const kv = makeKv({
+    "hidden:kotobkhana:7559": "owner",
+    "fp:abc123": JSON.stringify({ tg_id: 777 }),
+    "priv:777": JSON.stringify([{ title: "My Book", source: "upload", added_at: "2026-11-01" }]),
+  });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const ownHidden = await mintTokenForBook(env, book, { ip: "10.9.0.3", fp: "abc123", own: true });
+  check("9m2 mintTokenForBook own + HIDDEN book -> 403 hidden (hide wins)",
+    ownHidden.ok === false && ownHidden.error === "hidden", JSON.stringify(ownHidden));
+}
+{
+  // End-to-end through onRequest: fp+t proves the book is the
+  // caller's own upload, so a flagged book mints; a title that
+  // does not match the private feed does not.
+  const kv = makeKv({
+    "flag:kotobkhana:7559": "1",
+    "fp:abc123": JSON.stringify({ tg_id: 777 }),
+    "priv:777": JSON.stringify([{ title: "My Book", source: "upload", added_at: "2026-11-01" }]),
+  });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const own = await call({ h: "kotobkhana", p: "7559", f: "epub", fp: "abc123", t: "My Book" },
+    env, "10.9.1.1");
+  check("9n GET with fp+t (own, flagged book) -> 200",
+    own.status === 200 && own.body && own.body.ok === true, "status " + own.status);
+  const wrong = await call({ h: "kotobkhana", p: "7559", f: "epub", fp: "abc123", t: "Not Mine" },
+    env, "10.9.1.2");
+  check("9o GET with fp + wrong title -> 403 flagged (claim alone is not proof)",
+    wrong.status === 403 && wrong.body && wrong.body.error === "flagged",
+    "status " + wrong.status);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -172,7 +172,16 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
 
 // 7. Flagged books (KV denylist) + send-URL helpers + fp passthrough.
 {
-  const first = NEWEST.books[0]; // https://t.me/books_p/11692
+  // Pinned fixture: the flagged book must be IN the shown list. The
+  // live newest.json rotates daily, so its first book is no longer
+  // books_p/11692 — pin the flagged book first instead of assuming
+  // the fixture's order (Workstream H: test-only fix, no page change).
+  const flaggedFirst = { title: "كتاب تجاري تجريبي", author: "مؤلف تجريبي",
+    source: "books_p", format: "PDF", date: "2026-11-16",
+    url: "https://t.me/books_p/11692" };
+  const pinned = { ...NEWEST, count: 30,
+    books: [flaggedFirst, ...NEWEST.books.slice(0, 29)] };
+  const first = pinned.books[0]; // https://t.me/books_p/11692
   const flagKey = "flag:books_p:11692";
   let flagGets = 0;
   const kv = {
@@ -185,7 +194,7 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
       return null;
     },
   };
-  const { text } = await get("/new", null, NEWEST, kv);
+  const { text } = await get("/new", null, pinned, kv);
   check("7 flagged: تجاري marker on the flagged book (F3: the word, no glyph)",
     text.includes("تجاري") && !text.includes("⚑"));
   check("7 flagged: NO send button for the flagged book", !text.includes("p=11692"));

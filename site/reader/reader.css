@@ -189,3 +189,13 @@ footer.foot .slogan { color: var(--slogan); }
   #viewer { height: calc(100vh - 15rem); }
   .toolbar input[type="range"] { width: 5rem; }
 }
+
+/* ---- Telegram Mini App (v4.8.44, workstream D) ----
+ * site/assets/telegram-webapp.js adds class "tg-webapp" to <html>
+ * ONLY inside Telegram, and sets the --paper/--ink/--link/... vars
+ * from Telegram's theme params — the reader already uses those vars
+ * everywhere, so it follows the Telegram theme with no other change.
+ * .tg-hide hides browser-only chrome (the PWA install button and the
+ * iOS install hint) inside Telegram, where there is no browser
+ * chrome to install into. */
+.tg-webapp .tg-hide { display: none !important; }

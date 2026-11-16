@@ -459,11 +459,11 @@
       if (msg === "flagged") {
         openError("This book is flagged (commercial) — the website cannot read it. Ask for it from the bot @RliBook_bot.");
       } else if (msg === "no-download" || msg.indexOf("token-") === 0) {
-        openError("The download link is not ready yet — try «Send to my device» on the book page instead.");
+        openError("The download link is not ready yet — try «احصل على الكتاب على جهازك» on the book page instead.");
       } else if (msg === "not-an-epub") {
-        openError("The library sent a web page instead of the book file. Try again, or use «Send to my device» on the book page.");
+        openError("The library sent a web page instead of the book file. Try again, or use «احصل على الكتاب على جهازك» on the book page.");
       } else if (src.corsRisk) {
-        openError("Google Drive did not let the browser open this file directly. Use «Send to my device» on the book page to get it by email.");
+        openError("Google Drive did not let the browser open this file directly. Use «احصل على الكتاب على جهازك» on the book page to get the file, or the email link there to have it sent.");
       } else {
         openError("Could not open this book — check your connection and try again.");
       }
@@ -672,7 +672,36 @@
     if (src.kind === "epub" || src.kind === "token") {
       startReading(src);
     } else if (src.kind === "unsupported") {
-      openError("This book is a " + String(src.format || "").toUpperCase() + " file — the reader opens EPUB books. Use «Send to my device» on the book page to get it by email.");
+      var unsupportedMsg = "This book is a " + String(src.format || "").toUpperCase() + " file — the reader opens EPUB books. Use «احصل على الكتاب على جهازك» on the book page to get the file, or the email link there to have it sent.";
+      if (src.plainReaderTokenUrl) {
+        // PDF/TXT open in the plain-HTML reader (/read): mint a
+        // 1-hour reader token, then go there.
+        openError("This book is a " + String(src.format || "").toUpperCase() + " file — it opens in the plain reader instead.");
+        var plainLine = $("plain-reader-line");
+        if (plainLine) {
+          plainLine.style.display = "block";
+          var plainLink = $("plain-reader-link");
+          plainLink.onclick = function (e) {
+            e.preventDefault();
+            plainLink.textContent = "Opening…";
+            window.fetch(src.plainReaderTokenUrl, { headers: { accept: "application/json" } })
+              .then(function (res) {
+                if (!res.ok) throw new Error("token-" + res.status);
+                return res.json();
+              })
+              .then(function (data) {
+                if (!data || !data.ok || !data.url) throw new Error("no-url");
+                window.location.href = data.url;
+              })
+              .catch(function () {
+                setStatus("Could not open the plain reader — try «احصل على الكتاب على جهازك» on the book page instead.", true);
+                plainLink.textContent = "📖 Read it in the plain reader (PDF / TXT)";
+              });
+          };
+        }
+      } else {
+        openError(unsupportedMsg);
+      }
     } else if (src.kind === "error") {
       openError(src.message);
     } else {

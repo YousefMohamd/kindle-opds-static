@@ -22,8 +22,8 @@ check("GET /opds/qurans -> 200 OPDS acquisition feed",
 check("feed is well-formed XML with the OPDS namespace",
   full.xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>') &&
   full.xml.includes('xmlns:opds="http://opds-spec.org/2010/catalog"'));
-check("totalResults = 49 qurans + 20 tafsirs",
-  full.xml.includes("<opds:totalResults>69</opds:totalResults>"));
+check("totalResults = 49 qurans + 20 tafsirs + 19 combined",
+  full.xml.includes("<opds:totalResults>88</opds:totalResults>"));
 check("Arabic Hafs entry present",
   full.xml.includes("urn:rlibook:quran:ar-hafs"));
 check("Warsh entry present with its narration",
@@ -34,15 +34,21 @@ check("acquisition links point at the upstream release, not our server",
   !full.xml.includes("drive.google.com"));
 check("acquisition links carry the EPUB type",
   full.xml.includes('type="application/epub+zip"'));
-check("tafsir entries present with install path in content",
+check("tafsir entries present (StarDict ZIPs kept for KOReader dictionary users)",
   full.xml.includes("urn:rlibook:tafsir:quran_tafsir_muyassar_v1.1") &&
-  full.xml.includes("koreader/data/dict/"));
+  full.xml.includes('type="application/zip"'));
+check("combined Quran + tafsir entries present, EPUB type, RliBook release",
+  full.xml.includes("urn:rlibook:quran-tafsir:muyassar") &&
+  full.xml.includes("https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-muyassar.epub") &&
+  full.xml.includes("التفسير داخل الملف"));
+check("no combined entry for Kurdish (no Kurdish Quran edition)",
+  !full.xml.includes("urn:rlibook:quran-tafsir:rebar"));
 check("no double-escaped ampersands in links",
   !full.xml.includes("&amp;amp;"));
 
 const ar = await get("/opds/qurans?lang=ar");
 check("?lang=ar filters the feed to the 2 Arabic editions",
-  ar.xml.includes("<opds:totalResults>22</opds:totalResults>") &&
+  ar.xml.includes("<opds:totalResults>41</opds:totalResults>") &&
   ar.xml.includes("urn:rlibook:quran:ar-hafs") &&
   !ar.xml.includes("urn:rlibook:quran:ar-en-sahih-bilingual"));
 

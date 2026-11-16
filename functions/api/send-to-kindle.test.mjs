@@ -22,6 +22,15 @@
 //  14. Resend non-2xx -> 502 error page, no crash
 //  15. resolveAcquisitionUrl for drive / hindawi / doab / bad inputs
 //  16. safeFilename: title kept as-is (Arabic/UTF-8 included); empty or unsafe-only title -> generic name
+//  34. Resend 429 (daily cap) -> Brevo sends, 200 confirmation
+//  35. Brevo request shape: api-key header, User-Agent, sender, attachment
+//  36. Resend 429 + Brevo 429 -> tomorrow page + stk:queue: entry in KV
+//  37. Resend 500 (non-429) -> Brevo fallback still sends
+//  38. no Resend key + Brevo key -> sends via Brevo (no 503)
+//  39. neither key -> 503, no send
+//  40. sendEmailWithFallback unit: both 429 + no queue -> E_BOTH_EXHAUSTED;
+//      both non-429 -> E_SEND_FAILED, never queued
+//  41. enqueueTomorrow: idempotent per (destination + book + day)
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production KV, no Resend key, no deploy.
 // All emails / fingerprints below are FAKE test data — never a real address.
@@ -34,12 +43,18 @@ import {
   magicBytesOk,
   dedupeKeyFor,
   proxyDownloadUrl,
+  enqueueTomorrow,
   MAX_FILE_BYTES,
   DAILY_PER_DEST,
   DAILY_PER_IP,
   DEDUPE_TTL_SECONDS,
   RESEND_API_URL,
 } from "./send-to-kindle.js";
+import {
+  BREVO_API_URL,
+  buildBrevoRequest,
+  sendEmailWithFallback,
+} from "./email-send.js";
 
 let pass = 0;
 let fail = 0;
@@ -92,10 +107,12 @@ function bookResponse(bytes, contentType = "application/epub+zip", contentLength
 }
 
 /** Build a mock fetch. bookBytes: what the book source returns.
- *  resendStatus: HTTP status the Resend mock returns. Captures every
- *  Resend call (url, headers, parsed body) in calls.resend. */
-function makeFetch({ bookBytes = FAKE_EPUB, bookType, bookLength = null, resendStatus = 200 } = {}) {
-  const calls = { resend: [], book: [] };
+ *  resendStatus: HTTP status the Resend mock returns. brevoStatus:
+ *  HTTP status the Brevo mock returns (201 = success). Captures
+ *  every Resend call (url, headers, parsed body) in calls.resend
+ *  and every Brevo call in calls.brevo. */
+function makeFetch({ bookBytes = FAKE_EPUB, bookType, bookLength = null, resendStatus = 200, brevoStatus = 201 } = {}) {
+  const calls = { resend: [], brevo: [], book: [] };
   const fetchImpl = async (url, opts = {}) => {
     if (String(url).startsWith(RESEND_API_URL)) {
       calls.resend.push({ url, headers: opts.headers || {}, body: JSON.parse(opts.body || "{}") });
@@ -105,15 +122,24 @@ function makeFetch({ bookBytes = FAKE_EPUB, bookType, bookLength = null, resendS
         async json() { return resendStatus === 200 ? { id: "re_test123" } : { error: { message: "forbidden" } }; },
       };
     }
+    if (String(url).startsWith(BREVO_API_URL)) {
+      calls.brevo.push({ url, headers: opts.headers || {}, body: JSON.parse(opts.body || "{}") });
+      return {
+        ok: brevoStatus >= 200 && brevoStatus < 300,
+        status: brevoStatus,
+        async json() { return brevoStatus >= 200 && brevoStatus < 300 ? { messageId: "brevo_test123" } : { message: "Daily quota exceeded" }; },
+      };
+    }
     calls.book.push({ url });
     return bookResponse(bookBytes, bookType, bookLength);
   };
   return { fetchImpl, calls };
 }
 
-function makeCtx({ kv, apiKey = "re_test_key", fetchImpl, params, proxyBase, proxyKey }) {
+function makeCtx({ kv, apiKey = "re_test_key", brevoKey, fetchImpl, params, proxyBase, proxyKey }) {
   const url = "https://rlibook.tech/api/send-to-kindle?" + new URLSearchParams(params).toString();
   const env = { RLIBOOK_KV: kv, RESEND_API_KEY: apiKey };
+  if (brevoKey !== undefined) env.BREVO_API_KEY = brevoKey;
   if (proxyBase !== undefined) env.PROXY_BASE_URL = proxyBase;
   if (proxyKey !== undefined) env.PROXY_SIGNING_KEY = proxyKey;
   return {
@@ -653,6 +679,173 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   const body = await res.text();
   check("33 long fp: 400 not-found page", res.status === 400 && body.includes("لم نجد بريد جهاز"), `status=${res.status}`);
   check("33 long fp: nothing sent", calls.resend.length === 0 && calls.book.length === 0);
+}
+
+// --- 34. Resend 429 (daily cap) -> Brevo sends, 200 confirmation -----
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 429, brevoStatus: 201 });
+  const res = await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("34 resend 429: 200 + confirmation", res.status === 200 && body.includes("تم الإرسال"), `status=${res.status}`);
+  check("34 resend 429: Resend tried once", calls.resend.length === 1, `calls=${calls.resend.length}`);
+  check("34 resend 429: Brevo delivered it", calls.brevo.length === 1, `calls=${calls.brevo.length}`);
+}
+
+// --- 35. Brevo request shape ----------------------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 429, brevoStatus: 201 });
+  await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  const b = calls.brevo[0];
+  check("35 brevo: api-key header (never Bearer)", b.headers["api-key"] === "xkeysib_test_key");
+  check("35 brevo: User-Agent header (same as Resend)", b.headers["User-Agent"] === "RliBook-bot/1.0");
+  check("35 brevo: sender identity", JSON.stringify(b.body.sender) === JSON.stringify({ name: "RliBook", email: "send@rlibook.tech" }));
+  check("35 brevo: to is [{email}]", JSON.stringify(b.body.to) === JSON.stringify([{ email: KINDLE_EMAIL }]));
+  check("35 brevo: attachment name + base64", b.body.attachment[0].name.endsWith(".epub")
+    && b.body.attachment[0].content === Buffer.from(FAKE_EPUB).toString("base64"));
+  check("35 brevo: endpoint is api.brevo.com/v3/smtp/email", b.url === BREVO_API_URL);
+}
+
+// --- 36. both 429 -> tomorrow page + queue entry ---------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 429, brevoStatus: 429 });
+  const res = await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "لؤلؤة الحب", fp: FP } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("36 both 429: tomorrow page (not an error)", res.status === 200 && body.includes("سيصل غداً"), `status=${res.status}`);
+  check("36 both 429: masked email shown", body.includes("te***@kindle.com"));
+  check("36 both 429: both providers tried once", calls.resend.length === 1 && calls.brevo.length === 1);
+  const queueKeys = [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:"));
+  check("36 both 429: one queue entry in KV", queueKeys.length === 1, `keys=${queueKeys.length}`);
+  const job = JSON.parse(kv.map.get(queueKeys[0]));
+  check("36 both 429: queue job has the book + destination, no bytes",
+    job.to === KINDLE_EMAIL && job.lib === "hindawi" && job.id === "13028368" && job.fmt === "epub"
+    && !("bytes" in job) && !("content" in job));
+  // A retry re-queues the SAME entry (idempotent) — no second entry.
+  const res2 = await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "لؤلؤة الحب", fp: FP } }),
+    fetchImpl,
+  );
+  check("36 both 429: retry still says tomorrow", res2.status === 200 && (await res2.text()).includes("سيصل غداً"));
+  check("36 both 429: retry did not add a second queue entry",
+    [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:")).length === 1);
+}
+
+// --- 37. Resend 500 (non-429) -> Brevo fallback still sends ---------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 500, brevoStatus: 201 });
+  const res = await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  check("37 resend 500: 200 via Brevo", res.status === 200 && calls.brevo.length === 1, `status=${res.status}`);
+}
+
+// --- 38. no Resend key + Brevo key -> sends via Brevo ----------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 200, brevoStatus: 201 });
+  const res = await run(
+    makeCtx({ kv, apiKey: "", brevoKey: "xkeysib_test_key", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  check("38 brevo-only: 200, no 503", res.status === 200, `status=${res.status}`);
+  check("38 brevo-only: Brevo sent, Resend untouched", calls.brevo.length === 1 && calls.resend.length === 0);
+}
+
+// --- 39. neither key -> 503 -------------------------------------------------
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, apiKey: "", fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP } }),
+    fetchImpl,
+  );
+  check("39 no keys: 503", res.status === 503, `status=${res.status}`);
+  check("39 no keys: nothing sent", calls.resend.length === 0 && calls.brevo.length === 0 && calls.book.length === 0);
+}
+
+// --- 40. sendEmailWithFallback unit ----------------------------------------
+{
+  const msg = { from: "RliBook <send@rlibook.tech>", to: ["a@kindle.com"], subject: "s", html: "<p>x</p>", attachments: [] };
+  const route = (resendStatus, brevoStatus) => {
+    const seen = [];
+    const fetchImpl = async (url) => {
+      seen.push(String(url));
+      const status = String(url).startsWith(RESEND_API_URL) ? resendStatus : brevoStatus;
+      return { ok: status >= 200 && status < 300, status, async json() { return status === 201 ? { messageId: "b1" } : { message: "cap" }; } };
+    };
+    return { fetchImpl, seen };
+  };
+  // Both 429, no queue -> E_BOTH_EXHAUSTED (never a silent drop).
+  {
+    const { fetchImpl } = route(429, 429);
+    const r = await sendEmailWithFallback({ resendApiKey: "re_x", brevoApiKey: "xb_x", fetchImpl, message: msg });
+    check("40 unit: both 429, no queue -> E_BOTH_EXHAUSTED", r.ok === false && r.code === "E_BOTH_EXHAUSTED" && (r.message || "").includes("tomorrow"));
+  }
+  // Both 429, queue given -> E_QUEUED with the payload.
+  {
+    const { fetchImpl } = route(429, 429);
+    const queued = [];
+    const r = await sendEmailWithFallback({
+      resendApiKey: "re_x", brevoApiKey: "xb_x", fetchImpl, message: msg,
+      queue: { enqueue: async (p) => { queued.push(p); return true; } },
+      queuePayload: { kind: "stk", to: "a@kindle.com" },
+    });
+    check("40 unit: both 429 + queue -> E_QUEUED", r.ok === false && r.code === "E_QUEUED" && r.queued === true);
+    check("40 unit: queue got the payload", queued.length === 1 && queued[0].to === "a@kindle.com");
+  }
+  // Both fail non-429 -> E_SEND_FAILED, never queued.
+  {
+    const { fetchImpl } = route(422, 400);
+    const queued = [];
+    const r = await sendEmailWithFallback({
+      resendApiKey: "re_x", brevoApiKey: "xb_x", fetchImpl, message: msg,
+      queue: { enqueue: async (p) => { queued.push(p); return true; } },
+    });
+    check("40 unit: both non-429 -> E_SEND_FAILED", r.ok === false && r.code === "E_SEND_FAILED");
+    check("40 unit: non-capacity failure is not queued", queued.length === 0);
+  }
+  // No keys at all -> E_NO_API_KEY, no fetch.
+  {
+    const { fetchImpl, seen } = route(200, 201);
+    const r = await sendEmailWithFallback({ fetchImpl, message: msg });
+    check("40 unit: no keys -> E_NO_API_KEY", r.ok === false && r.code === "E_NO_API_KEY" && seen.length === 0);
+  }
+  // Brevo request builder: same sender/message as Resend.
+  {
+    const b = buildBrevoRequest({ ...msg, text: "plain" }, "send@rlibook.tech");
+    check("40 unit: buildBrevoRequest sender/to/subject",
+      JSON.stringify(b.sender) === JSON.stringify({ name: "RliBook", email: "send@rlibook.tech" })
+      && JSON.stringify(b.to) === JSON.stringify([{ email: "a@kindle.com" }])
+      && b.subject === "s" && b.htmlContent === "<p>x</p>" && b.textContent === "plain");
+  }
+}
+
+// --- 41. enqueueTomorrow: idempotent per (destination + book + day) --------
+{
+  const kv = makeKv({});
+  const job = { kind: "stk", to: "testuser@kindle.com", lib: "hindawi", id: "13028368", fmt: "epub", title: "x" };
+  check("41 queue: first enqueue ok", (await enqueueTomorrow(kv, job)) === true);
+  check("41 queue: second enqueue ok, same key", (await enqueueTomorrow(kv, job)) === true);
+  const keys = [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:"));
+  check("41 queue: still exactly one entry", keys.length === 1, `keys=${keys.length}`);
+  check("41 queue: key has no email in it", !keys[0].includes("testuser@kindle.com"));
+  const other = { ...job, id: "99999999" };
+  await enqueueTomorrow(kv, other);
+  check("41 queue: different book -> different entry",
+    [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:")).length === 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

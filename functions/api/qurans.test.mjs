@@ -55,6 +55,22 @@ const taf = await get("/api/qurans?tafsir=ar");
 check("?tafsir=ar returns 7 Arabic tafsirs only",
   taf.body.count === 7 && taf.body.tafsirs.every((t) => t.lang === "ar") && !("qurans" in taf.body),
   "got " + taf.body.count);
+check("combined_tag is the RliBook release tag",
+  all.body.combined_tag === "quran-tafsir-v1" && taf.body.combined_tag === "quran-tafsir-v1");
+check("every tafsir with a combined build links its combined EPUB",
+  all.body.tafsirs.filter((t) => t.combined).length === 19 &&
+  all.body.tafsirs.every((t) =>
+    t.combined === null ||
+    (t.combined.url === "https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/" + t.combined.file &&
+     t.combined.file.endsWith(`--tafsir-${t.combined.id}.epub`))),
+  "got " + all.body.tafsirs.filter((t) => t.combined).length + " combined");
+check("Muyassar combined file is the Hafs Arabic edition + tafsir",
+  all.body.tafsirs.find((t) => t.name === "التفسير الميسر")?.combined?.file ===
+    "quran_hafs_kfgqpc_inline_ar--tafsir-muyassar.epub");
+check("Kurdish tafsir has no combined build (no Kurdish Quran edition)",
+  all.body.tafsirs.find((t) => t.lang === "ku")?.combined === null);
+check("?tafsir=ar tafsirs carry their combined files",
+  taf.body.tafsirs.length === 7 && taf.body.tafsirs.every((t) => t.combined && t.combined.id));
 const none = await get("/api/qurans?lang=xx");
 check("unknown lang returns empty list, still 200",
   none.status === 200 && none.body.count === 0);

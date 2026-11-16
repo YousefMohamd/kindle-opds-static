@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>المصاحف الإلكترونية — RliBook</title>
 <style>
   :root { color-scheme: light; }
@@ -37,6 +37,10 @@
   .tag { display: inline-block; background: #99B6B3; color: #1C2826;
          border-radius: 6px; padding: 0.1rem 0.5rem; font-size: 0.85rem; }
 </style>
+<!-- Telegram Mini App: the official Telegram WebApp script + RliBook's init
+     (theme, Back button, viewport). No-ops outside Telegram. -->
+<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="/site/assets/telegram-webapp.js" defer></script>
 </head>
 <body>
 <p><a href="/">← RliBook — الرئيسية</a></p>
@@ -236,51 +240,55 @@
 
 <div class="card">
 <h2 style="border:none;margin-top:0">التفسير — أنت تختار التفسير الذي يعجبك</h2>
-<p>التفسير يعمل مع إضافة <strong>Quran Helper</strong> في KOReader:
-اضغط مطولاً على رقم أي آية فيظهر تفسيرها. ثبّت تفسيراً واحداً أو أكثر —
-كلها تظهر في نافذة الاختيار. طريقة التثبيت: حمّل ملف ZIP، فكّ ضغطه في مجلد
-<code>koreader/data/dict/</code> (على الكيندل: <code>/mnt/us/koreader/data/dict/</code>).</p>
-<p class="note">٢٠ تفسيراً في ٦ لغات — اختر ما يعجبك:</p>
+<p><strong>التفسير الآن داخل ملف المصحف نفسه.</strong>
+حمّل نسخة «المصحف + التفسير» — افتحها، واضغط على رقم أي آية فيظهر
+تفسيرها. لا إضافة ولا ملف إضافي ولا خطوات تثبيت، ويعمل على كيندل عادي
+وفي KOReader. (في KOReader: فعّل «Show Footnotes in Popup» من الأسفل
+ليظهر التفسير كنافذة — انظر «إعدادات KOReader المهمة» بالأسفل.)</p>
+<p class="note">٢٠ تفسيراً في ٦ لغات — اختر ما يعجبك. تحت كل تفسير رابطان:
+<strong>المصحف + التفسير</strong> (EPUB — هذه هي النسخة التي تريدها)،
+و<strong>ملف ZIP</strong> (قاموس StarDict — لمن يستخدم إضافة Quran Helper
+في KOReader أصلاً).</p>
 <h3>العربية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_muyassar_v1.1.zip">التفسير الميسر</a> <span class="muted">— 650 KB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_v1.1.zip">تفسير السعدي</a> <span class="muted">— 1.7 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_baghawi_v1.1.zip">تفسير البغوي</a> <span class="muted">— 2.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ar_v1.1.zip">تفسير ابن كثير</a> <span class="muted">— 3.7 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_wasit_v1.1.zip">التفسير الوسيط (طنطاوي)</a> <span class="muted">— 4.6 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_qurtubi_v1.1.zip">تفسير القرطبي</a> <span class="muted">— 5.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tabari_v1.1.zip">تفسير الطبري</a> <span class="muted">— 8.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-muyassar.epub">التفسير الميسر</a> <span class="muted">— المصحف + التفسير، EPUB، 1.6 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_muyassar_v1.1.zip">ملف ZIP</a> <span class="muted">— 650 KB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-saddi.epub">تفسير السعدي</a> <span class="muted">— المصحف + التفسير، EPUB، 2.7 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_v1.1.zip">ملف ZIP</a> <span class="muted">— 1.7 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-baghawi.epub">تفسير البغوي</a> <span class="muted">— المصحف + التفسير، EPUB، 3.1 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_baghawi_v1.1.zip">ملف ZIP</a> <span class="muted">— 2.1 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-ibn_kathir_ar.epub">تفسير ابن كثير</a> <span class="muted">— المصحف + التفسير، EPUB، 4.7 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ar_v1.1.zip">ملف ZIP</a> <span class="muted">— 3.7 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-wasit.epub">التفسير الوسيط (طنطاوي)</a> <span class="muted">— المصحف + التفسير، EPUB، 5.5 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_wasit_v1.1.zip">ملف ZIP</a> <span class="muted">— 4.6 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-qurtubi.epub">تفسير القرطبي</a> <span class="muted">— المصحف + التفسير، EPUB، 6.0 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_qurtubi_v1.1.zip">ملف ZIP</a> <span class="muted">— 5.1 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_inline_ar--tafsir-tabari.epub">تفسير الطبري</a> <span class="muted">— المصحف + التفسير، EPUB، 9.1 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tabari_v1.1.zip">ملف ZIP</a> <span class="muted">— 8.2 MB، للقاموس</span></li>
   </ul>
   <h3>الإنجليزية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkirul_quran_en_v1.1.zip">Tazkirul Quran (Wahiduddin Khan)</a> <span class="muted">— 881 KB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_en_v1.1.zip">Tafsir Ibn Kathir (Abridged)</a> <span class="muted">— 4.9 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_maariful_quran_v1.1.zip">Ma'ariful Qur'an (Mufti Shafi)</a> <span class="muted">— 4.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-en-sahih--tafsir-tazkirul_quran_en.epub">Tazkirul Quran (Wahiduddin Khan)</a> <span class="muted">— المصحف + التفسير، EPUB، 2.2 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkirul_quran_en_v1.1.zip">ملف ZIP</a> <span class="muted">— 881 KB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-en-sahih--tafsir-ibn_kathir_en.epub">Tafsir Ibn Kathir (Abridged)</a> <span class="muted">— المصحف + التفسير، EPUB، 4.8 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_en_v1.1.zip">ملف ZIP</a> <span class="muted">— 4.9 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-en-sahih--tafsir-maariful_quran.epub">Ma'ariful Qur'an (Mufti Shafi)</a> <span class="muted">— المصحف + التفسير، EPUB، 5.4 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_maariful_quran_v1.1.zip">ملف ZIP</a> <span class="muted">— 4.4 MB، للقاموس</span></li>
   </ul>
   <h3>الأردية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkir_ul_quran_ur_v1.1.zip">Tazkir ul Quran (Wahiduddin Khan)</a> <span class="muted">— 1.1 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_bayan_ul_quran_v1.1.zip">Bayan ul Quran (Israr Ahmad)</a> <span class="muted">— 2.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ur_v1.1.zip">Tafsir Ibn Kathir (ابن کثیر)</a> <span class="muted">— 6.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fi_zilal_ur_v1.1.zip">Fi Zilal al-Quran (Qutb)</a> <span class="muted">— 7.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-ur-jalandhari--tafsir-tazkir_ul_quran_ur.epub">Tazkir ul Quran (Wahiduddin Khan)</a> <span class="muted">— المصحف + التفسير، EPUB، 2.3 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_tazkir_ul_quran_ur_v1.1.zip">ملف ZIP</a> <span class="muted">— 1.1 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-ur-jalandhari--tafsir-bayan_ul_quran.epub">Bayan ul Quran (Israr Ahmad)</a> <span class="muted">— المصحف + التفسير، EPUB، 3.7 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_bayan_ul_quran_v1.1.zip">ملف ZIP</a> <span class="muted">— 2.2 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-ur-jalandhari--tafsir-ibn_kathir_ur.epub">Tafsir Ibn Kathir (ابن کثیر)</a> <span class="muted">— المصحف + التفسير، EPUB، 5.6 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_ur_v1.1.zip">ملف ZIP</a> <span class="muted">— 6.5 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-ur-jalandhari--tafsir-fi_zilal_ur.epub">Fi Zilal al-Quran (Qutb)</a> <span class="muted">— المصحف + التفسير، EPUB، 6.8 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fi_zilal_ur_v1.1.zip">ملف ZIP</a> <span class="muted">— 7.4 MB، للقاموس</span></li>
   </ul>
   <h3>البنغالية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ahsanul_bayaan_v1.1.zip">Tafsir Ahsanul Bayaan</a> <span class="muted">— 1.9 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_abu_bakr_zakaria_v1.1.zip">Tafsir Abu Bakr Zakaria</a> <span class="muted">— 2.6 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fathul_majid_v1.1.zip">Tafsir Fathul Majid</a> <span class="muted">— 3.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_bn_v1.1.zip">Tafsir Ibn Kathir (ইবনে কাসীর)</a> <span class="muted">— 9.5 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-bn-taisirul--tafsir-ahsanul_bayaan.epub">Tafsir Ahsanul Bayaan</a> <span class="muted">— المصحف + التفسير، EPUB، 3.4 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ahsanul_bayaan_v1.1.zip">ملف ZIP</a> <span class="muted">— 1.9 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-bn-taisirul--tafsir-abu_bakr_zakaria.epub">Tafsir Abu Bakr Zakaria</a> <span class="muted">— المصحف + التفسير، EPUB، 4.1 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_abu_bakr_zakaria_v1.1.zip">ملف ZIP</a> <span class="muted">— 2.6 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-bn-taisirul--tafsir-fathul_majid.epub">Tafsir Fathul Majid</a> <span class="muted">— المصحف + التفسير، EPUB، 3.7 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_fathul_majid_v1.1.zip">ملف ZIP</a> <span class="muted">— 3.5 MB، للقاموس</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-bn-taisirul--tafsir-ibn_kathir_bn.epub">Tafsir Ibn Kathir (ইবনে কাসীর)</a> <span class="muted">— المصحف + التفسير، EPUB، 5.6 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_ibn_kathir_bn_v1.1.zip">ملف ZIP</a> <span class="muted">— 9.5 MB، للقاموس</span></li>
   </ul>
   <h3>الروسية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_ru_v1.1.zip">Tafsir al-Sa'di (Russian)</a> <span class="muted">— 2.2 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://github.com/YousefMohamd/kindle-opds-static/releases/download/quran-tafsir-v1/quran_hafs_kfgqpc_bilin_ar-ru-kuliev--tafsir-saddi_ru.epub">Tafsir al-Sa'di (Russian)</a> <span class="muted">— المصحف + التفسير، EPUB، 3.6 MB</span> · <a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_saddi_ru_v1.1.zip">ملف ZIP</a> <span class="muted">— 2.2 MB، للقاموس</span></li>
   </ul>
   <h3>الكردية</h3>
   <ul>
-    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_rebar_v1.1.zip">Rebar Kurdish Tafsir</a> <span class="muted">— 1.4 MB — ملف ZIP، فكّ الضغط في koreader/data/dict/</span></li>
+    <li><a href="https://raw.githubusercontent.com/zeeyado/quran-ebook/main/release/quran_tafsir_rebar_v1.1.zip">Rebar Kurdish Tafsir</a> <span class="muted">— 1.4 MB — ملف ZIP للقاموس فقط (لا توجد نسخة «مصحف + تفسير» بهذه اللغة)</span></li>
   </ul>
-<p class="note">ملاحظة: التفاسير مبنية على ترقيم حفص (٦٢٣٦ آية)؛
-مع إصدار ورش قد لا تطابق في السور التي يختلف فيها الترقيم.</p>
+<p class="note">ملاحظة: نسخ «المصحف + التفسير» مبنية على ترقيم حفص (٦٢٣٦ آية)؛
+لا توجد نسخة مدمجة لورش، لأن ترقيم آياته يختلف عن ترقيم حفص.</p>
 </div>
 
 <div class="card">
@@ -342,9 +350,11 @@
       if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error("bad tag");
       versionEl.textContent = tag;
       if (tag !== FALLBACK_TAG) {
-        // Rewrite only the upstream release download links; the tafsir
-        // links (raw.githubusercontent.com) do not match this selector.
-        document.querySelectorAll('a[href*="/releases/download/"]').forEach(function (a) {
+        // Rewrite only the UPSTREAM release download links (zeeyado);
+        // the tafsir links (raw.githubusercontent.com) and the
+        // combined Quran + tafsir links (RliBook release
+        // quran-tafsir-v1) do not match this selector.
+        document.querySelectorAll('a[href*="github.com/zeeyado/quran-ebook/releases/download/"]').forEach(function (a) {
           a.href = a.href.replace(/\/releases\/download\/[^\/]+\//, "/releases/download/" + tag + "/");
         });
       }

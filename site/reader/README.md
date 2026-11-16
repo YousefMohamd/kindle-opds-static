@@ -35,14 +35,22 @@ The button links to the reader with the book in the query string
 ```
 
 Only EPUB opens in the reader. A PDF/DOC link gets an honest page
-("the reader opens EPUB books — use Send to my device instead").
+("the reader opens EPUB books — use «احصل على الكتاب على جهازك» on the book page instead").
+PDF and TXT books open in the plain-HTML reader instead
+(`/read`, `functions/read.js`): the page offers a
+"📖 Read it in the plain reader (PDF / TXT)" button, which mints a
+1-hour reader token from `/api/read-token` and goes there. (Hindawi
+is EPUB-only by its acquisition URL, so a Hindawi PDF has no
+plain-reader link.) The plain reader also has its own notes and
+highlights (local file export + Google Drive sync) — see
+`functions/read.js`; the two readers keep separate note stores.
 Flagged Telegram books never reach the reader (the token endpoint
 returns 403 and the reader points at the bot).
 
 **Drive honesty:** Google Drive's download endpoint does not always
 send CORS headers, so a Drive book may refuse to open in the browser
 even though the file is fine. The reader says so in one line and
-points at «Send to my device» (email). Hindawi (hindawi.org →
+points at «احصل على الكتاب على جهازك» on the book page (download, or email). Hindawi (hindawi.org →
 safahat.org) and the Block 2 proxy are the reliable in-browser paths.
 
 ## Features

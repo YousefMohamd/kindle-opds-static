@@ -90,8 +90,8 @@ still appears there, BFM/BIC is still armed somewhere.
 
 | Route | Input | Output |
 |---|---|---|
-| `GET /kindle/` | — (+ UA detection) | Entry page; Kindle layout + banner if UA contains `Kindle` (or Kobo/eReader/EBRD/PocketBook), else standard layout + note. Never a block page. `no-store`. |
-| `GET /kindle/get?lib=&id=&f=&t=` (or `lib=tg&h=&p=`) | Book identity + format; optional `fp` | `200 text/html` delivery page: 4 numbered steps, short link, `amazon.com/sendtokindle` link, reader + email links. `403` flagged; `429` over daily mint cap; `503` proxy/signing key unconfigured. `no-store`. No JS. |
+| `GET /kindle/` | — (+ UA detection) | Entry page; per-family layout + banner (docs/ereader-detection.md): Kindle gets the phone → Send-to-Kindle steps, Kobo/PocketBook get direct-download steps on the device, generic (eReader/EBRD) gets a labelled try-direct version, desktop gets the standard layout + note. Never a block page. `no-store`. |
+| `GET /kindle/get?lib=&id=&f=&t=` (or `lib=tg&h=&p=`) | Book identity + format; optional `fp` | `200 text/html` delivery page: per-family steps (docs/ereader-detection.md §4.2) — Kindle: 4 numbered steps, short link, `amazon.com/sendtokindle` link, reader + email links; Kobo/PocketBook: direct-download steps on the device, NO sendtokindle link, NO email link; generic: labelled try-direct steps. Same token mint + caps for every family. `403` flagged; `429` over daily mint cap; `503` proxy/signing key unconfigured. `no-store`. No JS. |
 | `GET /k/<code>` | Random 16-char code | `302` to the stored download target (signed proxy URL for Telegram books, public acquisition URL for OPDS books); `404` unknown/expired. `no-store`. Valid the full 10 minutes (not single-use). |
 | `GET /read?lib=&id=` (or `lib=tg&h=&p=`) | Book identity (EPUB only) | `200 text/html` chapter page, `?ch=N` pagination. `403` flagged; `400` non-EPUB; `502`/`413` fetch/size failure. `no-store`. No JS. |
 | `GET /api/dl-token?lib=&id=&f=` (extended) | Book identity + format | `200 { ok, token, exp, ttl, url, short }` — `short` is the `/k/<code>` URL; `url` is the signed proxy URL for Telegram books and `null` for OPDS books (see below). Existing `h`/`p` form unchanged. `403` flagged; `429` over cap; `503` not configured. |
@@ -115,7 +115,11 @@ still appears there, BFM/BIC is still armed somewhere.
   desktop browser can send a Kindle UA in seconds — so it is
   layout only, never a security control. What stops bulk abuse is
   the token scheme: 10-minute single-book tokens, per-IP and
-  per-user daily caps, and the flag denylist. **Action:** log the
+  per-user daily caps, and the flag denylist. **Per-family
+  behaviour** (which family gets which delivery path, what is
+  verified vs assumed per family, and what the feature refuses)
+  is the strict plan in `docs/ereader-detection.md` — read it
+  before changing any family behaviour. **Action:** log the
   full UA of requests to `/book` and `/kindle/` for two weeks
   (dashboard: Security → Events, or a KV daily count — UA string
   only, no IP, no personal data), then publish the observed
@@ -129,8 +133,13 @@ still appears there, BFM/BIC is still armed somewhere.
   book, one format), same scheme the proxy verifies. No change to
   `makeToken` or the token format.
 - **Mint caps** (`/api/dl-token`, `/kindle/get` — same
-  `mintTokenForBook`): 20/day per IP; 20/day per fingerprint
-  (`fp` present); 5/day per IP when anonymous (no `fp`).
+  `mintTokenForBook`): 20/day per IP; 5/day per fingerprint
+  (`fp` present); 5/day per IP when anonymous (no `fp`). The
+  fingerprinted budget is 5, not 20: the user's rule is 5
+  downloads/day per user (2026-11-16), and the fingerprint
+  identifies the user — it does not buy a bigger budget. (Changed
+  in Workstream H; was 20/day fingerprinted in the original
+  design.)
   Counters are daily KV keys (`dlt:*:<YYYY-MM-DD>`), refunded on
   failure, non-atomic (same accepted KV race as the email
   endpoint). Refused mints (flag / not configured) never burn
@@ -141,9 +150,12 @@ still appears there, BFM/BIC is still armed somewhere.
   flagged.
 - **No bare file URLs** on the website any more: `index.html`
   titles link to `/book`, and `/book` cards link only to
-  `/kindle/get`, `/read`, or the email endpoint. (The OPDS feed
-  itself still carries acquisition links for KOReader — that path
-  is unchanged.)
+  `/kindle/get`, `/read`, or the email endpoint. `/api/tg-search`
+  returns pre-built gated links (`get`/`send`/`read`) and never
+  the raw t.me post URL, and the `/telegram/` index chips link to
+  `/kindle/get` (the shards store handle + post id, not the post
+  URL). (The OPDS feed itself still carries acquisition links for
+  KOReader — that path is unchanged.)
 - **Short links:** random 16-char codes, KV `k:<code>` with a
   10-minute TTL, one target per code. The code carries no part of
   the token.
@@ -221,6 +233,17 @@ book fetch (the proxy fetches the file, as today). Resend
   `functions/kindle/ua.test.mjs` (all new); `functions/book.test.mjs`
   and `functions/kindle/proxy.test.mjs` extended for the new contract.
 
+## Workstream E — e-reader families (2026-11-16, after the build above)
+
+Per-family detection + behaviour on top of this build, strict plan
+in `docs/ereader-detection.md`: `detectEReaderFamily` +
+`EREADER_FAMILIES` in `functions/kindle/[[path]].js`; family-aware
+entry page, delivery page (`functions/kindle/get.js`), and `/book`
+banner (`functions/book.js`); tests extended in `ua.test.mjs`,
+`proxy.test.mjs`, `get.test.mjs`, `book.test.mjs`. Token minting,
+caps, short links, and the flag denylist are unchanged — the UA
+changes instructions only, never the budget.
+
 ## Manual / device tests (need the user, one step at a time)
 
 - M1 (dashboard, before deploy): the §"Verify Step 0" curl checks
@@ -235,8 +258,10 @@ book fetch (the proxy fetches the file, as today). Resend
   link works, no JS errors (there is no JS to error).
 - M5 (phone, negative): opening a `/k/<code>` link after 10
   minutes → 404/expired page, not a download.
-- M6 (desktop, negative): minting 21 tokens from one IP in a day
-  → 429 on the 21st (anonymous: the 6th mint in a day → 429).
+- M6 (desktop, negative): minting 6 tokens from one IP in a day
+  with the same fingerprint → 429 on the 6th (5/day per user);
+  minting 21 tokens from one IP across fingerprints → 429 on the
+  21st (20/day per IP); anonymous: the 6th mint in a day → 429.
 
 ## Open decisions (design §8 — as built)
 
@@ -244,8 +269,9 @@ book fetch (the proxy fetches the file, as today). Resend
   the EPUB download. Built as designed.
 - D2 (remove open direct-download links): yes — every website
   download goes through the delivery page. Built as designed.
-- D3 (budgets): 5/day anonymous, 20/day fingerprinted, 20/day
-  per IP. Built as designed.
+- D3 (budgets): 5/day anonymous, 5/day fingerprinted, 20/day
+  per IP. Changed in Workstream H (was 20/day fingerprinted):
+  the user's rule is 5 downloads/day per user.
 - D4 (reader scope): EPUB only in v1. Built as designed.
 - D5 (short link): valid the full 10 minutes, not single-use.
   Built as designed.

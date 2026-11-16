@@ -6,6 +6,8 @@
 // No network, no browser, no deploy. Exit 0 = all pass.
 // What it asserts:
 //   A. resolveBookSource: every documented URL form (hindawi, drive
+//      + fp+t threading for personal books (round 2): a TG book
+//      opened with ?fp= + title threads them into the token URLs.
 //      libs, doab, telegram token, direct src, sample/demo, empty)
 //      resolves to the right kind + URL; bad input gives kind:"error"
 //      or "unsupported", never a fetchable attacker URL.
@@ -17,6 +19,8 @@
 //      colour from pale straw to deep amber, brightness 0 = invisible.
 //   E. bookKey: stable for the same URL, different for another book.
 //   F. FONTS / HIGHLIGHT_COLORS: 3 fonts, 4 Kindle-style colours.
+//   G. fallback copy: the reader's error/empty-state advice names a
+//      button that actually exists on the book page (WS-I 2026-11-16).
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 // reader-lib.js is a UMD file (classic <script> in the browser), so the
@@ -74,6 +78,62 @@ check("A6 telegram -> token url, epub only", () => {
   assert.equal(Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "pdf" }).kind, "unsupported");
   assert.equal(Lib.resolveBookSource({ lib: "tg", h: "x" }).kind, "error");
   assert.equal(Lib.resolveBookSource({ lib: "tg", h: "c", p: "1" }).kind, "token"); // proxy decides private groups
+});
+check("A6b telegram pdf/txt -> unsupported WITH a plain-reader token url; mobi without", () => {
+  const pdf = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "pdf" });
+  assert.equal(pdf.kind, "unsupported");
+  assert.equal(pdf.plainReaderTokenUrl, "/api/read-token?lib=tg&h=x&p=1&f=pdf");
+  const txt = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "txt" });
+  assert.equal(txt.plainReaderTokenUrl, "/api/read-token?lib=tg&h=x&p=1&f=txt");
+  const mobi = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "mobi" });
+  assert.equal(mobi.kind, "unsupported");
+  assert.equal(mobi.plainReaderTokenUrl, undefined);
+});
+check("A7 tg epub with fp+title -> tokenUrl threads fp+t (personal book)", () => {
+  const s = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "epub",
+    fp: "abc123", title: "My Book" });
+  assert.equal(s.kind, "token");
+  assert.equal(s.tokenUrl,
+    "/api/dl-token?h=x&p=1&f=epub&fp=abc123&t=My%20Book");
+});
+check("A7b tg epub without fp -> tokenUrl unchanged (no fp param)", () => {
+  const s = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "epub", title: "My Book" });
+  assert.equal(s.tokenUrl, "/api/dl-token?h=x&p=1&f=epub");
+  assert.equal(s.tokenUrl.includes("fp="), false);
+});
+check("A7c tg pdf with fp+title -> plainReaderTokenUrl threads fp+t", () => {
+  const pdf = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "pdf",
+    fp: "abc123", title: "My Book" });
+  assert.equal(pdf.kind, "unsupported");
+  assert.equal(pdf.plainReaderTokenUrl,
+    "/api/read-token?lib=tg&h=x&p=1&f=pdf&fp=abc123&t=My%20Book");
+  const noFp = Lib.resolveBookSource({ lib: "tg", h: "x", p: "1", f: "pdf" });
+  assert.equal(noFp.plainReaderTokenUrl, "/api/read-token?lib=tg&h=x&p=1&f=pdf");
+});
+check("A7d dlTokenUrl / plainReaderTokenUrl: opts threading, fp without title -> none", () => {
+  assert.equal(Lib.dlTokenUrl("x", 1, "epub", { fp: "abc123", title: "My Book" }),
+    "/api/dl-token?h=x&p=1&f=epub&fp=abc123&t=My%20Book");
+  assert.equal(Lib.dlTokenUrl("x", 1, "epub", { fp: "abc123" }),
+    "/api/dl-token?h=x&p=1&f=epub");
+  assert.equal(Lib.plainReaderTokenUrl({ lib: "tg", h: "x", p: 1 }, "pdf",
+    { fp: "abc123", title: "My Book" }),
+    "/api/read-token?lib=tg&h=x&p=1&f=pdf&fp=abc123&t=My%20Book");
+  assert.equal(Lib.plainReaderTokenUrl({ lib: "tg", h: "x", p: 1 }, "pdf"),
+    "/api/read-token?lib=tg&h=x&p=1&f=pdf");
+});
+
+check("A6c drive/doab pdf -> unsupported WITH a plain-reader token url; hindawi pdf without", () => {
+  const drive = Lib.resolveBookSource({ lib: "khazendar", id: "ABCDEF1234", f: "pdf" });
+  assert.equal(drive.kind, "unsupported");
+  assert.equal(drive.plainReaderTokenUrl, "/api/read-token?lib=khazendar&id=ABCDEF1234&f=pdf");
+  const doab = Lib.resolveBookSource({ lib: "doab", id: "https://www.gutenberg.org/files/1342/1342.pdf" });
+  assert.equal(doab.kind, "unsupported");
+  assert.equal(doab.plainReaderTokenUrl, "/api/read-token?lib=doab&id=https%3A%2F%2Fwww.gutenberg.org%2Ffiles%2F1342%2F1342.pdf&f=pdf");
+  // Hindawi serves EPUB only, so its PDF has no plain-reader link.
+  const hindawi = Lib.resolveBookSource({ lib: "hindawi", id: "13028368", f: "pdf" });
+  assert.equal(hindawi.kind, "epub"); // hindawi branch ignores f (EPUB-only source)
+  assert.equal(Lib.plainReaderTokenUrl({ lib: "tg", h: "x", p: "1" }, "pdf"),
+    "/api/read-token?lib=tg&h=x&p=1&f=pdf");
 });
 check("A7 direct src allowlisted -> epub; pdf -> unsupported", () => {
   const s = Lib.resolveBookSource({ src: "https://www.hindawi.org/books/13028368.epub" });
@@ -163,6 +223,26 @@ check("F1 three fonts, four highlight colours", () => {
   assert.deepEqual(Lib.FONTS.map((f) => f.id), ["system", "amiri", "naskh"]);
   assert.equal(Lib.HIGHLIGHT_COLORS.length, 4);
   assert.ok(Lib.HIGHLIGHT_COLORS.every((c) => /^#[0-9A-F]{6}$/i.test(c.color)));
+});
+
+// ---------- G. fallback copy names a button that exists (WS-I 2026-11-16) ----------
+// The reader's error messages + empty state used to tell the user to
+// tap «Send to my device» on the book page — no such button exists:
+// /book has «احصل على الكتاب على جهازك» (delivery page) + «اقرأ أونلاين»
+// + a plain-text email link. A user following the old advice (phone,
+// desktop or Kindle) found nothing to tap. This guards the wording.
+import { readFileSync } from "node:fs";
+check("G1 no 'Send to my device' in reader.js or index.html", () => {
+  const js = readFileSync(new URL("./reader.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.ok(!js.includes("Send to my device"), "reader.js still names it");
+  assert.ok(!html.includes("Send to my device"), "index.html still names it");
+});
+check("G2 fallback copy names the real delivery button", () => {
+  const js = readFileSync(new URL("./reader.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.ok(js.includes("احصل على الكتاب على جهازك"), "reader.js");
+  assert.ok(html.includes("احصل على الكتاب على جهازك"), "index.html");
 });
 
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -6,8 +6,12 @@
 // language, format, narration), with an acquisition link that points
 // DIRECTLY at the upstream GitHub Release EPUB — no Quran file is stored
 // on our server. A second section lists the 20 tafsir dictionaries
-// (KOReader Quran Helper plugin): each entry links to its StarDict zip
-// on raw.githubusercontent.com, with the install path in the content.
+// (StarDict ZIPs on raw.githubusercontent.com). A third section lists
+// the 19 combined Quran + tafsir EPUBs (WS1 2026-11-16): the tafsir
+// embedded as endnotes in the Quran file — tap an ayah number, read
+// its tafsir, no plugin, no setup. The combined files are prebuilt
+// and published as RliBook release assets (see ../api/qurans.js);
+// Kurdish has no combined entry (no Kurdish Quran edition).
 //
 // Route note: functions/opds/[[fp]].js is a catch-all under /opds/; this
 // exact file route (/opds/qurans) takes precedence over the dynamic
@@ -17,6 +21,7 @@
 // same <entry> shape, same acquisition link relation, same content-type
 // headers, same XML escaping (raw URLs escaped exactly once).
 import { QURAN_TAG, QURAN_RELEASES_URL, QURANS, TAFSIRS } from "../api/qurans-data.js";
+import { combinedForTafsir } from "../api/qurans.js";
 
 const ACQ_CT = "application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8";
 const UPDATED = "2026-11-14T00:00:00Z";
@@ -32,13 +37,14 @@ export function onRequest(context) {
   let list = QURANS;
   if (lang) list = list.filter((e) => e.lang === lang);
 
+  const combined = TAFSIRS.map((t) => ({ t, c: combinedForTafsir(t) })).filter((x) => x.c);
   let out = '<?xml version="1.0" encoding="UTF-8"?>';
   out += '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">';
   out += "<title>المصاحف الإلكترونية — Qurans (RliBook)</title>";
   out += "<id>urn:rlibook:qurans</id><updated>" + UPDATED + "</updated>";
   out += '<link rel="self" href="/opds/qurans' + (lang ? "?lang=" + encodeURIComponent(lang) : "") + '" type="' + ACQ_CT + '"/>';
-  out += "<opds:totalResults>" + (list.length + TAFSIRS.length) + "</opds:totalResults>";
-  out += "<subtitle>Quran EPUBs (Hafs / Warsh, 10 languages) + 20 tafsir dictionaries for the KOReader Quran Helper plugin. Files come from the upstream zeeyado/quran-ebook release " + esc(QURAN_TAG) + " — nothing is hosted on our server.</subtitle>";
+  out += "<opds:totalResults>" + (list.length + TAFSIRS.length + combined.length) + "</opds:totalResults>";
+  out += "<subtitle>Quran EPUBs (Hafs / Warsh, 10 languages) + 19 combined Quran + tafsir EPUBs (tafsir inside the file — tap an ayah number) + 20 tafsir dictionaries. Files come from the upstream zeeyado/quran-ebook release " + esc(QURAN_TAG) + " and the RliBook release quran-tafsir-v1 — nothing is hosted on our server.</subtitle>";
 
   for (const e of list) {
     out += "<entry><title>" + esc(e.title_ar + " — " + e.title_en) + "</title>";
@@ -58,7 +64,20 @@ export function onRequest(context) {
     out += "<category term=\"tafsir\" label=\"Tafsir dictionary\"/>";
     out += "<category term=\"" + esc(t.lang) + "\" label=\"" + esc(t.lang_ar) + "\"/>";
     out += '<link rel="http://opds-spec.org/acquisition" href="' + esc(t.url) + '" type="application/zip"/>';
-    out += "<content type=\"text\">" + esc("قاموس تفسير لإضافة KOReader Quran Helper — فك الضغط في koreader/data/dict/ ثم اضغط مطولاً على رقم الآية. الحجم: " + t.size + ".") + "</content>";
+    out += "<content type=\"text\">" + esc("قاموس تفسير (StarDict) — للقراءة داخل KOReader مع إضافة Quran Helper فقط. الطريقة الأسهل: خذ نسخة «المصحف + التفسير» من هذا الفهرس، فالتفسير فيها داخل الملف. الحجم: " + t.size + ".") + "</content>";
+    out += "</entry>";
+  }
+
+  // The combined Quran + tafsir EPUBs (WS1): one entry per tafsir
+  // that has a combined build (19 of 20 — Kurdish has none). The
+  // tafsir is inside the file as endnotes: tap an ayah number.
+  for (const { t, c } of combined) {
+    out += "<entry><title>" + esc("المصحف + " + t.name + " — التفسير داخل الملف") + "</title>";
+    out += "<id>urn:rlibook:quran-tafsir:" + esc(c.id) + "</id><updated>" + UPDATED + "</updated>";
+    out += "<category term=\"quran-tafsir\" label=\"Quran with tafsir inside\"/>";
+    out += "<category term=\"" + esc(t.lang) + "\" label=\"" + esc(t.lang_ar) + "\"/>";
+    out += '<link rel="http://opds-spec.org/acquisition" href="' + esc(c.url) + '" type="application/epub+zip"/>';
+    out += "<content type=\"text\">" + esc("المصحف مع " + t.name + " مدمجاً داخله كحواشٍ: اضغط على رقم أي آية لتقرأ تفسيرها. لا إضافة ولا ملف إضافي ولا إعدادات — يعمل على كيندل عادي وفي KOReader.") + "</content>";
     out += "</entry>";
   }
 

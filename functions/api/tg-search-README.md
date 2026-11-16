@@ -34,7 +34,8 @@ Success (200):
       "kind": "channel",
       "formats": ["EPUB"],
       "url": "https://t.me/kotobkhana/7559",
-      "flagged": false
+      "flagged": false,
+      "size": "2.7 MB"
     }
   ]
 }
@@ -49,6 +50,15 @@ Success (200):
   (Telegram books have one file each, so one element, e.g. `["PDF"]`).
 - `url`: the t.me post link (the only way to get the book).
 - `flagged`: `true` when the book is flagged/commercial (see below).
+- `size`: the book file's size as recorded in the Telegram index
+  (D1 `books.size`, from the indexer's `size_text` — e.g. `"2.7 MB"`).
+  Present only when the index holds a size for the book; a book with
+  no recorded size carries no `size` key at all — never an invented
+  number, never `"0"` or `"?"`. All 327,408 books in the live shards
+  carry a size (measured 2026-11-16). There is NO page count anywhere
+  in the index (no `pages` column in D1, no page count in the Telegram
+  shards or the OPDS indexes), so no `pages` key is ever returned;
+  the book page and the bot card omit the field instead of guessing.
 - `total`: full match count (may exceed `results.length`).
 - `coverage`: the D1 snapshot — `{ indexed, target, partial }`.
   `indexed` is the D1 book count right now; `target`

@@ -9,7 +9,8 @@ writes to it) and writes, into the output directory:
   this file first; it is tiny.
 * ``index-<n>.json`` — SHARD files, one JSON object per file of the
   form ``{"books": [[title, author, filename, ext, size, source,
-  sources, date, url], ...]}`` (compact arrays, positional fields).
+  sources, date, handle, post], ...]}`` (compact arrays, positional
+  fields — the post URL is NOT stored, only handle + post id).
   Books are grouped by source (in the store's newest-first order)
   and a shard is closed before it would exceed ``SHARD_BYTES``, so
   every shard stays well under Cloudflare Pages' 25 MiB per-file
@@ -37,6 +38,7 @@ rename) so a failed export never leaves a half-written file behind.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +54,10 @@ SHARD_BYTES = 20 * 1024 * 1024
 
 # Positional fields of a book entry in a shard (compact arrays).
 # The search page maps them back to objects with these keys.
+# Workstream H: the raw post URL is no longer stored — only the
+# channel handle + post id, so no shard (and no page that reads one)
+# can link straight to a Telegram post. The search page understands
+# both shapes until the next daily sync regenerates the shards.
 BOOK_FIELDS = (
     "title",
     "author",
@@ -61,7 +67,8 @@ BOOK_FIELDS = (
     "source",
     "sources",
     "date",
-    "url",
+    "handle",
+    "post",
 )
 
 
@@ -69,10 +76,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Public Telegram post URL -> (handle, post id). Private-group
+# posts (t.me/c/<id>/<post>) and anything unparseable yield
+# ("", "") — the search page falls back to /book?q=<title> for
+# those instead of linking anywhere.
+_POST_RE = re.compile(r"^https?://t\.me/([^/]+)/(\d+)/?$")
+
+
+def _post_handle_post(obtain_url: str) -> tuple:
+    m = _POST_RE.match(obtain_url or "")
+    return (m.group(1), m.group(2)) if m else ("", "")
+
+
 def _book_rows(store: Store) -> list:
     """One dict per distinct book (newest file's data), newest first."""
-    return [
-        {
+    rows = []
+    for b in store.list_books():
+        handle, post = _post_handle_post(b["obtain_url"] or "")
+        rows.append({
             "title": b["title"] or b["filename"],
             "author": b["author"] or "",
             "filename": b["filename"],
@@ -81,10 +102,10 @@ def _book_rows(store: Store) -> list:
             "source": b["source_name"],
             "sources": b["source_count"],
             "date": (b["date"] or "")[:10],
-            "url": b["obtain_url"] or "",
-        }
-        for b in store.list_books()
-    ]
+            "handle": handle,
+            "post": post,
+        })
+    return rows
 
 
 def _book_array(book: dict) -> list:

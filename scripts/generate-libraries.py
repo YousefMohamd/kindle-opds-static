@@ -8,9 +8,16 @@ groups, with per-source post/file counts. Run from the repo root:
 
 Re-run whenever index.json is regenerated (the indexer export), so the
 list, counts and totals stay in sync. The page is plain static HTML
-(no JS at all) so it works in the Kindle browser. Each entry links to:
+(no JS at all) so it works in the Kindle browser. Each entry links to
   * /telegram/?source=<handle> — search that library's books on the site
-  * https://t.me/<handle>     — open the channel/group in Telegram
+    (the gated catalog — the ONLY link out of an entry)
+
+There is deliberately NO link to the channel/group itself
+(https://t.me/<handle>): a channel link lets a reader join the channel
+and download books straight from Telegram, bypassing the download gate
+(5/day cap + token). Library names and counts stay public; the channel
+handles stay in the manifest (index.json) for the bot and OPDS feeds,
+which still use them internally.
 
 Options (the daily telegram-sync workflow regenerates the page from the
 NEW staging manifest, before the staging directory is published):
@@ -65,8 +72,7 @@ def entry(s):
         f'  <li><div class="name">{html.escape(name)}</div>\n'
         f'    <div class="meta">{count} • {posts:,} منشور</div>\n'
         f'    <div class="links"><a href="/telegram/?source={html.escape(name, quote=True)}">'
-        f"كتب المكتبة ←</a>"
-        f'<a href="https://t.me/{html.escape(name, quote=True)}">فتح في تيليجرام ↗</a></div></li>\n'
+        f"كتب المكتبة ←</a></div></li>\n"
     )
 
 
@@ -114,9 +120,9 @@ def main():
 <p class="sub">Telegram Libraries — كل قنوات وجروبات تيليجرام المفهرسة في RliBook:
 {len(sources)} مكتبة، {books:,} كتاب مميز، {files:,} ملف.</p>
 <p><a class="btn" href="/telegram/">ابحث في كل المكتبات ←</a></p>
-<p class="note">اضغط «كتب المكتبة» لتصفّح كتب تلك المكتبة وحدها، أو «فتح في تيليجرام»
-لفتح القناة أو الجروب في تيليجرام. الكتب كلها روابط إلى منشورات تيليجرام —
-لا ملفات كتب مستضافة هنا.</p>
+<p class="note">اضغط «كتب المكتبة» لتصفّح كتب تلك المكتبة وحدها في فهرس
+RliBook. الكتب كلها روابط إلى منشورات تيليجرام — لا ملفات كتب مستضافة
+هنا.</p>
 {section("قنوات", channels)}
 {section("جروبات", groups)}
 <footer>

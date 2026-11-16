@@ -3,13 +3,24 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, a "📥 احصل على الكتاب على
-//        جهازك" primary button (the Kindle delivery page /kindle/get
-//        — a 10-minute short link the user opens on a phone/computer
-//        and uploads at amazon.com/sendtokindle), a "📖 اقرأ أونلاين"
-//        reader button (EPUB only), and the Send-to-Kindle email as a
-//        secondary link. No JavaScript, minimal CSS, tiny page —
-//        built for the Kindle experimental browser.
+//        title, author, library, format, an "أرسله إلى Kindle
+//        بالإيميل" PRIMARY button (the Send-to-Kindle email —
+//        UNLIMITED, no per-user cap), a device download button
+//        below it ONLY for an e-reader User-Agent (Workstream 1b:
+//        Kobo "📥 نزّل الكتاب على جهاز Kobo", PocketBook likewise,
+//        generic "📥 جرّب تنزيل الكتاب على جهازك", Kindle keeps the
+//        existing "📥 احصل على الكتاب على جهازك" — which is NOT a
+//        direct download: it opens /kindle/get, whose Kindle steps
+//        are phone → download → Send to Kindle for Web), and a
+//        "📖 اقرأ أونلاين" reader button (EPUB only). Desktop and
+//        mobile browsers see NO download button at all (email +
+//        reader only). The download button always points at the
+//        delivery page /kindle/get — a 10-minute short link, max 5
+//        downloads/day — never at a file. No JavaScript, minimal
+//        CSS, tiny page — built for the Kindle experimental browser.
+//        (Button order 2026-11-16: email first — the Kindle
+//        browser cannot download files at all, so email, which
+//        delivers straight to the library, is primary.)
 //
 // Why this exists: the catalog dictionary links to a book page. The old
 // link pointed at /opds/search, which returns an Atom XML feed — the
@@ -38,18 +49,43 @@
 // cards appear with no further change to this file.
 //
 // Telegram cards are NORMAL cards (title, author, source, format)
-// with the SAME "📥 احصل على الكتاب على جهازك" primary button as
-// OPDS cards — the button opens the delivery page /kindle/get, which
-// mints a 10-minute short link (the proxy fetches the file from
-// Telegram for the short link's target). The Send-to-Kindle email is
-// a secondary link under it. The source (library/channel name) is
-// plain TEXT under the book info, never the button label and never a
-// t.me link: tapping a source link opened the Telegram website, which
-// is not a download.
-// Flagged (commercial) Telegram books show a "تجاري" marker and NO send
-// button and NO reading on the website, per the website rule that
-// flagged books are flagged but not readable/downloadable on the
-// site — they point at the bot instead, which enforces the 3/day cap.
+// with the SAME "أرسله إلى Kindle بالإيميل" primary button as
+// OPDS cards — the button sends the book to the Kindle by email
+// (unlimited, no per-user cap). Under it, the SAME device download
+// button as OPDS cards (Workstream 1b: shown only for an e-reader
+// User-Agent — Kobo/PocketBook/generic get a device label, Kindle
+// keeps "📥 احصل على الكتاب على جهازك"; desktop/mobile get none),
+// which opens the delivery page /kindle/get (a 10-minute short
+// link; the proxy fetches the file from Telegram for the short
+// link's target; max 5 downloads/day). The card links come
+// pre-built from /api/tg-search (get/send/read) — the endpoint
+// never returns the raw t.me post URL to this page, so no card can
+// ever link straight to a Telegram post.
+// The source (library/channel name) is plain TEXT
+// under the book info, never the button label and never a t.me link:
+// tapping a source link opened the Telegram website, which is not a
+// download.
+// Flagged (commercial) Telegram books show a "تجاري" marker and ONE
+// button, "View in bot" (Workstream 2b) — the bot deep link from
+// /api/tg-search — and NO send button and NO reading on the website,
+// per the website rule that flagged books are flagged but not
+// readable/downloadable on the site — they point at the bot instead,
+// which enforces the 3/day cap.
+//
+// Book metadata (Workstream 3): under the format line each card shows
+// the file size and the page count — ONLY when the data exists.
+// The file size comes from the Telegram index (D1 books.size, via
+// /api/tg-search `size` — all 327,408 Telegram books in the live
+// shards carry one, measured 2026-11-16). The page count has NO
+// source anywhere today (no `pages` column in D1, no page count in
+// the Telegram shards or the OPDS indexes), so it is ALWAYS omitted
+// for now — the renderers carry the field forward-compatibly (if a
+// future index/endpoint sends `pages`, the card shows it; until then
+// nothing is invented, estimated, or shown as "?" or "0"). OPDS
+// cards have neither value today (their search-index.json holds only
+// title/author/id/mime), so they show no metadata line — the same
+// formatBookMeta() call runs for them, so a future index rebuild
+// that adds size/pages flows through with no further change here.
 //
 // Enrichment (Blocks 4 + 9): Telegram cards also show, when available,
 // an embedded cover (Block 4 pairing — a data:image/* URI stored with
@@ -74,14 +110,55 @@
 // EPUB/PDF ("Invalid File Type — Only .AZW, .PRC, .MOBI or .TXT"), and
 // the dialog's ".AZW" does NOT cover ".azw3" (BicBucStriim #287: *.azw3
 // hits the same error, *.mobi downloads). So there is no direct browser
-// download for these books, and the page renders NO direct-download
+// download for these books on a Kindle, and the page renders NO direct-download
 // link at all (removed 2026-11-13: device test showed tapping it
-// failed with a white page + error codes 175/101). The primary path is
-// the delivery page /kindle/get: a 10-minute short link the user opens
-// on a phone/computer, downloads there, and uploads at
-// amazon.com/sendtokindle — Amazon converts EPUB to AZW3/KFX on
-// delivery. The Send-to-Kindle email (functions/api/send-to-kindle.js)
-// stays as a secondary link for users who already approved the sender.
+// failed with a white page + error codes 175/101). The PRIMARY path is
+// the Send-to-Kindle email (unlimited, no per-user cap): Amazon
+// converts EPUB to AZW3/KFX on delivery, straight into the library.
+// The secondary path is the delivery page /kindle/get: a 10-minute
+// short link (max 5 downloads/day). On a Kobo/PocketBook the short
+// link is tapped ON the device and the file lands in the library
+// (their browsers download EPUBs directly); on a Kindle the short
+// link is opened on a phone/computer and uploaded at
+// amazon.com/sendtokindle; a desktop/mobile browser gets no button
+// for it at all (Workstream 1b, below).
+//
+// E-reader download button (Workstream 1b,
+// docs/ereader-download-button.md): the download button on a card
+// is gated on the request's User-Agent family (detectEReaderFamily).
+// Kobo/PocketBook get a device-named button, a generic e-reader UA
+// gets a labelled try-direct button, Kindle keeps the existing
+// button (its path is phone → Send to Kindle, never a direct
+// download), and desktop/mobile/no-UA visitors get NO download
+// button — email + reader only. The footer note and the Telegram
+// note describe the download ONLY when a download button was
+// actually rendered on the page, so a desktop visitor is never
+// promised a button that is not there.
+// HONEST LIMIT: the User-Agent is self-asserted and trivially
+// spoofable — any desktop can send a Kobo UA and see the button
+// (pinned in book.test.mjs M6). The gate is a deterrent for
+// ordinary users, NOT a hard block: what bounds abuse is the
+// 10-minute single-book token + 5/day cap + flagged-book denylist
+// in /api/dl-token.js, and /kindle/get stays reachable by direct
+// URL by design (the phone half of the Kindle flow and the bot
+// link both need it — a desktop that types the URL still gets the
+// phone-flow page, still token-gated and capped).
+//
+// Mini App hub (Workstream 3b): inside Telegram the same /kindle/get
+// button is rendered a second time with class "tg-only" — hidden by
+// default, revealed only when telegram-webapp.js adds html.tg-webapp
+// (i.e. only inside the Telegram Mini App). It renders ONLY when the
+// UA gate above hid the download button, so the two never duplicate.
+// The server cannot detect the Mini App (the webview sends a mobile
+// Telegram UA, so downloadLabel is "" there); the client-side class
+// is the only gate. The label is the generic Kindle-flow one —
+// inside Telegram the device family is unknowable without identity
+// (a future step: a validated-initData device lookup).
+//
+// E-reader families (docs/ereader-detection.md §4.3): a Kobo,
+// PocketBook, or generic e-reader UA gets a one-line banner at the
+// top of the page (direct download on the device) naming the button
+// to tap. Kindle/desktop get no banner.
 //
 // Every dynamic response sends `cache-control: no-store` (changed
 // 2026-11-16 from `no-store`: max-age=0
@@ -94,9 +171,104 @@
 // subrequest to /api/tg-search (1 of the 50/subrequest budget) whose
 // reply is ~2 KB. Network wait does not count toward the 10 ms CPU
 // limit; /book's own CPU grows by only the ~0.02 ms to parse it.
+// The five indexes are loaded through loadSearchIndex
+// (functions/opds/search.js), which skips the JSON.parse for a
+// library the needle provably cannot match — a no-hit query used to
+// parse all ~3 MB (44–53 ms CPU, past the 10 ms budget: 1102 shape)
+// and now costs ~2–3 ms of raw-text scanning instead.
+
+// E-reader family banner (docs/ereader-detection.md §4.3): a
+// Kobo/PocketBook/generic visitor gets one line at the top of the
+// page saying the delivery page downloads straight onto their
+// device. Kindle/desktop get no banner (Kindle pages already speak
+// Kindle). The button itself never changes — the delivery page
+// carries the per-family behaviour.
+import { detectEReaderFamily } from "./kindle/[[path]].js";
+
+// Device-specific download button label (Workstream 1b —
+// docs/ereader-download-button.md). The download button on a book
+// card is shown ONLY for these families, under the email button:
+//   kobo / pocketbook — a direct download on the device itself;
+//   generic — a labelled try (the device is unverified, so the
+//     label promises an attempt, not a device);
+//   kindle — the EXISTING "📥 احصل على الكتاب على جهازك" button,
+//     which is NOT a direct download: the Kindle browser cannot
+//     download EPUBs, so the button opens /kindle/get, whose
+//     Kindle steps are phone → download → Send to Kindle for Web.
+// Desktop / mobile / no-UA visitors get "" — NO download button
+// at all (email + reader only). Tolino/Boox UAs also get "":
+// detectEReaderFamily returns null for them (no family yet —
+// open item in the doc), so they are treated like desktop until
+// a family is assigned. Exported for tests.
+export function ereaderDownloadLabel(family) {
+  if (family === "kobo") return "📥 نزّل الكتاب على جهاز Kobo";
+  if (family === "pocketbook") return "📥 نزّل الكتاب على جهاز PocketBook";
+  if (family === "generic") return "📥 جرّب تنزيل الكتاب على جهازك";
+  if (family === "kindle") return "📥 احصل على الكتاب على جهازك";
+  return "";
+}
 
 const TG_LIMIT = 10; // Telegram cards per page (OPDS stays capped at 100)
 const MAX_Q_LEN = 200; // A title/author query longer than this is a 400 page, not a search
+
+// Shared search-index loader (functions/opds/search.js): fetches one
+// library's search-index.json as text and skips the JSON.parse when
+// the needle provably cannot match anything in it — the five indexes
+// total ~3 MB, and parsing all of them on a no-hit query cost
+// 44–53 ms CPU against the 10 ms free-tier budget (1102 shape).
+import { loadSearchIndex } from "./opds/search.js";
+// -- book metadata (Workstream 3) --------------------------------------
+// File size + page count, shown UNDER the format line on a card.
+// Same validation as functions/api/tg-search.js validateSize (kept
+// as a local copy, like parseTelegramPostUrl below): the indexer's
+// size text is "2.7 MB" / "888.9 KB" (digits, optional decimal with
+// "." or ",", unit B/KB/MB/GB); a byte count formats to the same
+// shape with one decimal. Anything else yields null — an unknown
+// size is omitted, never invented. Exported for tests.
+const SIZE_TEXT_RE = /^\d+(?:[.,]\d+)?\s*(B|KB|MB|GB)$/i;
+
+export function formatFileSize(value) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!SIZE_TEXT_RE.test(text)) return null;
+    const m = /^(\d+(?:[.,]\d+)?)\s*(B|KB|MB|GB)$/i.exec(text);
+    return `${m[1].replace(",", ".")} ${m[2].toUpperCase()}`;
+  }
+  if (typeof value === "number") {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return null;
+    let size = n;
+    for (const unit of ["B", "KB", "MB", "GB"]) {
+      if (size < 1024 || unit === "GB") {
+        return `${size.toFixed(1).replace(/\.0$/, "")} ${unit}`;
+      }
+      size /= 1024;
+    }
+  }
+  return null;
+}
+
+/** A page count -> a positive integer, or null when unknown/invalid
+ *  (0, negative, fractional, non-numeric: all omitted, never shown
+ *  as "0" or guessed). Exported for tests. */
+export function validatePages(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
+/** The metadata line for one card (Arabic, the site language), or ""
+ *  when NEITHER value is known — the caller then renders no line at
+ *  all. "الحجم: 2.7 MB" / "عدد الصفحات: 250", joined with " · " when
+ *  both are present. Exported for tests. */
+export function formatBookMeta({ size, pages } = {}) {
+  const parts = [];
+  const s = formatFileSize(size);
+  if (s) parts.push(`الحجم: ${s}`);
+  const p = validatePages(pages);
+  if (p !== null) parts.push(`عدد الصفحات: ${p}`);
+  return parts.join(" · ");
+}
 
 // Query the Telegram catalog via the /api/tg-search endpoint.
 // NEVER throws and NEVER returns a partial/untrusted result: any
@@ -110,8 +282,10 @@ const MAX_Q_LEN = 200; // A title/author query longer than this is a 400 page, n
 // null when the endpoint did not send one — so the caller can say
 // honestly that D1 is still a partial snapshot (import finishes
 // 2026-11-19) instead of guessing. Each result is validated: a title
-// and a t.me post URL are required, anything else is dropped, so a
-// bad endpoint reply can never inject an arbitrary link into the page.
+// is required, and the get/send/read links are used only when they
+// are strings on the expected same-origin paths — the raw t.me post
+// URL is never read here, so a bad endpoint reply can never inject
+// an arbitrary link into the page.
 // `origin` is the request origin (same-origin subrequest, like the
 // OPDS index fetches below). Exported for tests.
 export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
@@ -128,7 +302,34 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
     const results = [];
     for (const r of data.results) {
       if (!r || typeof r.title !== "string" || !r.title) continue;
-      if (typeof r.url !== "string" || !/^https:\/\/t\.me\//.test(r.url)) continue;
+      // Gated links only (Workstream H): /api/tg-search returns the
+      // delivery-page, email and reader links pre-built server-side
+      // — the raw t.me post URL is NEVER in the response, so this
+      // page cannot be made to render one even if the endpoint reply
+      // is tampered with. A link is used only when it is a string on
+      // the expected same-origin path; anything else is dropped.
+      // A record that CLAIMS a link (non-null) which fails that check
+      // is a tampered reply — the whole record is dropped. A record
+      // with no links at all (nulls — e.g. a MOBI book, which no
+      // delivery path accepts) is legitimate and still renders, with
+      // the "ask the bot" note instead of buttons.
+      // `r.url` is deliberately never read here.
+      const link = (v, prefix) =>
+        (typeof v === "string" && v.startsWith(prefix) ? v : null);
+      const get = link(r.get, "/kindle/get?");
+      const send = link(r.send, "/api/send-to-kindle?");
+      const read = link(r.read, "/site/reader/?");
+      // The "View in bot" deep link (Workstream 2b, flagged books
+      // only): exactly t.me/RliBook_bot?start=dl_<handle>_<post>_any.
+      // Anything else is a tampered reply — the record is dropped,
+      // like a bad get/send/read link. A missing bot field (an older
+      // endpoint reply) is legitimate: the card falls back to the
+      // bot home link.
+      const bot = (typeof r.bot === "string"
+        && /^https:\/\/t\.me\/RliBook_bot\?start=dl_[A-Za-z0-9_]{1,64}_\d{1,10}_any$/.test(r.bot))
+        ? r.bot : null;
+      const badLink = (v, ok) => v !== null && v !== undefined && ok === null;
+      if (badLink(r.get, get) || badLink(r.send, send) || badLink(r.read, read) || badLink(r.bot, bot)) continue;
       // Cover (Block 4 pairing): EMBEDDED only — a data:image/* URI
       // stored with the book metadata, small enough for the Kindle
       // browser (<= 150 KB). Anything else (a hotlink, an oversized
@@ -145,6 +346,12 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
       const description = typeof r.description === "string"
         ? r.description.slice(0, 2000)
         : "";
+      // Metadata (Workstream 3): file size from the endpoint (`size`,
+      // validated — junk is dropped); page count is passed through
+      // when the endpoint ever sends one (no source provides it
+      // today, so it is absent and the card omits it).
+      const size = formatFileSize(r.size);
+      const pages = validatePages(r.pages);
       results.push({
         title: r.title,
         author: typeof r.author === "string" ? r.author : "",
@@ -153,10 +360,15 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
         formats: Array.isArray(r.formats)
           ? r.formats.filter((f) => typeof f === "string")
           : [],
-        url: r.url,
         flagged: r.flagged === true,
+        get,
+        send,
+        read,
+        bot,
         cover,
         description,
+        ...(size ? { size } : {}),
+        ...(pages !== null ? { pages } : {}),
       });
     }
     return {
@@ -179,84 +391,13 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
   }
 }
 
-// Parse a t.me post URL into { handle, postId } for the Telegram send
-// path (/api/send-to-kindle?lib=tg&h=..&p=..). Same shape as
-// functions/api/tg-search.js parsePostUrl. Private-group links
-// (https://t.me/c/<id>/<post>) return null: "c" is not a public handle
-// and the proxy cannot fetch from it. Exported for tests.
-export function parseTelegramPostUrl(url) {
-  const m = /^https?:\/\/t\.me\/([^/?#]+)\/(\d+)/.exec(url || "");
-  if (!m || m[1] === "c") return null;
-  return { handle: m[1].toLowerCase(), postId: Number(m[2]) };
-}
-
 // Formats the email endpoint accepts (Send-to-Kindle's list). A Telegram
 // book in any other format (MOBI/AZW3/KFX) gets no send button — the
 // endpoint would refuse it anyway — and a note pointing at the bot.
+// (Kept for the OPDS cards in onRequest below; the Telegram cards use
+// the pre-built gated links /api/tg-search returns — see
+// fetchTelegramResults — so no t.me post URL is ever parsed here.)
 export const TG_SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
-
-/** The send URL for one Telegram result, or null when it cannot be
- *  sent from the website (private-group link, no usable format, or a
- *  non-sendable format). This is the SECONDARY email link on the
- *  card now — the primary button is telegramGetUrl below. `fpQ` is
- *  the "&amp;fp=..." suffix ("" when no fingerprint). Exported for tests. */
-export function telegramSendUrl(r, fpQ = "") {
-  if (!r || r.flagged) return null;
-  const post = parseTelegramPostUrl(r.url);
-  if (!post) return null;
-  const fmt = Array.isArray(r.formats) && r.formats.length
-    ? String(r.formats[0]).toLowerCase()
-    : "";
-  if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
-  return "/api/send-to-kindle?lib=tg"
-    + "&amp;h=" + encodeURIComponent(post.handle)
-    + "&amp;p=" + post.postId
-    + "&amp;f=" + fmt
-    + "&amp;t=" + encodeURIComponent(r.title || "") + fpQ;
-}
-
-/** The "Get on Kindle" delivery-page URL for one Telegram result,
- *  or null when the book cannot go through the delivery flow — the
- *  SAME eligibility as telegramSendUrl (not flagged, parseable post,
- *  sendable format), so a book the email endpoint would refuse gets
- *  no Get button either (its delivery page could not be completed:
- *  Send to Kindle for Web does not accept MOBI/AZW3). The delivery
- *  page mints the 10-minute short link; the short link's target is
- *  the signed proxy download. `fpQ` is the "&amp;fp=..." suffix.
- *  Exported for tests. */
-export function telegramGetUrl(r, fpQ = "") {
-  if (!r || r.flagged) return null;
-  const post = parseTelegramPostUrl(r.url);
-  if (!post) return null;
-  const fmt = Array.isArray(r.formats) && r.formats.length
-    ? String(r.formats[0]).toLowerCase()
-    : "";
-  if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
-  return "/kindle/get?lib=tg"
-    + "&amp;h=" + encodeURIComponent(post.handle)
-    + "&amp;p=" + post.postId
-    + "&amp;f=" + fmt
-    + "&amp;t=" + encodeURIComponent(r.title || "") + fpQ;
-}
-
-/** The reader URL for one Telegram result, or null when it cannot be
- *  read online (flagged, private-group link, or no EPUB format — the
- *  reader opens EPUB only, per site/reader/README.md). The reader
- *  fetches the book via /api/dl-token, so flagged books never reach
- *  it (the token endpoint returns 403). Exported for tests. */
-export function telegramReaderUrl(r) {
-  if (!r || r.flagged) return null;
-  const post = parseTelegramPostUrl(r.url);
-  if (!post) return null;
-  const hasEpub = Array.isArray(r.formats)
-    && r.formats.some((f) => String(f).toLowerCase().includes("epub"));
-  if (!hasEpub) return null;
-  return "/site/reader/?lib=tg"
-    + "&amp;h=" + encodeURIComponent(post.handle)
-    + "&amp;p=" + post.postId
-    + "&amp;f=epub"
-    + "&amp;title=" + encodeURIComponent(r.title || "");
-}
 
 // Rating + description for one book, via the same-origin
 // /api/ratings endpoint (functions/api/ratings.js: Google Books first,
@@ -305,6 +446,24 @@ export async function onRequest(context) {
   // form instead (see functions/api/send-to-kindle.js).
   const fp = (url.searchParams.get("fp") || "").trim();
   const fpQ = fp ? "&amp;fp=" + encodeURIComponent(fp) : "";
+  // E-reader family banner (see the import above): one line, only
+  // for Kobo / PocketBook / generic UAs, inserted after head() on
+  // the user-facing pages below (not on error pages).
+  const family = detectEReaderFamily(context.request.headers.get("user-agent") || "");
+  // WS1b download gate: the label is "" for desktop/mobile/no-UA
+  // (and for Tolino/Boox — no family yet), so no download button
+  // renders for them. See ereaderDownloadLabel above.
+  const downloadLabel = ereaderDownloadLabel(family);
+  const familyNote = family === "kobo"
+    ? "<p><b>أنت على جهاز Kobo</b> — اضغط «نزّل الكتاب على جهاز Kobo» ثم اضغط الرابط على جهازك، "
+      + "فينزّل الكتاب مباشرة في مكتبتك (أو انقله عبر USB).</p>\n"
+    : family === "pocketbook"
+      ? "<p><b>أنت على جهاز PocketBook</b> — اضغط «نزّل الكتاب على جهاز PocketBook» ثم اضغط الرابط على جهازك، "
+        + "فينزّل الكتاب مباشرة في مكتبتك (أو انقله عبر USB).</p>\n"
+      : family === "generic"
+        ? "<p><b>يبدو أنك على قارئ إلكتروني</b> — لم نتحقق من جهازك تحديدًا؛ اضغط زر التنزيل أدناه، "
+          + "وإن لم ينزّل فافتحه من هاتفك وانقل الملف عبر USB.</p>\n"
+        : "";
   const esc = (s) => String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
@@ -325,8 +484,12 @@ export async function onRequest(context) {
     + ".cover{max-width:120px;height:auto;border-radius:6px;border:1px solid #C4E0EB}"
     + ".rating{font-weight:600}.desc{font-size:.95rem}"
     + ".src{color:#555;font-size:.85rem}"
+    + ".meta{color:#555;font-size:.9rem}"
     + ".note{color:#555;font-size:.9rem}input[type=search]{font-size:1rem;padding:.4rem;width:70%}"
-    + "input[type=submit]{font-size:1rem;padding:.4rem .8rem}</style>\n</head>\n<body>\n"
+    + "input[type=submit]{font-size:1rem;padding:.4rem .8rem}"
+    + ".tg-only{display:none}html.tg-webapp .tg-only{display:block}</style>\n"
+    + "<script defer src=\"https://telegram.org/js/telegram-web-app.js\"></script>\n"
+    + "<script defer src=\"/site/assets/telegram-webapp.js\"></script>\n</head>\n<body>\n"
     + "<h1>RliBook</h1>\n"
     + "<form method=\"get\" action=\"/book\">"
     + "<input type=\"search\" name=\"q\" value=\"" + esc(qVal) + "\" "
@@ -341,6 +504,7 @@ export async function onRequest(context) {
 
   if (!q) {
     const body = head("بحث")
+      + familyNote
       + "<p>ابحث في المكتبات الخمس: خازندار، صحوه، المكتبة الإلكترونية، "
       + "هنداوي، DOAB.</p>\n"
       + "<p class=\"note\">للبحث في فهرس تيليجرام، استخدم "
@@ -392,16 +556,13 @@ export async function onRequest(context) {
   };
   const hits = [];
   for (const lib of LIBS) {
-    let books;
-    try {
-      const idxUrl = new URL("/" + lib.slug + "/search-index.json", url.origin);
-      const res = await fetch(idxUrl.toString(), {headers: {"accept": "application/json"}});
-      if (!res.ok) return opdsFail(lib);
-      books = await res.json();
-      if (!Array.isArray(books)) return opdsFail(lib);
-    } catch (e) {
-      return opdsFail(lib);
-    }
+    // A library the pre-filter clears ({ skip: true }) has no hits —
+    // no JSON.parse, no scan. A library whose index cannot be loaded
+    // is a 500 naming the library (see opdsFail above).
+    const loaded = await loadSearchIndex(url.origin, lib.slug, needle);
+    if (loaded.error) return opdsFail(lib);
+    if (loaded.skip) continue;
+    const books = loaded.books;
     for (const b of books) {
       if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {
         hits.push({lib, b});
@@ -444,6 +605,7 @@ export async function onRequest(context) {
   };
 
   let body = head("بحث: " + q);
+  if (familyNote) body += familyNote;
   if (hits.length === 0 && tg.results.length === 0) {
     if (tg.available) {
       // Telegram WAS searched (endpoint + D1 live) and found nothing
@@ -478,12 +640,15 @@ export async function onRequest(context) {
 
   const shown = hits.length + tg.results.length;
   body += "<p>وجدنا " + shown + " نتيجة لـ «" + esc(q) + "»:</p>\n";
+  // WS1b: true once ANY download button was actually rendered on
+  // this page — the footer note describes the download only then.
+  let anyDownload = false;
   for (const {lib, b} of hits) {
     // Send by email only works for the formats Send-to-Kindle accepts
-    // (epub/pdf/doc/docx/txt) — and the same set governs the primary
+    // (epub/pdf/doc/docx/txt) — and the same set governs the secondary
     // "Get on Kindle" button (Send to Kindle for Web does not accept
-    // MOBI/AZW3 either). A MOBI/AZW3 book gets NO Get button and NO
-    // send link — the endpoints would refuse them — and a note
+    // MOBI/AZW3 either). A MOBI/AZW3 book gets NO email button and NO
+    // Get button — the endpoints would refuse them — and a note
     // pointing at the bot instead, so the page never shows a button
     // that is certain to fail.
     // (No MOBI/AZW3 book is in the five indexes today, 2026-11-14, so
@@ -495,8 +660,8 @@ export async function onRequest(context) {
         + "&amp;f=" + fmtCode(b)
         + "&amp;t=" + encodeURIComponent(b.t || "") + fpQ
       : null;
-    // Primary button: the delivery page (/kindle/get) — same
-    // eligibility as the email link (a format Send to Kindle for
+    // Secondary button: the delivery page (/kindle/get) — same
+    // eligibility as the email button (a format Send to Kindle for
     // Web does not accept gets no Get button either; see I3).
     const getUrl = sendable
       ? "/kindle/get?lib=" + lib.slug
@@ -517,13 +682,46 @@ export async function onRequest(context) {
     body += "<div class=\"card\"><h2>" + esc(b.t) + "</h2>\n";
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
-    if (getUrl) {
-      body += "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+    // Button order (2026-11-16): email FIRST (primary, unlimited),
+    // then the download button (secondary, 5 downloads/day), then
+    // Read online. The Kindle browser cannot download files, so
+    // email — which lands straight in the library — is the path
+    // a Kindle user taps first.
+    // Metadata (Workstream 3): file size + page count UNDER the format
+    // line — only when known (OPDS indexes carry neither today, so no
+    // line renders; a future index rebuild flows through unchanged).
+    const opdsMeta = formatBookMeta({ size: b.size, pages: b.pages });
+    if (opdsMeta) body += "<p class=\"meta\">" + esc(opdsMeta) + "</p>\n";
+    // WS1b: the download button renders ONLY when the visitor's
+    // UA is an e-reader family (downloadLabel !== ""). Desktop /
+    // mobile / no-UA visitors see email + reader only — no
+    // /kindle/get link anywhere on their page.
+    if (sendUrl) {
+      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسله إلى Kindle بالإيميل</a></p>\n";
+    }
+    if (getUrl && downloadLabel) {
+      anyDownload = true;
+      body += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+    }
+    // WS3b (Mini App hub): the SAME /kindle/get button, shown ONLY
+    // inside Telegram (class tg-only, revealed by telegram-webapp.js
+    // when it adds html.tg-webapp) and ONLY when the UA gate above
+    // hid the download button — so the two never duplicate. The
+    // server cannot detect the Mini App (no UA/identity signal: the
+    // Mini App webview sends a mobile Telegram UA, so downloadLabel
+    // is "" here); the client-side tg-webapp class is the only gate.
+    // Label is the generic Kindle-flow one: inside Telegram the
+    // device family (Kobo vs Kindle) is unknowable without identity.
+    // NOTE: this branch deliberately does NOT set anyDownload — the
+    // footer/download notes describe a VISIBLE button (WS1b rule),
+    // and this button is CSS-hidden outside Telegram. Inside
+    // Telegram the button itself is the affordance; the note stays
+    // hidden there (it is server-rendered once and cannot be both).
+    if (getUrl && !downloadLabel) {
+      body += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
     }
     if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
-    if (sendUrl) {
-      body += "<p><a href=\"" + sendUrl + "\">أرسله بالإيميل (لمن أضاف المرسل من قبل)</a></p>\n";
-    } else {
+    if (!sendUrl) {
       body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
         + "اطلبه من البوت "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
@@ -547,6 +745,9 @@ export async function onRequest(context) {
         ? " (" + tg.results.length + " من " + tg.total + ")"
         : "")
       + "</h2>\n";
+    // WS1b: true once a Telegram card rendered a download button
+    // — the Telegram note below is shown only then.
+    let tgDownload = false;
     // Partial-import note (same gate as the no-match page): while D1
     // is still a partial snapshot the Telegram results on this page
     // are incomplete — more matches may appear once the import
@@ -601,26 +802,54 @@ export async function onRequest(context) {
         + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
         + (r.flagged ? " · تجاري" : "")
         + "</p>\n";
+      // Metadata (Workstream 3): file size + page count UNDER the format
+      // line — only when known (size comes from the index via tg-search;
+      // pages has no source today, so a page-less book shows size alone,
+      // and a book with neither shows no line at all).
+      const tgMeta = formatBookMeta({ size: r.size, pages: r.pages });
+      if (tgMeta) body += "<p class=\"meta\">" + esc(tgMeta) + "</p>\n";
       body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
       if (r.flagged) {
-        body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
-          + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
-          + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
+        // Flagged (commercial) book (Workstream 2b): shown with the
+        // "تجاري" marker and ONE button, "View in bot" — the bot
+        // deep link from /api/tg-search (the bot shows 🚩 + the
+        // source channel link under the 3/day cap and never
+        // downloads it). No send, no delivery page, no reader.
+        // A missing bot field (an older endpoint reply) falls back
+        // to the bot home link.
+        body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+          + "<p><a class=\"btn\" href=\"" + esc(r.bot || "https://t.me/RliBook_bot") + "\">View in bot</a></p>\n";
       } else {
-        // Primary button: the delivery page (/kindle/get) — same
-        // eligibility as the email link (telegramGetUrl mirrors
-        // telegramSendUrl). Then "Read online" (Block 11b reader):
-        // EPUB only, never flagged. Same URL contract as
-        // site/reader/README.md. The email send is a secondary
-        // link under both buttons.
-        const getUrl = telegramGetUrl(r, fpQ);
-        if (getUrl) body += "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
-        const readerUrl = telegramReaderUrl(r);
-        if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
-        const sendUrl = telegramSendUrl(r, fpQ);
+        // Button order (2026-11-16): email FIRST (primary button,
+        // unlimited), then the delivery page (secondary button,
+        // 5 downloads/day), then "Read online" (Block 11b reader):
+        // EPUB only, never flagged. The links come pre-built from
+        // /api/tg-search (gated: the page mints the 10-minute short
+        // link; the raw post URL never reaches this page). The
+        // fingerprint rides along on the Get and Send links (fpQ), so
+        // a catalog user never re-types their reader email.
+        const sendUrl = r.send ? esc(r.send) + fpQ : null;
         if (sendUrl) {
-          body += "<p><a href=\"" + sendUrl + "\">أرسله بالإيميل (لمن أضاف المرسل من قبل)</a></p>\n";
-        } else {
+          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسله إلى Kindle بالإيميل</a></p>\n";
+        }
+        // WS1b: same gate as the OPDS cards — a download button
+        // only for an e-reader family UA. A flagged book has no
+        // get link at all, so it never gets one here either.
+        const getUrl = r.get ? esc(r.get) + fpQ : null;
+        if (getUrl && downloadLabel) {
+          anyDownload = true;
+          tgDownload = true;
+          body += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+        }
+        // WS3b (Mini App hub): same rule as the OPDS cards — the
+        // tg-only button appears only when the UA gate hid the
+        // download button, so the two never duplicate.
+        if (getUrl && !downloadLabel) {
+          body += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+        }
+        const readerUrl = r.read ? esc(r.read) : null;
+        if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+        if (!sendUrl) {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "
             + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
@@ -628,21 +857,41 @@ export async function onRequest(context) {
       }
       body += "</div>\n";
     }
-    body += "<p class=\"note\">زر «احصل على الكتاب على جهازك» على كتب تيليجرام يجلب الملف "
-      + "من تيليجرام ويعطيك رابط تنزيل يعمل 10 دقائق.</p>\n";
+    // WS1b: shown only when a Telegram card actually rendered a
+    // download button — a desktop visitor is never told about a
+    // button that is not on their page.
+    if (tgDownload) {
+      body += "<p class=\"note\">زر التنزيل على كتب تيليجرام يجلب الملف "
+        + "من تيليجرام ويعطيك رابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى).</p>\n";
+    }
   }
 
-  // Footer note whenever ANY Get button is on the page (OPDS cards,
-  // or a sendable non-flagged Telegram card) — a page with no Get
-  // button must not promise one. It explains the delivery flow in
-  // one place instead of repeating it on every card.
-  const anyGet = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
-    || tg.results.some((r) => telegramGetUrl(r, fpQ) !== null);
-  if (anyGet) {
-    body += "<p class=\"note\">متصفح جهازك لا ينزّل EPUB/PDF — زر «احصل على الكتاب على جهازك» يعطيك "
-      + "رابط تنزيل يعمل 10 دقائق: نزّل الكتاب على هاتفك أو حاسوبك ثم ارفعه في "
-      + "amazon.com/sendtokindle، فيظهر في مكتبتك خلال دقائق. "
-      + "أو أرسله بالإيميل إن كنت قد أضفت المرسل من قبل"
+  // Footer note whenever ANY send button is on the page (OPDS cards,
+  // or a sendable non-flagged Telegram card) — a page with no send
+  // button must not promise one. It explains both delivery paths in
+  // one place instead of repeating them on every card: email first
+  // (primary, unlimited) and the download link second (5/day).
+  // WS1b: the download sentence appears ONLY when a download button
+  // was actually rendered (anyDownload), and its wording follows the
+  // family — Kindle keeps the phone → sendtokindle steps, Kobo /
+  // PocketBook / generic get the on-device wording (no sendtokindle:
+  // the file lands in the library straight from the device browser).
+  // A desktop/mobile visitor gets the email-only footer.
+  const anySend = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
+    || tg.results.some((r) => r.send !== null || r.get !== null);
+  if (anySend) {
+    body += "<p class=\"note\">الإرسال بالإيميل هو الطريقة الأساسية — بلا حد يومي: أرسل أي عدد "
+      + "من الكتب إلى جهازك، وسيظهر كل كتاب في مكتبتك خلال دقائق. "
+      + (anyDownload
+        ? family === "kindle"
+          ? "أما زر «احصل على الكتاب على جهازك» فيعطيك رابط تنزيل يعمل 10 دقائق "
+            + "(5 كتب في اليوم كحد أقصى): نزّل الكتاب على هاتفك أو حاسوبك ثم ارفعه في "
+            + "amazon.com/sendtokindle، فيظهر في مكتبتك خلال دقائق. "
+          : "أما زر التنزيل فيعطيك رابط تنزيل يعمل 10 دقائق "
+            + "(5 كتب في اليوم كحد أقصى): اضغطه على جهازك فينزّل الكتاب مباشرة في مكتبتك "
+            + "(أو افتح الرابط من هاتفك وانقل الملف عبر USB). "
+        : "")
+      + "للإرسال بالإيميل يجب أن تكون قد أضفت المرسل من قبل"
       + (fp
         ? " — ميلك محفوظ في البوت، لن يُطلب منك كتابته."
         : " — سيُطلب منك كتابة بريد جهازك مرة واحدة لكل كتاب، أو أرسله للبوت "

@@ -217,3 +217,19 @@ footer, .rl-footer {
   color: var(--olive-dark);
 }
 .agents-bar ul { margin: 0.3rem 0; padding-inline-start: 1.2rem; }
+
+/* ---- Telegram Mini App (v4.8.44, workstream D) ----
+ * site/assets/telegram-webapp.js adds class "tg-webapp" to <html>
+ * ONLY inside Telegram, and sets the --paper/--ink/--link/... vars
+ * from Telegram's theme params. These rules therefore apply ONLY
+ * inside Telegram — the plain-browser / Kindle look is untouched.
+ * .tg-hide hides browser-only chrome (PWA install buttons) inside
+ * Telegram, where there is no browser chrome to install into.
+ * .card and inputs are hardcoded white above, so they need explicit
+ * overrides or a dark Telegram theme would show white boxes. */
+.tg-webapp .tg-hide { display: none !important; }
+.tg-webapp .card { background: var(--card, #fff); }
+.tg-webapp input[type="search"],
+.tg-webapp select { background: var(--card, #fff); }
+.tg-webapp footer,
+.tg-webapp .rl-footer { color: var(--muted); border-top-color: var(--card-border); }

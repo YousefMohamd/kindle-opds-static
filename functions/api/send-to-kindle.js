@@ -42,9 +42,21 @@
 //   so a bare link to this endpoint still works on the Kindle browser.
 //
 // Env (Pages dashboard -> Settings -> Functions; secrets, never in repo):
-//   RESEND_API_KEY  (required) — the SAME Resend key the bot uses.
-//                     Secrets are per-project: the bot's key does NOT
-//                     carry over to Pages; add it to the Pages project.
+//   RESEND_API_KEY  (required unless BREVO_API_KEY is set) — the SAME
+//                     Resend key the bot uses. Secrets are per-project:
+//                     the bot's key does NOT carry over to Pages; add
+//                     it to the Pages project.
+//   BREVO_API_KEY   (optional) — the Brevo fallback key (round 3):
+//                     when Resend fails (429 daily cap or any other
+//                     failure) the same email is retried via Brevo
+//                     (300/day free). At least one of the two keys
+//                     must be set. rlibook.tech must be verified in
+//                     Brevo first (Brevo code + DKIM TXT records in
+//                     the Cloudflare DNS); Brevo's free plan adds a
+//                     "Sent with Brevo" footer to fallback emails, and
+//                     .epub is NOT on Brevo's supported-attachment
+//                     list (unverified — test a live EPUB send first).
+//                     See functions/api/email-send.js.
 //   RLIBOOK_KV      (required) — KV binding, the SAME namespace the bot
 //                     uses (id b5c90a91d24c424db87bf09e3883654f).
 //                     Needed for fp lookup AND for rate-limit counters.
@@ -57,7 +69,8 @@
 //                     proxy's secret (generate once, reuse both sides).
 //                     Unset -> same honest 503 as above.
 //
-// Limits (abuse bounds; Resend free tier is 100 emails/day anyway):
+// Limits (abuse bounds; Resend free tier is 100 emails/day, Brevo
+// fallback 300/day — 400/day combined, project-wide):
 //   MAX_FILE_BYTES  25 MB raw (~33 MB base64, under Resend's 40 MB
 //                   per-email cap after encoding, and inside a Worker's
 //                   128 MB memory). Send-to-Kindle itself caps at 50 MB.
@@ -80,6 +93,7 @@
 // is not deployed); until it is, Telegram sends fail cleanly with an
 // honest "not configured" page (503), never silently.
 import { makeToken } from "./dl-token.js";
+import { sendEmailWithFallback } from "./email-send.js";
 
 export const RESEND_API_URL = "https://api.resend.com/emails";
 export const KINDLE_SENDER = "send@rlibook.tech";
@@ -295,6 +309,32 @@ async function refundCounter(kv, key) {
   } catch { /* best-effort */ }
 }
 
+/** Queue one send for tomorrow (round 3 — both email providers at
+ *  their daily cap). The queue stores the SEND JOB, not the file
+ *  bytes: the drain job re-fetches the book from its source and
+ *  sends it the next day (a base64 book would not fit one KV value
+ *  anyway — 25 MB limit). The key is idempotent per (destination +
+ *  book + day): a retry overwrites the same entry, never a second
+ *  queue entry. TTL 48 h. Returns false when the put fails. The
+ *  drain job is NOT built yet — the queue persists in KV, but
+ *  nothing sends it until that job exists (follow-up for the
+ *  parent). Exported for tests. */
+export async function enqueueTomorrow(kv, job) {
+  try {
+    const bookIdentity = job.tgHandle
+      ? "tg:" + job.tgHandle + ":" + job.tgPostId
+      : job.lib + ":" + job.id;
+    const id = await sha256hex(
+      String(job.to || "").trim().toLowerCase() + "|" + bookIdentity + "|" + String(job.fmt || "").toLowerCase(),
+    );
+    const day = new Date().toISOString().slice(0, 10);
+    await kv.put("stk:queue:" + day + ":" + id, JSON.stringify(job), { expirationTtl: 172800 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the signed proxy download URL for one Telegram book, or null
  *  when the proxy is not configured (PROXY_BASE_URL or
  *  PROXY_SIGNING_KEY unset — the proxy is not deployed yet). The token
@@ -360,8 +400,9 @@ export async function onRequest(context) {
       "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد ربط KV).</p>\n"
       + "<p><a href=\"/\">← الرئيسية</a></p>", 503);
   }
-  const apiKey = (env.RESEND_API_KEY || "").trim();
-  if (!apiKey) {
+  const resendKey = (env.RESEND_API_KEY || "").trim();
+  const brevoKey = (env.BREVO_API_KEY || "").trim();
+  if (!resendKey && !brevoKey) {
     return page("الخدمة غير جاهزة",
       "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد مفتاح بريد).</p>\n"
       + "<p><a href=\"/\">← الرئيسية</a></p>", 503);
@@ -476,6 +517,20 @@ export async function onRequest(context) {
     }
     return page(title, bodyHtml, status);
   };
+  // queuedPage: the send was QUEUED for tomorrow (both providers at
+  // their daily cap). Like failPage it releases the dedupe key — the
+  // queue entry itself is idempotent per (destination + book + day),
+  // so a retry just overwrites the same entry. Unlike failPage it
+  // KEEPS the rate-limit counts: the attempt was made today, and the
+  // caps (5/day per destination) bound how many books one user can
+  // queue in a day.
+  const queuedPage = async (title, bodyHtml, status = 200) => {
+    if (dedupeClaimed) {
+      try { await env.RLIBOOK_KV.delete(dedupeKey); } catch { /* best-effort */ }
+      dedupeClaimed = false;
+    }
+    return page(title, bodyHtml, status);
+  };
   try {
     if (await env.RLIBOOK_KV.get(dedupeKey)) {
       return page("✅ تم الإرسال",
@@ -576,45 +631,60 @@ export async function onRequest(context) {
       + "حاول مجدداً لاحقاً.</p>", 502);
   }
 
-  // ---- send via Resend (same call the bot makes for the catalog) -----
+  // ---- send via Resend, Brevo fallback, queue for tomorrow -------
+  // Round 3 (see functions/api/email-send.js): Resend is primary;
+  // any Resend failure (429 daily cap or anything else) retries the
+  // SAME email via Brevo (300/day). Both providers at their cap
+  // queues the send job for tomorrow (KV, idempotent per
+  // destination + book + day) and the user is told so — never
+  // silently dropped. A non-capacity failure on both sides is a
+  // plain 502 (queueing would not help tomorrow).
   const filename = safeFilename(title, lib, id, fmt);
   const subject = ("RliBook: " + (title || filename)).slice(0, 120);
   const html = "<p>Your book from RliBook is attached.</p>"
     + "<p>كتابك من RliBook مرفق بهذا الميل — سيظهر في مكتبة جهازك خلال دقائق.</p>"
     + "<p>RliBook — Reply. Read. Fly.</p>";
-  let sendRes;
-  try {
-    sendRes = await fetch(RESEND_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + apiKey,
-        "Content-Type": "application/json",
-        // Resend sits behind Cloudflare, which answers 403 to requests
-        // without a User-Agent. Verified live 2026-11-11 (bot): the same
-        // POST without this header got 403, with it got 200.
-        "User-Agent": "RliBook-bot/1.0",
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [kindleEmail],
-        subject,
-        html,
-        attachments: [{ filename, content: b64Encode(bytes) }],
-      }),
-    });
-  } catch (e) {
+  const sendResult = await sendEmailWithFallback({
+    resendApiKey: resendKey,
+    brevoApiKey: brevoKey,
+    resendApiUrl: RESEND_API_URL,
+    message: {
+      from: RESEND_FROM,
+      to: [kindleEmail],
+      subject,
+      html,
+      attachments: [{ filename, content: b64Encode(bytes) }],
+    },
+    senderEmail: KINDLE_SENDER,
+    queue: { enqueue: (job) => enqueueTomorrow(env.RLIBOOK_KV, job) },
+    queuePayload: {
+      kind: "stk",
+      to: kindleEmail,
+      lib,
+      id,
+      fmt,
+      title,
+      tgHandle: isTg ? tgHandle : undefined,
+      tgPostId: isTg ? tgPostId : undefined,
+      queuedAt: new Date().toISOString(),
+    },
+  });
+  if (!sendResult.ok) {
+    if (sendResult.code === "E_QUEUED") {
+      return await queuedPage("⏳ سيصل غداً",
+        "<p>⏳ وصلت خدمتا البريد إلى الحد اليومي، فأجّلنا إرسال «" + esc(title || filename) + "» إلى "
+        + "<b>" + esc(maskEmail(kindleEmail)) + "</b> — سيصل غداً، ولا تحتاج إلى فعل شيء.</p>\n"
+        + "<p class=\"note\">تأكد أن <b>send@rlibook.tech</b> مضاف إلى المرسلين المعتمدين "
+        + "في amazon.com/myk، حتى يصل الكتاب عند إرساله.</p>\n"
+        + "<p><a class=\"btn\" href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n");
+    }
+    if (sendResult.code === "E_BOTH_EXHAUSTED") {
+      return await failPage("تعذّر الإرسال",
+        "<p>وصلت خدمتا البريد إلى الحد اليومي — جرّب مجدداً غداً.</p>\n"
+        + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى صفحة الكتاب</a></p>", 502);
+    }
     return await failPage("تعذّر الإرسال",
-      "<p>تعذّر الاتصال بخدمة البريد الآن — حاول مجدداً بعد دقيقة.</p>", 502);
-  }
-  if (!sendRes.ok) {
-    let detail = "HTTP " + sendRes.status;
-    try {
-      const data = await sendRes.json();
-      if (data && data.error && data.error.message) detail = data.error.message;
-      else if (data && data.message) detail = data.message;
-    } catch { /* keep the status detail */ }
-    return await failPage("تعذّر الإرسال",
-      "<p>خدمة البريد رفضت الإرسال (" + esc(detail) + ") — حاول مجدداً لاحقاً.</p>", 502);
+      "<p>خدمة البريد رفضت الإرسال (" + esc(sendResult.message || "خطأ غير معروف") + ") — حاول مجدداً لاحقاً.</p>", 502);
   }
 
   return page("✅ تم الإرسال",

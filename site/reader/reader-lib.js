@@ -27,7 +27,20 @@
 //
 // Only EPUB opens in the reader. A PDF/DOC link resolves to
 // { kind: "unsupported" } and the page points at Send-to-Kindle email
-// instead of pretending it can read it.
+// instead of pretending it can read it — EXCEPT PDF/TXT books,
+// which the plain-HTML reader (/read, functions/read.js) opens:
+// those carry plainReaderTokenUrl, the /api/read-token URL that
+// mints a 1-hour reader token for the book. (Hindawi is the
+// exception: its acquisition URL is EPUB-only, so a Hindawi
+// PDF/TXT has no plain-reader link.)
+//
+// No renewal timer here, by design (2026-11-16): the EPUB file is
+// fetched ONCE via tokenUrl -> fetchArrayBuffer, then local to
+// epub.js — there is nothing to renew. PDF/TXT hand off to /read
+// at click, and /read renews its own token (server-side per
+// chapter + a background timer). Personal books (?fp= + title)
+// thread through dlTokenUrl / plainReaderTokenUrl so the server
+// can verify the book is the caller's own (see those functions).
 
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) {
@@ -75,10 +88,43 @@
     return "https://drive.google.com/uc?id=" + encodeURIComponent(id) + "&export=download";
   }
 
-  function dlTokenUrl(handle, postId, fmt) {
-    return "/api/dl-token?h=" + encodeURIComponent(handle)
+  // The /api/dl-token URL that mints a 10-minute single-use
+  // download token for one Telegram book. `opts` (personal books,
+  // 2026-11-16): { fp, title } — appended as &fp=..&t=.. when
+  // provided; the server verifies them against the private feed
+  // (isPersonalBook) and an own book skips the flag gate and the
+  // mint caps. Without opts the call is a plain library-book mint.
+  function dlTokenUrl(handle, postId, fmt, opts) {
+    var u = "/api/dl-token?h=" + encodeURIComponent(handle)
       + "&p=" + encodeURIComponent(String(postId))
       + "&f=" + encodeURIComponent(fmt || "epub");
+    if (opts && opts.fp && opts.title) {
+      u += "&fp=" + encodeURIComponent(opts.fp)
+        + "&t=" + encodeURIComponent(opts.title);
+    }
+    return u;
+  }
+
+  // The /api/read-token URL that mints a 1-hour token for the
+  // plain-HTML reader (/read) for one book. `book` is { lib, id }
+  // or { lib: "tg", h, p } plus the format. `opts` (personal
+  // books, 2026-11-16): { fp, title } — appended as &fp=..&t=..
+  // when provided; an own book gets a token carrying "o":1, which
+  // /read renews without any flag re-check.
+  function plainReaderTokenUrl(book, fmt, opts) {
+    var extra = "";
+    if (opts && opts.fp && opts.title) {
+      extra = "&fp=" + encodeURIComponent(opts.fp)
+        + "&t=" + encodeURIComponent(opts.title);
+    }
+    if (book.lib === "tg") {
+      return "/api/read-token?lib=tg&h=" + encodeURIComponent(book.h)
+        + "&p=" + encodeURIComponent(String(book.p))
+        + "&f=" + encodeURIComponent(fmt) + extra;
+    }
+    return "/api/read-token?lib=" + encodeURIComponent(book.lib)
+      + "&id=" + encodeURIComponent(String(book.id))
+      + "&f=" + encodeURIComponent(fmt) + extra;
   }
 
   // True when `url` is an https URL on an allowlisted host (or a
@@ -141,6 +187,14 @@
       }
       if (DRIVE_LIBS[lib]) {
         if (!params.id) return { kind: "error", message: "This library book needs its id." };
+        // A Drive PDF/TXT opens in the plain-HTML reader instead.
+        var driveFmt = String(params.f || "epub").toLowerCase();
+        if (driveFmt === "pdf" || driveFmt === "txt") {
+          return {
+            kind: "unsupported", format: driveFmt, title: title,
+            plainReaderTokenUrl: plainReaderTokenUrl({ lib: lib, id: params.id }, driveFmt),
+          };
+        }
         // Google Drive's download endpoint does not send CORS headers
         // for every file, so the in-browser fetch may be refused even
         // though the file itself is fine. The reader reports that
@@ -152,7 +206,12 @@
           return { kind: "error", message: "A DOAB book needs its file link." };
         }
         if (fileExt(String(params.id)) && fileExt(String(params.id)) !== "epub") {
-          return { kind: "unsupported", format: fileExt(String(params.id)), title: title, url: String(params.id) };
+          var doabFmt = fileExt(String(params.id));
+          var doabRes = { kind: "unsupported", format: doabFmt, title: title, url: String(params.id) };
+          if (doabFmt === "pdf" || doabFmt === "txt") {
+            doabRes.plainReaderTokenUrl = plainReaderTokenUrl({ lib: "doab", id: String(params.id) }, doabFmt);
+          }
+          return doabRes;
         }
         return { kind: "epub", url: String(params.id), title: title, author: author };
       }
@@ -162,9 +221,14 @@
         var f = String(params.f || "epub").toLowerCase();
         if (!h || !p) return { kind: "error", message: "A Telegram book needs its channel and post number." };
         if (f !== "epub") {
-          return { kind: "unsupported", format: f, title: title };
+          var tgRes = { kind: "unsupported", format: f, title: title };
+          if (f === "pdf" || f === "txt") {
+            tgRes.plainReaderTokenUrl = plainReaderTokenUrl({ lib: "tg", h: h, p: p }, f,
+              { fp: params.fp, title: title });
+          }
+          return tgRes;
         }
-        return { kind: "token", tokenUrl: dlTokenUrl(h, p, f), title: title, author: author };
+        return { kind: "token", tokenUrl: dlTokenUrl(h, p, f, { fp: params.fp, title: title }), title: title, author: author };
       }
       return { kind: "error", message: "Unknown library: " + lib };
     }
@@ -258,6 +322,7 @@
     hindawiUrl: hindawiUrl,
     driveUrl: driveUrl,
     dlTokenUrl: dlTokenUrl,
+    plainReaderTokenUrl: plainReaderTokenUrl,
     isAllowedSrcUrl: isAllowedSrcUrl,
     fileExt: fileExt,
     resolveBookSource: resolveBookSource,
