@@ -251,20 +251,20 @@
       "folder": "added"
     },
     "OxfordBookwormers": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-16T03:52:33.165432+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "OxfordBookwormsDominoes1": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-16T03:54:44.512840+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "OxfordReadingTree": {
       "status": "pending",
@@ -1347,6 +1347,38 @@
       "folder": null
     },
     "zamericangroup": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "jami-al-kutub-al-musawwara": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "bookstoragebox": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "dar-maana": {
+      "status": "pending",
+      "joined_at": null,
+      "fail_reason": null,
+      "flood_wait_seconds": null,
+      "attempts": 0,
+      "folder": null
+    },
+    "al-suhuf-wal-majallat-al-ajnabiya": {
       "status": "pending",
       "joined_at": null,
       "fail_reason": null,

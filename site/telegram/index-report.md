@@ -1,6 +1,6 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-16T02:35:09.775339+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 4h 5m
+**Date:** 2026-11-16T03:54:51.274358+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
@@ -17,277 +17,63 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | api-backfill |
-| [daownbook](https://t.me/daownbook) | 0 | 0 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | api-backfill |
-| [kindlbook](https://t.me/kindlbook) | 0 | 0 | api-backfill |
-| [Kindle2](https://t.me/Kindle2) | 0 | 0 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 6 | 1 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 4 | 0 | api-backfill |
-| [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | api-backfill |
-| [ekraly](https://t.me/ekraly) | 3001 | 1879 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 1 | 0 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 4 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 0 | 0 | api-backfill |
-| [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | api-backfill |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | api-backfill |
-| [eatae](https://t.me/eatae) | 0 | 0 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 4 | 0 | api-backfill |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | api-backfill |
-| [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | api-backfill |
-| [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | api-backfill |
-| [book_juice](https://t.me/book_juice) | 0 | 0 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | api-backfill |
-| [books_p](https://t.me/books_p) | 2 | 0 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 0 | 0 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | api-backfill |
-| [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | api-backfill |
-| [nourbook](https://t.me/nourbook) | 0 | 0 | api-backfill |
-| [roayati](https://t.me/roayati) | 1 | 0 | api-backfill |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | api-backfill |
-| [Sumarians](https://t.me/Sumarians) | 0 | 0 | api-backfill |
-| [twinkling4](https://t.me/twinkling4) | 0 | 0 | api-backfill |
-| [your_books](https://t.me/your_books) | 0 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | api-backfill |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | api-backfill |
-| [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | api-backfill |
-| [jad32](https://t.me/jad32) | 0 | 0 | api-backfill |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | api-backfill |
-| [boook1023](https://t.me/boook1023) | 0 | 0 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 0 | 0 | api-backfill |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | api-backfill |
-| [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | api-backfill |
-| [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | api-backfill |
-| [zamerican0english](https://t.me/zamerican0english) | 0 | 0 | api-backfill |
-| All_kinds_Books_Lib (group) | 3370 | 2213 | export |
-| Arabickindle1 (group) | 3000 | 2566 | export |
-| BOOKCLUB_AR (group) | 0 | 0 | export |
-| bookclubarabic (group) | 0 | 0 | export |
-| booksforarabs (group) | 0 | 0 | export |
-| ddfkindle (group) | 0 | 0 | export |
-| EBook_Library (group) | 3043 | 3006 | export |
-| jazz223k (group) | 3029 | 2314 | export |
-| kfxarabic (group) | 2744 | 2717 | export |
-| kindel4 (group) | 3000 | 2067 | export |
-| kindle4kurd (group) | 3050 | 1310 | export |
-| KindleArabicLibrary (group) | 0 | 0 | export |
-| KindleKotob (group) | 3001 | 2991 | export |
-| kotobkhana (group) | 10 | 5 | export |
-| pdfiat (group) | 0 | 0 | export |
-| xepub (group) | 1 | 0 | export |
-| BOOK_HOUSE_INTERNATIONAL (group) | 0 | 0 | export |
-| bookjunkieb (group) | 0 | 0 | export |
-| bookpdfepub (group) | 1226 | 241 | export |
-| bookspsychology101 (group) | 41 | 13 | export |
-| CoolBooks (group) | 0 | 0 | export |
-| e_books_eng (group) | 0 | 0 | export |
-| ebookstoread (group) | 0 | 0 | export |
-| englishbooks99 (group) | 0 | 0 | export |
-| FreeEbookDownloadEnglish (group) | 0 | 0 | export |
-| Legacy_1945 (group) | 18 | 9 | export |
-| muscatnonfiction (group) | 3 | 1 | export |
-| OnePageAway (group) | 3000 | 1238 | export |
-| oxford_bookworms_lm (group) | 0 | 0 | export |
-| Oxford_Bookwormss (group) | 0 | 0 | export |
-| OxfordBookwormers (group) | 0 | 0 | export |
 | OxfordBookwormsDominoes1 (group) | 0 | 0 | export |
-| OxfordReadingTree (group) | 0 | 0 | export |
-| storybookspdf (group) | 0 | 0 | export |
-| the_romance_hub (group) | 15 | 8 | export |
-| trunkietrunk (group) | 3103 | 2979 | export |
-| adventurers5 (group) | 0 | 0 | export |
-| Ahlahadota (group) | 1 | 0 | export |
-| almoghmiroonal5msa (group) | 0 | 0 | export |
-| Arabic_PDF (group) | 0 | 0 | export |
-| bookcheldren (group) | 3007 | 2386 | export |
-| Mahmoud_Salem_5 (group) | 0 | 0 | export |
-| maktph (group) | 3001 | 2426 | export |
-| noorlibrarykids (group) | 3002 | 2466 | export |
-| pokidz (group) | 31 | 0 | export |
-| samaheltaweelkidsstories (group) | 0 | 0 | export |
-| Comics_gate (group) | 2677 | 2501 | export |
-| comics_link (group) | 3002 | 1455 | export |
-| donaldduckcomics (group) | 0 | 0 | export |
-| Mohanime (group) | 0 | 0 | export |
-| BabyEnglishBooks (group) | 0 | 0 | export |
-| book4kid (group) | 0 | 0 | export |
-| stories_kids (group) | 0 | 0 | export |
-| storybooksforkids (group) | 0 | 0 | export |
-| audiobooks_kid (group) | 0 | 0 | export |
-| easymath121 (group) | 3020 | 187 | export |
-| G5_Y5 (group) | 3002 | 2908 | export |
-| kidsbookden (group) | 0 | 0 | export |
-| plussheets (group) | 0 | 0 | export |
-| sciencecamp1 (group) | 0 | 0 | export |
-| scincematerialsMH (group) | 0 | 0 | export |
-| ArabicMagazine (group) | 0 | 0 | export |
-| arabJournalism (group) | 3470 | 2959 | export |
-| magazineguy (group) | 0 | 0 | export |
-| megalatnawader (group) | 0 | 0 | export |
-| aa2tyuq (group) | 0 | 0 | export |
-| abo_abdu (group) | 3063 | 1409 | export |
-| ahn1972 (group) | 3000 | 1587 | export |
-| ahn2323 (group) | 3020 | 1610 | export |
-| alanbyawardmsr (group) | 2929 | 1481 | export |
-| almaktbhh (group) | 3000 | 1539 | export |
-| Almootnbe100 (group) | 3013 | 2519 | export |
-| art_of_book (group) | 0 | 0 | export |
-| ArwaCoffeeBook (group) | 187 | 8 | export |
-| asseralkotob (group) | 20 | 14 | export |
-| book100100 (group) | 0 | 0 | export |
-| book350 (group) | 0 | 0 | export |
-| Book_cr2 (group) | 3140 | 1278 | export |
-| Bookes2023 (group) | 429 | 411 | export |
-| bookforbooks (group) | 0 | 0 | export |
-| BoOkJuiCe (group) | 1 | 1 | export |
-| books2023 (group) | 3699 | 3686 | export |
-| BROKAREEMANDME (group) | 3142 | 1076 | export |
-| cozmoBooks (group) | 3004 | 2986 | export |
-| debsibooks (group) | 3 | 1 | export |
-| DrKhaledFahmy (group) | 0 | 0 | export |
-| ekraly3 (group) | 3119 | 1396 | export |
-| freebooksf (group) | 3001 | 1580 | export |
-| fun_to_read (group) | 3043 | 2955 | export |
-| HadiAriyanLibrary (group) | 0 | 0 | export |
-| HindawiFoundationBooks (group) | 0 | 0 | export |
-| HoSo0oN (group) | 2 | 0 | export |
-| julietyoya (group) | 3042 | 1414 | export |
-| katabataa (group) | 3000 | 1133 | export |
-| khatabg (group) | 3009 | 2357 | export |
-| KotobkhanaPDF (group) | 0 | 0 | export |
-| kotokhatab (group) | 3009 | 2458 | export |
-| kottobgededa1977 (group) | 0 | 0 | export |
-| L_alnader1 (group) | 3003 | 2579 | export |
-| L_alnader14 (group) | 3005 | 2239 | export |
-| l_alnader2 (group) | 3017 | 1600 | export |
-| lastStopbooks (group) | 381 | 380 | export |
-| lenaqra (group) | 20 | 13 | export |
-| lenaqra3 (group) | 2319 | 916 | export |
-| llllTTTWW (group) | 3006 | 687 | export |
-| lovekotob (group) | 3000 | 2871 | export |
-| M3RFAHALKOTOB (group) | 3111 | 2343 | export |
-| MaktabaBook (group) | 1322 | 722 | export |
-| maktbahnet (group) | 3000 | 0 | export |
-| maktbapdf (group) | 3193 | 0 | export |
-| mybook22 (group) | 3070 | 3018 | export |
-| ni3mehalzoubi (group) | 2 | 2 | export |
-| novels2n (group) | 3012 | 2611 | export |
-| Numidia_Library (group) | 2 | 1 | export |
-| pdf_novels (group) | 3000 | 1663 | export |
-| pdfkotab19 (group) | 0 | 0 | export |
-| read00 (group) | 3000 | 2984 | export |
-| Sa7eralkutub (group) | 64 | 30 | export |
-| soramnqraa (group) | 9 | 8 | export |
-| tea_sugar (group) | 3046 | 1277 | export |
-| To_The_Book (group) | 3003 | 1948 | export |
-| wadistreambooks (group) | 0 | 0 | export |
-| wessam_pdf (group) | 3000 | 2981 | export |
-| yasmeenbook (group) | 0 | 0 | export |
-| abntaymia3 (group) | 6 | 2 | export |
-| almeshkat2023 (group) | 3030 | 1930 | export |
-| baz_book (group) | 3035 | 1702 | export |
-| Drnonaphrmacy (group) | 1517 | 124 | export |
-| dvjhtj (group) | 0 | 0 | export |
-| Free_IslamicBooks (group) | 2 | 1 | export |
-| IslamicLibrary1 (group) | 3004 | 1886 | export |
-| islamicMoral (group) | 19 | 4 | export |
-| kj7_oi (group) | 0 | 0 | export |
-| KOTOB_ISLAMIC (group) | 3057 | 1660 | export |
-| KotobEslamiah (group) | 3079 | 1122 | export |
-| ktbmB_othaimen (group) | 0 | 0 | export |
-| ktbmfid (group) | 3003 | 1954 | export |
-| mergebooks (group) | 0 | 0 | export |
-| NewBooksAndEditions (group) | 220 | 111 | export |
-| palkotob (group) | 3000 | 1604 | export |
-| PDFnew (group) | 3044 | 1604 | export |
-| qra_at (group) | 2878 | 997 | export |
-| quwaa (group) | 0 | 0 | export |
-| safi_book (group) | 3063 | 1638 | export |
-| tahmilkutubwarosaililmiyah (group) | 9 | 7 | export |
-| jame3_masahif (group) | 0 | 0 | export |
-| shamarly (group) | 3 | 0 | export |
-| abjjad_free (group) | 0 | 0 | export |
-| julietbookstoregroup (group) | 3078 | 1097 | export |
-| K3tabi (group) | 0 | 0 | export |
-| K3tabiCo (group) | 1 | 0 | export |
-| Motamayz00n (group) | 0 | 0 | export |
-| READ4OR (group) | 99 | 38 | export |
-| Rff404 (group) | 60 | 29 | export |
-| SARIQriwayat (group) | 16 | 8 | export |
-| GoldenshamelaGroup (group) | 3043 | 80 | export |
-| isalmickindl (group) | 0 | 0 | export |
-| shamela4kindle (group) | 3000 | 2419 | export |
-| shamela_epub (group) | 3000 | 3000 | export |
-| shamela_kindle (group) | 3000 | 2968 | export |
-| ShamelaMakhtota (group) | 0 | 0 | export |
-| cambridge_library (group) | 0 | 0 | export |
-| englishcafe_1 (group) | 0 | 0 | export |
-| langcours (group) | 3008 | 1133 | export |
-| MyEnglishChannel (group) | 2046 | 286 | export |
-| Tleeq (group) | 0 | 0 | export |
-| ZAmericanEnglishCourse (group) | 0 | 0 | export |
-| zamericangroup (group) | 3000 | 36 | export |
-| jami-al-kutub-al-musawwara (group) | 3000 | 1408 | export |
-| bookstoragebox (group) | 3000 | 645 | export |
-| dar-maana (group) | 143 | 70 | export |
-| al-suhuf-wal-majallat-al-ajnabiya (group) | 3000 | 2807 | export |
 
 ## Indexed channels (51)
 
 | Channel | Posts | Book files | Scope |
 |---|---|---|---|
-| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | api-backfill |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 3425 | 244 | api-backfill |
-| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | api-backfill |
-| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | api-backfill |
-| [altfwok](https://t.me/altfwok) | 17152 | 1002 | api-backfill |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | api-backfill |
-| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | api-backfill |
+| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | — |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 3425 | 244 | — |
+| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | — |
+| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | — |
+| [altfwok](https://t.me/altfwok) | 17152 | 1002 | — |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | — |
+| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | — |
 | [arabicEread](https://t.me/arabicEread) | 3 | 0 | — |
-| [book_juice](https://t.me/book_juice) | 4811 | 226 | api-backfill |
-| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | api-backfill |
+| [book_juice](https://t.me/book_juice) | 4811 | 226 | — |
+| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | — |
 | [Bookkn](https://t.me/Bookkn) | 5 | 0 | — |
-| [books_p](https://t.me/books_p) | 8198 | 1201 | api-backfill |
+| [books_p](https://t.me/books_p) | 8198 | 1201 | — |
 | [booksguy](https://t.me/booksguy) | 2 | 0 | — |
-| [boook1023](https://t.me/boook1023) | 19345 | 4 | api-backfill |
-| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | api-backfill |
-| [daownbook](https://t.me/daownbook) | 3679 | 1794 | api-backfill |
-| [darkromancenovels](https://t.me/darkromancenovels) | 5132 | 1058 | api-backfill |
-| [eatae](https://t.me/eatae) | 3904 | 386 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 19345 | 4 | — |
+| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | — |
+| [daownbook](https://t.me/daownbook) | 3679 | 1794 | — |
+| [darkromancenovels](https://t.me/darkromancenovels) | 5132 | 1058 | — |
+| [eatae](https://t.me/eatae) | 3904 | 386 | — |
 | [eBookRoom](https://t.me/eBookRoom) | 1670 | 0 | — |
 | [Ebookspdfdownload](https://t.me/Ebookspdfdownload) | 2 | 0 | — |
-| [ekraly](https://t.me/ekraly) | 48037 | 16771 | api-backfill |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 30629 | 29093 | api-backfill |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4589 | 317 | api-backfill |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | api-backfill |
-| [jad32](https://t.me/jad32) | 192 | 109 | api-backfill |
-| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | api-backfill |
-| [Kindle2](https://t.me/Kindle2) | 534 | 19 | api-backfill |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | api-backfill |
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | api-backfill |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | api-backfill |
-| [L_alnader8](https://t.me/L_alnader8) | 24186 | 3490 | api-backfill |
-| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 48037 | 16771 | — |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 30629 | 29093 | — |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4589 | 317 | — |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | — |
+| [jad32](https://t.me/jad32) | 192 | 109 | — |
+| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | — |
+| [Kindle2](https://t.me/Kindle2) | 534 | 19 | — |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | — |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | — |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | — |
+| [L_alnader8](https://t.me/L_alnader8) | 24186 | 3490 | — |
+| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | — |
 | [Maktademia](https://t.me/Maktademia) | 1 | 0 | — |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | api-backfill |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 21 | 0 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | — |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 21 | 0 | — |
 | [Motamayezon7](https://t.me/Motamayezon7) | 65 | 0 | — |
-| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | api-backfill |
-| [nourbook](https://t.me/nourbook) | 362 | 0 | api-backfill |
-| [osratouna1](https://t.me/osratouna1) | 5001 | 125 | api-backfill |
-| [Ouloalelm](https://t.me/Ouloalelm) | 282 | 85 | api-backfill |
+| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | — |
+| [nourbook](https://t.me/nourbook) | 362 | 0 | — |
+| [osratouna1](https://t.me/osratouna1) | 5001 | 125 | — |
+| [Ouloalelm](https://t.me/Ouloalelm) | 282 | 85 | — |
 | [premium_ebooks](https://t.me/premium_ebooks) | 1172 | 0 | — |
-| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | api-backfill |
-| [roayati](https://t.me/roayati) | 553 | 0 | api-backfill |
-| [rwaiaty4](https://t.me/rwaiaty4) | 30895 | 11809 | api-backfill |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | api-backfill |
-| [Sumarians](https://t.me/Sumarians) | 52 | 0 | api-backfill |
-| [thedevilshours](https://t.me/thedevilshours) | 2022 | 169 | api-backfill |
-| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | api-backfill |
-| [twinkling4](https://t.me/twinkling4) | 921 | 287 | api-backfill |
-| [your_books](https://t.me/your_books) | 126 | 0 | api-backfill |
-| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | api-backfill |
+| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | — |
+| [roayati](https://t.me/roayati) | 553 | 0 | — |
+| [rwaiaty4](https://t.me/rwaiaty4) | 30895 | 11809 | — |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | — |
+| [Sumarians](https://t.me/Sumarians) | 52 | 0 | — |
+| [thedevilshours](https://t.me/thedevilshours) | 2022 | 169 | — |
+| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | — |
+| [twinkling4](https://t.me/twinkling4) | 921 | 287 | — |
+| [your_books](https://t.me/your_books) | 126 | 0 | — |
+| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | — |
 
 ## Channels with 0 book files — drop candidates (8)
 
