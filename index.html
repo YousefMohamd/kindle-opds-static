@@ -48,7 +48,7 @@
 
 <div class="card">
   <h2>ابحث في كل المكتبات</h2>
-  <p>بحث واحد يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (219 مكتبة)
+  <p>بحث واحد يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (223 مكتبة)
   وخازندار وصحوه والمكتبة الإلكترونية وهنداوي وDOAB — بالعنوان أو المؤلف.</p>
   <form id="searchform" action="/" method="get">
     <input type="search" id="q" name="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="ابحث في كل المكتبات">
@@ -62,7 +62,7 @@
 
 <div class="card">
   <h2>مكتبات تلجرام</h2>
-  <p id="tgcount">219 مكتبة — 327,408 كتاب مميز، 450,429 ملف — من قنوات
+  <p id="tgcount">223 مكتبة — 405,568 كتاب مميز، 589,417 ملف — من قنوات
   وجروبات تيليجرام العامة.</p>
   <a class="btn" href="/telegram/libraries.html">تصفّح مكتبات تلجرام ←</a>
   <a class="btn" href="/telegram/">ابحث في كتب تيليجرام</a>
@@ -288,7 +288,7 @@ qEl.addEventListener("input", function () {
 // from site/telegram/index.json by scripts/refresh-counts.py — run
 // it after each manifest regeneration (the daily telegram-sync
 // workflow runs it with the new staging manifest). Never edit the
-// numbers by hand. Manifest used here: generated 2026-11-15T18:16:44.289314+00:00.
+// numbers by hand. Manifest used here: generated 2026-11-16T02:35:26.154840+00:00.
 fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(function (d) {
   var t = d.totals || {};
   if (t.sources && t.books) {

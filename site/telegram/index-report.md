@@ -1,79 +1,293 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-15T18:16:34.725839+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 2s
+**Date:** 2026-11-16T02:35:09.775339+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 4h 5m
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **907601 posts, 450429 book files** (327408 distinct books)
+- **Channels with data: 51 of 51 walkable** — **1133414 posts, 589417 book files** (405568 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
 - **Not yet indexed: 0 channels**
 - **Failures this run: 0** (see below; a failed channel keeps its last-good data)
-- **Groups indexed from exports: 168** — 0 more groups are commented out in channels.yaml, each needs a Desktop JSON export
+- **Groups indexed from exports: 172** — 0 more groups are commented out in channels.yaml, each needs a Desktop JSON export
 
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 0 | 0 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 0 | 0 | api-backfill |
+| [daownbook](https://t.me/daownbook) | 0 | 0 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 0 | 0 | api-backfill |
+| [kindlbook](https://t.me/kindlbook) | 0 | 0 | api-backfill |
+| [Kindle2](https://t.me/Kindle2) | 0 | 0 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 6 | 1 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 4 | 0 | api-backfill |
+| [TheEbookStop](https://t.me/TheEbookStop) | 0 | 0 | api-backfill |
+| [ekraly](https://t.me/ekraly) | 3001 | 1879 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 1 | 0 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 4 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 0 | 0 | api-backfill |
+| [AAT2024F](https://t.me/AAT2024F) | 0 | 0 | api-backfill |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 0 | 0 | api-backfill |
+| [eatae](https://t.me/eatae) | 0 | 0 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 4 | 0 | api-backfill |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 0 | 0 | api-backfill |
+| [alm_elmaref](https://t.me/alm_elmaref) | 0 | 0 | api-backfill |
+| [arabicbooks](https://t.me/arabicbooks) | 0 | 0 | api-backfill |
+| [book_juice](https://t.me/book_juice) | 0 | 0 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 0 | 0 | api-backfill |
+| [books_p](https://t.me/books_p) | 2 | 0 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 0 | 0 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 0 | 0 | api-backfill |
+| [n_bhs2](https://t.me/n_bhs2) | 0 | 0 | api-backfill |
+| [nourbook](https://t.me/nourbook) | 0 | 0 | api-backfill |
+| [roayati](https://t.me/roayati) | 1 | 0 | api-backfill |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 0 | 0 | api-backfill |
+| [Sumarians](https://t.me/Sumarians) | 0 | 0 | api-backfill |
+| [twinkling4](https://t.me/twinkling4) | 0 | 0 | api-backfill |
+| [your_books](https://t.me/your_books) | 0 | 0 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 0 | 0 | api-backfill |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 0 | 0 | api-backfill |
+| [qurany_is_life](https://t.me/qurany_is_life) | 0 | 0 | api-backfill |
+| [jad32](https://t.me/jad32) | 0 | 0 | api-backfill |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 0 | 0 | api-backfill |
+| [boook1023](https://t.me/boook1023) | 0 | 0 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 0 | 0 | api-backfill |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 0 | 0 | api-backfill |
+| [Ouloalelm](https://t.me/Ouloalelm) | 0 | 0 | api-backfill |
+| [Course_reserve](https://t.me/Course_reserve) | 0 | 0 | api-backfill |
+| [zamerican0english](https://t.me/zamerican0english) | 0 | 0 | api-backfill |
+| All_kinds_Books_Lib (group) | 3370 | 2213 | export |
+| Arabickindle1 (group) | 3000 | 2566 | export |
+| BOOKCLUB_AR (group) | 0 | 0 | export |
+| bookclubarabic (group) | 0 | 0 | export |
+| booksforarabs (group) | 0 | 0 | export |
+| ddfkindle (group) | 0 | 0 | export |
+| EBook_Library (group) | 3043 | 3006 | export |
+| jazz223k (group) | 3029 | 2314 | export |
+| kfxarabic (group) | 2744 | 2717 | export |
+| kindel4 (group) | 3000 | 2067 | export |
+| kindle4kurd (group) | 3050 | 1310 | export |
+| KindleArabicLibrary (group) | 0 | 0 | export |
+| KindleKotob (group) | 3001 | 2991 | export |
+| kotobkhana (group) | 10 | 5 | export |
+| pdfiat (group) | 0 | 0 | export |
+| xepub (group) | 1 | 0 | export |
+| BOOK_HOUSE_INTERNATIONAL (group) | 0 | 0 | export |
+| bookjunkieb (group) | 0 | 0 | export |
+| bookpdfepub (group) | 1226 | 241 | export |
+| bookspsychology101 (group) | 41 | 13 | export |
+| CoolBooks (group) | 0 | 0 | export |
+| e_books_eng (group) | 0 | 0 | export |
+| ebookstoread (group) | 0 | 0 | export |
+| englishbooks99 (group) | 0 | 0 | export |
+| FreeEbookDownloadEnglish (group) | 0 | 0 | export |
+| Legacy_1945 (group) | 18 | 9 | export |
+| muscatnonfiction (group) | 3 | 1 | export |
+| OnePageAway (group) | 3000 | 1238 | export |
+| oxford_bookworms_lm (group) | 0 | 0 | export |
 | Oxford_Bookwormss (group) | 0 | 0 | export |
+| OxfordBookwormers (group) | 0 | 0 | export |
+| OxfordBookwormsDominoes1 (group) | 0 | 0 | export |
+| OxfordReadingTree (group) | 0 | 0 | export |
+| storybookspdf (group) | 0 | 0 | export |
+| the_romance_hub (group) | 15 | 8 | export |
+| trunkietrunk (group) | 3103 | 2979 | export |
+| adventurers5 (group) | 0 | 0 | export |
+| Ahlahadota (group) | 1 | 0 | export |
+| almoghmiroonal5msa (group) | 0 | 0 | export |
+| Arabic_PDF (group) | 0 | 0 | export |
+| bookcheldren (group) | 3007 | 2386 | export |
+| Mahmoud_Salem_5 (group) | 0 | 0 | export |
+| maktph (group) | 3001 | 2426 | export |
+| noorlibrarykids (group) | 3002 | 2466 | export |
+| pokidz (group) | 31 | 0 | export |
+| samaheltaweelkidsstories (group) | 0 | 0 | export |
+| Comics_gate (group) | 2677 | 2501 | export |
+| comics_link (group) | 3002 | 1455 | export |
+| donaldduckcomics (group) | 0 | 0 | export |
+| Mohanime (group) | 0 | 0 | export |
+| BabyEnglishBooks (group) | 0 | 0 | export |
+| book4kid (group) | 0 | 0 | export |
+| stories_kids (group) | 0 | 0 | export |
+| storybooksforkids (group) | 0 | 0 | export |
+| audiobooks_kid (group) | 0 | 0 | export |
+| easymath121 (group) | 3020 | 187 | export |
+| G5_Y5 (group) | 3002 | 2908 | export |
+| kidsbookden (group) | 0 | 0 | export |
+| plussheets (group) | 0 | 0 | export |
+| sciencecamp1 (group) | 0 | 0 | export |
+| scincematerialsMH (group) | 0 | 0 | export |
+| ArabicMagazine (group) | 0 | 0 | export |
+| arabJournalism (group) | 3470 | 2959 | export |
+| magazineguy (group) | 0 | 0 | export |
+| megalatnawader (group) | 0 | 0 | export |
+| aa2tyuq (group) | 0 | 0 | export |
+| abo_abdu (group) | 3063 | 1409 | export |
+| ahn1972 (group) | 3000 | 1587 | export |
+| ahn2323 (group) | 3020 | 1610 | export |
+| alanbyawardmsr (group) | 2929 | 1481 | export |
+| almaktbhh (group) | 3000 | 1539 | export |
+| Almootnbe100 (group) | 3013 | 2519 | export |
+| art_of_book (group) | 0 | 0 | export |
+| ArwaCoffeeBook (group) | 187 | 8 | export |
+| asseralkotob (group) | 20 | 14 | export |
+| book100100 (group) | 0 | 0 | export |
+| book350 (group) | 0 | 0 | export |
+| Book_cr2 (group) | 3140 | 1278 | export |
+| Bookes2023 (group) | 429 | 411 | export |
+| bookforbooks (group) | 0 | 0 | export |
+| BoOkJuiCe (group) | 1 | 1 | export |
+| books2023 (group) | 3699 | 3686 | export |
+| BROKAREEMANDME (group) | 3142 | 1076 | export |
+| cozmoBooks (group) | 3004 | 2986 | export |
+| debsibooks (group) | 3 | 1 | export |
+| DrKhaledFahmy (group) | 0 | 0 | export |
+| ekraly3 (group) | 3119 | 1396 | export |
+| freebooksf (group) | 3001 | 1580 | export |
+| fun_to_read (group) | 3043 | 2955 | export |
+| HadiAriyanLibrary (group) | 0 | 0 | export |
+| HindawiFoundationBooks (group) | 0 | 0 | export |
+| HoSo0oN (group) | 2 | 0 | export |
+| julietyoya (group) | 3042 | 1414 | export |
+| katabataa (group) | 3000 | 1133 | export |
+| khatabg (group) | 3009 | 2357 | export |
+| KotobkhanaPDF (group) | 0 | 0 | export |
+| kotokhatab (group) | 3009 | 2458 | export |
+| kottobgededa1977 (group) | 0 | 0 | export |
+| L_alnader1 (group) | 3003 | 2579 | export |
+| L_alnader14 (group) | 3005 | 2239 | export |
+| l_alnader2 (group) | 3017 | 1600 | export |
+| lastStopbooks (group) | 381 | 380 | export |
+| lenaqra (group) | 20 | 13 | export |
+| lenaqra3 (group) | 2319 | 916 | export |
+| llllTTTWW (group) | 3006 | 687 | export |
+| lovekotob (group) | 3000 | 2871 | export |
+| M3RFAHALKOTOB (group) | 3111 | 2343 | export |
+| MaktabaBook (group) | 1322 | 722 | export |
+| maktbahnet (group) | 3000 | 0 | export |
+| maktbapdf (group) | 3193 | 0 | export |
+| mybook22 (group) | 3070 | 3018 | export |
+| ni3mehalzoubi (group) | 2 | 2 | export |
+| novels2n (group) | 3012 | 2611 | export |
+| Numidia_Library (group) | 2 | 1 | export |
+| pdf_novels (group) | 3000 | 1663 | export |
+| pdfkotab19 (group) | 0 | 0 | export |
+| read00 (group) | 3000 | 2984 | export |
+| Sa7eralkutub (group) | 64 | 30 | export |
+| soramnqraa (group) | 9 | 8 | export |
+| tea_sugar (group) | 3046 | 1277 | export |
+| To_The_Book (group) | 3003 | 1948 | export |
+| wadistreambooks (group) | 0 | 0 | export |
+| wessam_pdf (group) | 3000 | 2981 | export |
+| yasmeenbook (group) | 0 | 0 | export |
+| abntaymia3 (group) | 6 | 2 | export |
+| almeshkat2023 (group) | 3030 | 1930 | export |
+| baz_book (group) | 3035 | 1702 | export |
+| Drnonaphrmacy (group) | 1517 | 124 | export |
+| dvjhtj (group) | 0 | 0 | export |
+| Free_IslamicBooks (group) | 2 | 1 | export |
+| IslamicLibrary1 (group) | 3004 | 1886 | export |
+| islamicMoral (group) | 19 | 4 | export |
+| kj7_oi (group) | 0 | 0 | export |
+| KOTOB_ISLAMIC (group) | 3057 | 1660 | export |
+| KotobEslamiah (group) | 3079 | 1122 | export |
+| ktbmB_othaimen (group) | 0 | 0 | export |
+| ktbmfid (group) | 3003 | 1954 | export |
+| mergebooks (group) | 0 | 0 | export |
+| NewBooksAndEditions (group) | 220 | 111 | export |
+| palkotob (group) | 3000 | 1604 | export |
+| PDFnew (group) | 3044 | 1604 | export |
+| qra_at (group) | 2878 | 997 | export |
+| quwaa (group) | 0 | 0 | export |
+| safi_book (group) | 3063 | 1638 | export |
+| tahmilkutubwarosaililmiyah (group) | 9 | 7 | export |
+| jame3_masahif (group) | 0 | 0 | export |
+| shamarly (group) | 3 | 0 | export |
+| abjjad_free (group) | 0 | 0 | export |
+| julietbookstoregroup (group) | 3078 | 1097 | export |
+| K3tabi (group) | 0 | 0 | export |
+| K3tabiCo (group) | 1 | 0 | export |
+| Motamayz00n (group) | 0 | 0 | export |
+| READ4OR (group) | 99 | 38 | export |
+| Rff404 (group) | 60 | 29 | export |
+| SARIQriwayat (group) | 16 | 8 | export |
+| GoldenshamelaGroup (group) | 3043 | 80 | export |
+| isalmickindl (group) | 0 | 0 | export |
+| shamela4kindle (group) | 3000 | 2419 | export |
+| shamela_epub (group) | 3000 | 3000 | export |
+| shamela_kindle (group) | 3000 | 2968 | export |
+| ShamelaMakhtota (group) | 0 | 0 | export |
+| cambridge_library (group) | 0 | 0 | export |
+| englishcafe_1 (group) | 0 | 0 | export |
+| langcours (group) | 3008 | 1133 | export |
+| MyEnglishChannel (group) | 2046 | 286 | export |
+| Tleeq (group) | 0 | 0 | export |
+| ZAmericanEnglishCourse (group) | 0 | 0 | export |
+| zamericangroup (group) | 3000 | 36 | export |
+| jami-al-kutub-al-musawwara (group) | 3000 | 1408 | export |
+| bookstoragebox (group) | 3000 | 645 | export |
+| dar-maana (group) | 143 | 70 | export |
+| al-suhuf-wal-majallat-al-ajnabiya (group) | 3000 | 2807 | export |
 
 ## Indexed channels (51)
 
 | Channel | Posts | Book files | Scope |
 |---|---|---|---|
-| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | — |
-| [ahmedsalem81](https://t.me/ahmedsalem81) | 3425 | 244 | — |
-| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | — |
-| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | — |
-| [altfwok](https://t.me/altfwok) | 17148 | 1002 | — |
-| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | — |
-| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | — |
+| [AAT2024F](https://t.me/AAT2024F) | 11 | 0 | api-backfill |
+| [ahmedsalem81](https://t.me/ahmedsalem81) | 3425 | 244 | api-backfill |
+| [alm_elmaref](https://t.me/alm_elmaref) | 5489 | 3052 | api-backfill |
+| [alnoorlib](https://t.me/alnoorlib) | 211 | 47 | api-backfill |
+| [altfwok](https://t.me/altfwok) | 17152 | 1002 | api-backfill |
+| [ancientegyptianmagazines](https://t.me/ancientegyptianmagazines) | 1469 | 14 | api-backfill |
+| [arabicbooks](https://t.me/arabicbooks) | 4775 | 694 | api-backfill |
 | [arabicEread](https://t.me/arabicEread) | 3 | 0 | — |
-| [book_juice](https://t.me/book_juice) | 4811 | 226 | — |
-| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | — |
+| [book_juice](https://t.me/book_juice) | 4811 | 226 | api-backfill |
+| [book_lovers_s](https://t.me/book_lovers_s) | 10824 | 9216 | api-backfill |
 | [Bookkn](https://t.me/Bookkn) | 5 | 0 | — |
-| [books_p](https://t.me/books_p) | 8196 | 1201 | — |
+| [books_p](https://t.me/books_p) | 8198 | 1201 | api-backfill |
 | [booksguy](https://t.me/booksguy) | 2 | 0 | — |
-| [boook1023](https://t.me/boook1023) | 19345 | 4 | — |
-| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | — |
-| [daownbook](https://t.me/daownbook) | 3679 | 1794 | — |
-| [darkromancenovels](https://t.me/darkromancenovels) | 5126 | 1057 | — |
-| [eatae](https://t.me/eatae) | 3904 | 386 | — |
+| [boook1023](https://t.me/boook1023) | 19345 | 4 | api-backfill |
+| [Course_reserve](https://t.me/Course_reserve) | 172 | 68 | api-backfill |
+| [daownbook](https://t.me/daownbook) | 3679 | 1794 | api-backfill |
+| [darkromancenovels](https://t.me/darkromancenovels) | 5132 | 1058 | api-backfill |
+| [eatae](https://t.me/eatae) | 3904 | 386 | api-backfill |
 | [eBookRoom](https://t.me/eBookRoom) | 1670 | 0 | — |
 | [Ebookspdfdownload](https://t.me/Ebookspdfdownload) | 2 | 0 | — |
-| [ekraly](https://t.me/ekraly) | 45036 | 14892 | — |
-| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 30629 | 29093 | — |
-| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4589 | 317 | — |
-| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | — |
-| [jad32](https://t.me/jad32) | 192 | 109 | — |
-| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | — |
-| [Kindle2](https://t.me/Kindle2) | 534 | 19 | — |
-| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | — |
-| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | — |
-| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | — |
-| [L_alnader8](https://t.me/L_alnader8) | 24185 | 3490 | — |
-| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | — |
+| [ekraly](https://t.me/ekraly) | 48037 | 16771 | api-backfill |
+| [Goldenshamelaepub](https://t.me/Goldenshamelaepub) | 30629 | 29093 | api-backfill |
+| [HAYA_NAQRA](https://t.me/HAYA_NAQRA) | 4589 | 317 | api-backfill |
+| [hazem_massaod_kindle_books](https://t.me/hazem_massaod_kindle_books) | 1185 | 1608 | api-backfill |
+| [jad32](https://t.me/jad32) | 192 | 109 | api-backfill |
+| [kindlbook](https://t.me/kindlbook) | 2983 | 1473 | api-backfill |
+| [Kindle2](https://t.me/Kindle2) | 534 | 19 | api-backfill |
+| [kindlearabicbook](https://t.me/kindlearabicbook) | 1059 | 526 | api-backfill |
+| [KindleBooksRepository](https://t.me/KindleBooksRepository) | 6220 | 3293 | api-backfill |
+| [ktbibnalqaim](https://t.me/ktbibnalqaim) | 1713 | 89 | api-backfill |
+| [L_alnader8](https://t.me/L_alnader8) | 24186 | 3490 | api-backfill |
+| [maktabahzahra](https://t.me/maktabahzahra) | 8877 | 46 | api-backfill |
 | [Maktademia](https://t.me/Maktademia) | 1 | 0 | — |
-| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | — |
-| [Merciful111Fate](https://t.me/Merciful111Fate) | 21 | 0 | — |
+| [mamachegucoloringforkids](https://t.me/mamachegucoloringforkids) | 1721 | 1 | api-backfill |
+| [Merciful111Fate](https://t.me/Merciful111Fate) | 21 | 0 | api-backfill |
 | [Motamayezon7](https://t.me/Motamayezon7) | 65 | 0 | — |
-| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | — |
-| [nourbook](https://t.me/nourbook) | 362 | 0 | — |
-| [osratouna1](https://t.me/osratouna1) | 4997 | 125 | — |
-| [Ouloalelm](https://t.me/Ouloalelm) | 282 | 85 | — |
+| [n_bhs2](https://t.me/n_bhs2) | 2 | 0 | api-backfill |
+| [nourbook](https://t.me/nourbook) | 362 | 0 | api-backfill |
+| [osratouna1](https://t.me/osratouna1) | 5001 | 125 | api-backfill |
+| [Ouloalelm](https://t.me/Ouloalelm) | 282 | 85 | api-backfill |
 | [premium_ebooks](https://t.me/premium_ebooks) | 1172 | 0 | — |
-| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | — |
-| [roayati](https://t.me/roayati) | 552 | 0 | — |
-| [rwaiaty4](https://t.me/rwaiaty4) | 30895 | 11809 | — |
-| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | — |
-| [Sumarians](https://t.me/Sumarians) | 52 | 0 | — |
-| [thedevilshours](https://t.me/thedevilshours) | 2018 | 169 | — |
-| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | — |
-| [twinkling4](https://t.me/twinkling4) | 921 | 287 | — |
-| [your_books](https://t.me/your_books) | 126 | 0 | — |
-| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | — |
+| [qurany_is_life](https://t.me/qurany_is_life) | 99 | 13 | api-backfill |
+| [roayati](https://t.me/roayati) | 553 | 0 | api-backfill |
+| [rwaiaty4](https://t.me/rwaiaty4) | 30895 | 11809 | api-backfill |
+| [sharkelmoreeg](https://t.me/sharkelmoreeg) | 2 | 0 | api-backfill |
+| [Sumarians](https://t.me/Sumarians) | 52 | 0 | api-backfill |
+| [thedevilshours](https://t.me/thedevilshours) | 2022 | 169 | api-backfill |
+| [TheEbookStop](https://t.me/TheEbookStop) | 4812 | 1568 | api-backfill |
+| [twinkling4](https://t.me/twinkling4) | 921 | 287 | api-backfill |
+| [your_books](https://t.me/your_books) | 126 | 0 | api-backfill |
+| [zamerican0english](https://t.me/zamerican0english) | 1039 | 344 | api-backfill |
 
 ## Channels with 0 book files — drop candidates (8)
 
@@ -81,7 +295,7 @@
 - [Merciful111Fate](https://t.me/Merciful111Fate) — 21 posts, 0 book files
 - [n_bhs2](https://t.me/n_bhs2) — 2 posts, 0 book files
 - [nourbook](https://t.me/nourbook) — 362 posts, 0 book files
-- [roayati](https://t.me/roayati) — 552 posts, 0 book files
+- [roayati](https://t.me/roayati) — 553 posts, 0 book files
 - [sharkelmoreeg](https://t.me/sharkelmoreeg) — 2 posts, 0 book files
 - [Sumarians](https://t.me/Sumarians) — 52 posts, 0 book files
 - [your_books](https://t.me/your_books) — 126 posts, 0 book files
@@ -111,9 +325,9 @@ Kept active, but they yield fewer than 1 book file per 100 posts — they cost w
 ## Giants (uncapped walk is impractical)
 
 - [Sumarians](https://t.me/Sumarians) — newest post id 306117 ≈ ~8.5h for a full walk (indexed 52 posts, oldest reached 1)
-- [roayati](https://t.me/roayati) — newest post id 289594 ≈ ~8.0h for a full walk (indexed 552 posts, oldest reached 1)
-- [ekraly](https://t.me/ekraly) — newest post id 211901 ≈ ~5.9h for a full walk (indexed 45036 posts, oldest reached 16307)
-- [L_alnader8](https://t.me/L_alnader8) — newest post id 80344 ≈ ~2.2h for a full walk (indexed 24185 posts, oldest reached 1)
+- [roayati](https://t.me/roayati) — newest post id 289623 ≈ ~8.0h for a full walk (indexed 553 posts, oldest reached 1)
+- [ekraly](https://t.me/ekraly) — newest post id 211924 ≈ ~5.9h for a full walk (indexed 48037 posts, oldest reached 10067)
+- [L_alnader8](https://t.me/L_alnader8) — newest post id 80347 ≈ ~2.2h for a full walk (indexed 24186 posts, oldest reached 1)
 - [rwaiaty4](https://t.me/rwaiaty4) — newest post id 54364 ≈ ~1.5h for a full walk (indexed 30895 posts, oldest reached 1)
 
 ## What failed so far
@@ -130,172 +344,176 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 
 - aa2tyuq — 5942 posts, 5561 book files (ok)
 - abjjad_free — 2589 posts, 1294 book files (ok)
-- abntaymia3 — 2933 posts, 594 book files (ok)
-- abo_abdu — 6012 posts, 2566 book files (ok)
+- abntaymia3 — 2939 posts, 596 book files (ok)
+- abo_abdu — 9075 posts, 3975 book files (ok)
 - adventurers5 — 220 posts, 144 book files (ok)
-- Ahlahadota — 1385 posts, 9 book files (ok)
-- ahn1972 — 6000 posts, 3130 book files (ok)
-- ahn2323 — 6000 posts, 3132 book files (ok)
-- alanbyawardmsr — 6000 posts, 2151 book files (ok)
-- All_kinds_Books_Lib — 9287 posts, 6972 book files (ok)
-- almaktbhh — 6000 posts, 2595 book files (ok)
-- almeshkat2023 — 6006 posts, 3067 book files (ok)
+- Ahlahadota — 1386 posts, 9 book files (ok)
+- ahn1972 — 9000 posts, 4717 book files (ok)
+- ahn2323 — 9020 posts, 4742 book files (ok)
+- al-suhuf-wal-majallat-al-ajnabiya — 3000 posts, 2807 book files (ok)
+- alanbyawardmsr — 8929 posts, 3632 book files (ok)
+- All_kinds_Books_Lib — 12657 posts, 9185 book files (ok)
+- almaktbhh — 9000 posts, 4134 book files (ok)
+- almeshkat2023 — 9036 posts, 4997 book files (ok)
 - almoghmiroonal5msa — 641 posts, 241 book files (ok)
-- Almootnbe100 — 6000 posts, 4564 book files (ok)
+- Almootnbe100 — 9013 posts, 7083 book files (ok)
 - Arabic_PDF — 560 posts, 260 book files (ok)
-- Arabickindle1 — 6000 posts, 5395 book files (ok)
+- Arabickindle1 — 9000 posts, 7961 book files (ok)
 - ArabicMagazine — 475 posts, 22 book files (ok)
-- arabJournalism — 6117 posts, 5202 book files (ok)
+- arabJournalism — 9587 posts, 8161 book files (ok)
 - art_of_book — 1120 posts, 452 book files (ok)
-- ArwaCoffeeBook — 5367 posts, 366 book files (ok)
-- asseralkotob — 1149 posts, 754 book files (ok)
+- ArwaCoffeeBook — 5554 posts, 374 book files (ok)
+- asseralkotob — 1169 posts, 768 book files (ok)
 - audiobooks_kid — 126 posts, 0 book files (ok)
 - BabyEnglishBooks — 3438 posts, 3059 book files (ok)
-- baz_book — 6030 posts, 3159 book files (ok)
+- baz_book — 9065 posts, 4861 book files (ok)
 - book100100 — 17 posts, 8 book files (ok)
 - book350 — 4409 posts, 2371 book files (ok)
 - book4kid — 801 posts, 528 book files (ok)
-- Book_cr2 — 6003 posts, 2673 book files (ok)
+- Book_cr2 — 9143 posts, 3951 book files (ok)
 - BOOK_HOUSE_INTERNATIONAL — 2495 posts, 1023 book files (ok)
-- bookcheldren — 6003 posts, 4088 book files (ok)
+- bookcheldren — 9010 posts, 6474 book files (ok)
 - BOOKCLUB_AR — 278 posts, 153 book files (ok)
 - bookclubarabic — 341 posts, 257 book files (ok)
-- Bookes2023 — 6002 posts, 3361 book files (ok)
+- Bookes2023 — 6431 posts, 3772 book files (ok)
 - bookforbooks — 1136 posts, 148 book files (ok)
-- BoOkJuiCe — 3626 posts, 1624 book files (ok)
+- BoOkJuiCe — 3627 posts, 1625 book files (ok)
 - bookjunkieb — 4397 posts, 3024 book files (ok)
-- bookpdfepub — 2464 posts, 471 book files (ok)
-- books2023 — 6000 posts, 5865 book files (ok)
+- bookpdfepub — 3690 posts, 712 book files (ok)
+- books2023 — 9699 posts, 9551 book files (ok)
 - booksforarabs — 5404 posts, 3277 book files (ok)
-- bookspsychology101 — 2578 posts, 1522 book files (ok)
-- BROKAREEMANDME — 6006 posts, 2011 book files (ok)
+- bookspsychology101 — 2619 posts, 1535 book files (ok)
+- bookstoragebox — 3000 posts, 645 book files (ok)
+- BROKAREEMANDME — 9148 posts, 3087 book files (ok)
 - cambridge_library — 261 posts, 78 book files (ok)
-- Comics_gate — 6000 posts, 5575 book files (ok)
-- comics_link — 6000 posts, 3040 book files (ok)
+- Comics_gate — 8677 posts, 8076 book files (ok)
+- comics_link — 9002 posts, 4495 book files (ok)
 - CoolBooks — 2763 posts, 1467 book files (ok)
-- cozmoBooks — 6000 posts, 4829 book files (ok)
+- cozmoBooks — 9004 posts, 7815 book files (ok)
+- dar-maana — 143 posts, 70 book files (ok)
 - ddfkindle — 1376 posts, 834 book files (ok)
-- debsibooks — 5218 posts, 1515 book files (ok)
+- debsibooks — 5221 posts, 1516 book files (ok)
 - donaldduckcomics — 5521 posts, 4657 book files (ok)
 - DrKhaledFahmy — 394 posts, 169 book files (ok)
-- Drnonaphrmacy — 6000 posts, 259 book files (ok)
+- Drnonaphrmacy — 7517 posts, 383 book files (ok)
 - dvjhtj — 2787 posts, 0 book files (ok)
 - e_books_eng — 219 posts, 107 book files (ok)
-- easymath121 — 6006 posts, 36 book files (ok)
-- EBook_Library — 9021 posts, 6356 book files (ok)
+- easymath121 — 9026 posts, 223 book files (ok)
+- EBook_Library — 12064 posts, 9362 book files (ok)
 - ebookstoread — 8178 posts, 3497 book files (ok)
-- ekraly3 — 6015 posts, 2297 book files (ok)
+- ekraly3 — 9134 posts, 3693 book files (ok)
 - englishbooks99 — 1231 posts, 915 book files (ok)
 - englishcafe_1 — 2445 posts, 688 book files (ok)
-- Free_IslamicBooks — 2451 posts, 1442 book files (ok)
-- freebooksf — 6000 posts, 3492 book files (ok)
+- Free_IslamicBooks — 2453 posts, 1443 book files (ok)
+- freebooksf — 9001 posts, 5072 book files (ok)
 - FreeEbookDownloadEnglish — 5547 posts, 5457 book files (ok)
-- fun_to_read — 6013 posts, 5601 book files (ok)
-- G5_Y5 — 6000 posts, 5805 book files (ok)
-- GoldenshamelaGroup — 6013 posts, 159 book files (ok)
+- fun_to_read — 9056 posts, 8556 book files (ok)
+- G5_Y5 — 9002 posts, 8713 book files (ok)
+- GoldenshamelaGroup — 9056 posts, 239 book files (ok)
 - HadiAriyanLibrary — 4462 posts, 1797 book files (ok)
 - HindawiFoundationBooks — 534 posts, 266 book files (ok)
-- HoSo0oN — 472 posts, 335 book files (ok)
+- HoSo0oN — 474 posts, 335 book files (ok)
 - isalmickindl — 362 posts, 279 book files (ok)
-- IslamicLibrary1 — 6000 posts, 3946 book files (ok)
-- islamicMoral — 4299 posts, 983 book files (ok)
+- IslamicLibrary1 — 9004 posts, 5832 book files (ok)
+- islamicMoral — 4318 posts, 987 book files (ok)
 - jame3_masahif — 219 posts, 105 book files (ok)
-- jazz223k — 6012 posts, 3362 book files (ok)
-- julietbookstoregroup — 6029 posts, 2052 book files (ok)
-- julietyoya — 6015 posts, 2578 book files (ok)
+- jami-al-kutub-al-musawwara — 3000 posts, 1408 book files (ok)
+- jazz223k — 9041 posts, 5676 book files (ok)
+- julietbookstoregroup — 9107 posts, 3149 book files (ok)
+- julietyoya — 9057 posts, 3992 book files (ok)
 - K3tabi — 8 posts, 0 book files (ok)
-- K3tabiCo — 724 posts, 465 book files (ok)
-- katabataa — 6000 posts, 2363 book files (ok)
-- kfxarabic — 9000 posts, 8980 book files (ok)
-- khatabg — 6001 posts, 3158 book files (ok)
+- K3tabiCo — 725 posts, 465 book files (ok)
+- katabataa — 9000 posts, 3496 book files (ok)
+- kfxarabic — 11744 posts, 11697 book files (ok)
+- khatabg — 9010 posts, 5515 book files (ok)
 - kidsbookden — 3616 posts, 2895 book files (ok)
-- kindel4 — 9000 posts, 5431 book files (ok)
-- kindle4kurd — 9147 posts, 5945 book files (ok)
+- kindel4 — 12000 posts, 7498 book files (ok)
+- kindle4kurd — 12197 posts, 7255 book files (ok)
 - KindleArabicLibrary — 6521 posts, 6512 book files (ok)
-- KindleKotob — 9001 posts, 7485 book files (ok)
+- KindleKotob — 12002 posts, 10476 book files (ok)
 - kj7_oi — 3949 posts, 1798 book files (ok)
-- KOTOB_ISLAMIC — 6012 posts, 3266 book files (ok)
-- KotobEslamiah — 6000 posts, 2725 book files (ok)
-- kotobkhana — 10 posts, 4 book files (ok)
+- KOTOB_ISLAMIC — 9069 posts, 4926 book files (ok)
+- KotobEslamiah — 9079 posts, 3847 book files (ok)
+- kotobkhana — 20 posts, 9 book files (ok)
 - KotobkhanaPDF — 169 posts, 82 book files (ok)
-- kotokhatab — 6003 posts, 3958 book files (ok)
+- kotokhatab — 9012 posts, 6416 book files (ok)
 - kottobgededa1977 — 2499 posts, 1949 book files (ok)
 - ktbmB_othaimen — 1451 posts, 514 book files (ok)
-- ktbmfid — 6000 posts, 3743 book files (ok)
-- L_alnader1 — 6002 posts, 4366 book files (ok)
-- L_alnader14 — 6008 posts, 4737 book files (ok)
-- l_alnader2 — 6019 posts, 4642 book files (ok)
-- langcours — 3000 posts, 1150 book files (ok)
-- lastStopbooks — 6000 posts, 5957 book files (ok)
-- Legacy_1945 — 5270 posts, 3281 book files (ok)
-- lenaqra — 5095 posts, 2458 book files (ok)
-- lenaqra3 — 6000 posts, 1907 book files (ok)
-- llllTTTWW — 6002 posts, 1375 book files (ok)
-- lovekotob — 6000 posts, 5423 book files (ok)
-- M3RFAHALKOTOB — 6001 posts, 3272 book files (ok)
+- ktbmfid — 9003 posts, 5697 book files (ok)
+- L_alnader1 — 9005 posts, 6945 book files (ok)
+- L_alnader14 — 9013 posts, 6976 book files (ok)
+- l_alnader2 — 9036 posts, 6242 book files (ok)
+- langcours — 6008 posts, 2283 book files (ok)
+- lastStopbooks — 6381 posts, 6337 book files (ok)
+- Legacy_1945 — 5288 posts, 3290 book files (ok)
+- lenaqra — 5115 posts, 2471 book files (ok)
+- lenaqra3 — 8319 posts, 2823 book files (ok)
+- llllTTTWW — 9008 posts, 2062 book files (ok)
+- lovekotob — 9000 posts, 8294 book files (ok)
+- M3RFAHALKOTOB — 9112 posts, 5615 book files (ok)
 - magazineguy — 80 posts, 77 book files (ok)
 - Mahmoud_Salem_5 — 184 posts, 183 book files (ok)
-- MaktabaBook — 6000 posts, 3194 book files (ok)
-- maktbahnet — 6000 posts, 17 book files (ok)
-- maktbapdf — 6083 posts, 2 book files (ok)
-- maktph — 6001 posts, 4331 book files (ok)
+- MaktabaBook — 7322 posts, 3916 book files (ok)
+- maktbahnet — 9000 posts, 17 book files (ok)
+- maktbapdf — 9276 posts, 2 book files (ok)
+- maktph — 9002 posts, 6757 book files (ok)
 - megalatnawader — 917 posts, 21 book files (ok)
 - mergebooks — 4944 posts, 1694 book files (ok)
 - Mohanime — 525 posts, 0 book files (ok)
 - Motamayz00n — 193 posts, 128 book files (ok)
-- muscatnonfiction — 8499 posts, 4213 book files (ok)
-- mybook22 — 6028 posts, 5884 book files (ok)
-- MyEnglishChannel — 3000 posts, 488 book files (ok)
-- NewBooksAndEditions — 6000 posts, 3101 book files (ok)
-- ni3mehalzoubi — 2217 posts, 1217 book files (ok)
-- noorlibrarykids — 6001 posts, 5446 book files (ok)
-- novels2n — 6005 posts, 4909 book files (ok)
-- Numidia_Library — 4052 posts, 1769 book files (ok)
-- OnePageAway — 6000 posts, 374 book files (ok)
+- muscatnonfiction — 8502 posts, 4214 book files (ok)
+- mybook22 — 9098 posts, 8902 book files (ok)
+- MyEnglishChannel — 5046 posts, 774 book files (ok)
+- NewBooksAndEditions — 6220 posts, 3212 book files (ok)
+- ni3mehalzoubi — 2219 posts, 1219 book files (ok)
+- noorlibrarykids — 9003 posts, 7912 book files (ok)
+- novels2n — 9017 posts, 7520 book files (ok)
+- Numidia_Library — 4054 posts, 1770 book files (ok)
+- OnePageAway — 9000 posts, 1612 book files (ok)
 - oxford_bookworms_lm — 1868 posts, 326 book files (ok)
 - Oxford_Bookwormss — 576 posts, 104 book files (ok)
 - OxfordBookwormers — 1773 posts, 191 book files (ok)
 - OxfordBookwormsDominoes1 — 1631 posts, 205 book files (ok)
 - OxfordReadingTree — 4496 posts, 908 book files (ok)
-- palkotob — 6000 posts, 3499 book files (ok)
-- pdf_novels — 6000 posts, 3114 book files (ok)
+- palkotob — 9000 posts, 5103 book files (ok)
+- pdf_novels — 9000 posts, 4777 book files (ok)
 - pdfiat — 203 posts, 106 book files (ok)
 - pdfkotab19 — 905 posts, 874 book files (ok)
-- PDFnew — 6008 posts, 3309 book files (ok)
+- PDFnew — 9052 posts, 4913 book files (ok)
 - plussheets — 1650 posts, 901 book files (ok)
-- pokidz — 2946 posts, 470 book files (ok)
-- qra_at — 6000 posts, 2379 book files (ok)
+- pokidz — 2977 posts, 470 book files (ok)
+- qra_at — 8878 posts, 3376 book files (ok)
 - quwaa — 2791 posts, 1319 book files (ok)
-- read00 — 6000 posts, 5213 book files (ok)
-- READ4OR — 207 posts, 95 book files (ok)
-- Rff404 — 14 posts, 4 book files (ok)
-- Sa7eralkutub — 4073 posts, 674 book files (ok)
-- safi_book — 6002 posts, 2846 book files (ok)
+- read00 — 9000 posts, 8197 book files (ok)
+- READ4OR — 306 posts, 133 book files (ok)
+- Rff404 — 74 posts, 33 book files (ok)
+- Sa7eralkutub — 4137 posts, 704 book files (ok)
+- safi_book — 9065 posts, 4484 book files (ok)
 - samaheltaweelkidsstories — 268 posts, 208 book files (ok)
-- SARIQriwayat — 47 posts, 22 book files (ok)
+- SARIQriwayat — 63 posts, 30 book files (ok)
 - sciencecamp1 — 3427 posts, 1350 book files (ok)
 - scincematerialsMH — 787 posts, 524 book files (ok)
-- shamarly — 1100 posts, 375 book files (ok)
-- shamela4kindle — 3000 posts, 2283 book files (ok)
-- shamela_epub — 3000 posts, 2996 book files (ok)
-- shamela_kindle — 3000 posts, 155 book files (ok)
+- shamarly — 1103 posts, 375 book files (ok)
+- shamela4kindle — 6000 posts, 4702 book files (ok)
+- shamela_epub — 6000 posts, 5996 book files (ok)
+- shamela_kindle — 6000 posts, 3123 book files (ok)
 - ShamelaMakhtota — 31 posts, 8 book files (ok)
-- soramnqraa — 3435 posts, 2954 book files (ok)
+- soramnqraa — 3444 posts, 2962 book files (ok)
 - stories_kids — 149 posts, 31 book files (ok)
 - storybooksforkids — 634 posts, 395 book files (ok)
 - storybookspdf — 378 posts, 157 book files (ok)
-- tahmilkutubwarosaililmiyah — 4852 posts, 4432 book files (ok)
-- tea_sugar — 6002 posts, 3728 book files (ok)
-- the_romance_hub — 2173 posts, 1977 book files (ok)
+- tahmilkutubwarosaililmiyah — 4861 posts, 4439 book files (ok)
+- tea_sugar — 9048 posts, 5005 book files (ok)
+- the_romance_hub — 2188 posts, 1985 book files (ok)
 - Tleeq — 195 posts, 13 book files (ok)
-- To_The_Book — 6002 posts, 3458 book files (ok)
-- trunkietrunk — 6016 posts, 5802 book files (ok)
+- To_The_Book — 9005 posts, 5406 book files (ok)
+- trunkietrunk — 9119 posts, 8781 book files (ok)
 - wadistreambooks — 419 posts, 218 book files (ok)
-- wessam_pdf — 6000 posts, 5635 book files (ok)
-- xepub — 208 posts, 85 book files (ok)
+- wessam_pdf — 9000 posts, 8616 book files (ok)
+- xepub — 209 posts, 85 book files (ok)
 - yasmeenbook — 1046 posts, 633 book files (ok)
 - ZAmericanEnglishCourse — 224 posts, 84 book files (ok)
-- zamericangroup — 3000 posts, 48 book files (ok)
+- zamericangroup — 6000 posts, 84 book files (ok)
 
 ## Dead — 10 handles that do not exist (verified on two probes)
 
