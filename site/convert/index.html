@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<!-- BOT-ONLY PAGE — RliBook converter (bot v4.8.46).
+     This page is opened ONLY via the Telegram bot's /convert command
+     / Mini App button. It is NOT a public website feature: do NOT
+     link it from any public page (no link from /site/tools/ or
+     anywhere else on the website). Conversion runs entirely on the
+     END USER's own device (in their Telegram browser via the Mini
+     App) — nothing runs on the site owner's device. The finished
+     EPUB is sent to the user's own Kindle email through the bot
+     (POST /miniapp-convert-send), or downloaded as a fallback. -->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>حوّل كتاباً ممسوحاً إلى EPUB — على جهازك | RliBook</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif;
+         max-width: 760px; margin: 0 auto; padding: 1.2rem;
+         line-height: 1.7; color: #1C2826; background: #DFF1F4; }
+  h1 { font-size: 1.7rem; margin-bottom: 0.2rem; color: #1C2826; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.4rem; color: #1C2826; }
+  .slogan { color: #44402F; font-size: 1rem; margin-top: 0; }
+  .card { border: 1px solid #99B6B3; border-radius: 10px; background: #fff;
+          padding: 1rem 1.2rem; margin: 1rem 0; }
+  .card p { margin: 0.3rem 0; }
+  .note { color: #44402F; font-size: 0.9rem; }
+  .note.err { color: #8a1a1a; font-weight: 700; }
+  .note.ok { color: #14532d; font-weight: 700; }
+  .hidden { display: none !important; }
+  a { color: #0b5cad; }
+  .btn { display: inline-block; padding: 0.6rem 1.1rem; margin: 0.3rem 0;
+         border-radius: 6px; background: #93D4EF; color: #1C2826;
+         border: none; cursor: pointer; font-weight: 700; font-size: 1rem; }
+  .btn-dark { background: #44402F; color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  select, input[type="text"], input[type="url"] {
+    font: inherit; padding: 0.4rem 0.6rem; border-radius: 6px;
+    border: 1px solid #99B6B3; background: #fff; color: #1C2826; width: 100%;
+    box-sizing: border-box; }
+  label { font-weight: 700; display: block; margin: 0.6rem 0 0.2rem; }
+  .row { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 180px; }
+  .bar { height: 12px; background: #DFF1F4; border-radius: 6px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0%; background: #44402F; }
+  .page-row { display: flex; gap: 0.8rem; padding: 0.25rem 0;
+              border-bottom: 1px solid #DFF1F4; font-size: 0.92rem; }
+  .page-n { font-weight: 700; min-width: 70px; }
+  .page-script { min-width: 60px; }
+  .page-route { flex: 1; direction: ltr; text-align: right; }
+  .page-quality { color: #14532d; font-weight: 700; }
+  .page-chars { color: #44402F; }
+  code { background: #DFF1F4; padding: 0.05rem 0.35rem; border-radius: 4px;
+         direction: ltr; unicode-bidi: embed; font-size: 0.92rem; }
+  details { margin-top: 0.5rem; }
+  summary { cursor: pointer; font-weight: 700; }
+</style>
+<script src="/site/reader/vendor/jszip.min.js"></script>
+<script src="/site/convert/vendor/tesseract.min.js"></script>
+<!-- Telegram Mini App (bot-only): provides window.Telegram.WebApp
+     (initData) when the page is opened from the bot. No-op / absent
+     outside Telegram — the send-to-Kindle button stays hidden then. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script type="module" src="/site/convert/convert-app.js"></script>
+</head>
+<body>
+<h1>📖 حوّل كتاباً ممسوحاً إلى EPUB</h1>
+<p class="slogan">التحويل يتم كاملاً على جهازك — بلا خادم، بلا حساب، بلا بطاقة، ولا ينتهي أبداً. ملفك لا يغادر جهازك إلا إذا طلبتَ التحسين بنفسك.</p>
+
+<div class="card">
+  <h2>١. اختر الملف</h2>
+  <p class="note">PDF أو JPG أو PNG حتى <strong>10 MB</strong>. ملفات EPUB مرفوضة لأن فيها نصاً أصلاً ولا تحتاج تحويلاً. التحويل صفحة صفحة (حوالي ٢–١٠ ثوانٍ للصفحة على الأجهزة العادية).</p>
+  <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+  <p id="fileMeta" class="note"></p>
+  <div class="row">
+    <div>
+      <label for="langSel">لغة الكتاب</label>
+      <select id="langSel">
+        <option value="auto" selected>تلقائي — يكتشف كل صفحة (عربي/إنجليزي)</option>
+        <option value="ar">عربي (حديث)</option>
+        <option value="ar-classical">عربي تراثي / مشكَّل (تشكيل كامل)</option>
+        <option value="en">إنجليزي</option>
+      </select>
+    </div>
+    <div>
+      <label for="dpiSel">دقة المسح</label>
+      <select id="dpiSel">
+        <option value="150">150 — أسرع</option>
+        <option value="200" selected>200 — متوازنة</option>
+        <option value="300">300 — أدق (أبطأ)</option>
+      </select>
+    </div>
+  </div>
+  <p class="note">الكشف التلقائي: كل صفحة تُقرأ أولاً ثم تُوجَّه حسب حروفها — عربي → محرك عربي، إنجليزي → محرك إنجليزي، مختلطة → الاثنان معاً. خيار «عربي تراثي» يجبر الصفحات العربية على محرك التشكيل (Qari) في خادم التحسين.</p>
+  <p><button class="btn btn-dark" id="runBtn">ابدأ التحويل</button>
+  <button class="btn hidden" id="cancelBtn">إيقاف مؤقت</button></p>
+</div>
+
+<div class="card hidden" id="work">
+  <h2>٢. التقدّم</h2>
+  <div class="bar"><div id="progressBar"></div></div>
+  <p id="progressText" class="note">لم يبدأ بعد.</p>
+  <div id="pageList"></div>
+  <p class="note">تقدّمك يُحفظ في متصفحك (IndexedDB): إذا أغلقت الصفحة، أعد اختيار الملف نفسه وسيُستأنف من حيث توقف — الصفحات المنتهية لا تُعاد.</p>
+</div>
+
+<div class="card hidden" id="result">
+  <h2>٣. النتيجة</h2>
+  <p id="resultMeta" class="note"></p>
+  <p><button class="btn btn-dark" id="downloadBtn">⬇ تحميل EPUB (جودة قياسية)</button>
+  <button class="btn hidden" id="downloadEnhancedBtn">⬇ تحميل النسخة المحسّنة</button>
+  <button class="btn btn-dark hidden" id="sendKindleBtn">📧 أرسله إلى إيميل الكيندل</button></p>
+  <p id="sendKindleStatus" class="note hidden"></p>
+  <p class="note">«جودة قياسية» تعني: قراءة على جهازك بمحرّك Tesseract — ممتازة للطباعة الحديثة النظيفة، وأضعف على المطبوعات القديمة والتشكيل. «جودة محسّنة» تعني: أُعيدت قراءتها على خادم مجاني بمحرّك GPU (Baseer للعربي الحديث، Qari للمشكَّل، PP-OCRv6 للإنجليزي).</p>
+  <p class="note">لإرسالها إلى كيندلك: إذا فتحتَ المحوّل من بوت RliBook، استخدم زر «📧 أرسله إلى إيميل الكيندل» أعلاه — يرسلها البوت مباشرة إلى إيميل الكيندل المرتبط بحسابك (3 تحويلات يومياً). أو حمّل ملف EPUB وأرسله بالبريد إلى عنوان كيندلك <code>@kindle.com</code> (أضِف بريدك أولاً في قائمة المرسلين المعتمدين في أمازون).</p>
+</div>
+
+<div class="card hidden" id="enhanceBox">
+  <h2>✨ التحسين على خادم GPU مجاني <span class="note">(اختياري)</span></h2>
+  <p class="note">إذا كان لديك خادم تحسين (Kaggle / Colab / Hugging Face ZeroGPU — كلها مجانية)، ضع رابطه هنا. الصفحة تتحقق منه أولاً؛ وإذا تعذّر أو بلغ حدّه اليومي، تبقى نسختك القياسية كما هي — لا شيء يُفقَد.</p>
+  <p id="cloudStatus" class="note"></p>
+  <label for="cloudUrl">رابط خادم التحسين (فارغ = لا يوجد)</label>
+  <input type="url" id="cloudUrl" placeholder="https://example.com" dir="ltr">
+  <p><button class="btn" id="saveCloudBtn">حفظ والتحقق</button></p>
+  <div id="enhanceActions" class="hidden">
+    <p><button class="btn" id="enhanceBtn">اطلب النسخة المحسّنة</button></p>
+    <p id="enhanceStatus" class="note"></p>
+  </div>
+  <details>
+    <summary>كيف أشغّل خادم تحسين مجانياً؟</summary>
+    <p class="note">خادم التحسين هو نفسه خدمة المحوّل في مستودع البوت (<code>converter/</code>) — يعمل على Kaggle (30 ساعة GPU أسبوعياً) أو Colab أو Hugging Face ZeroGPU (5 دقائق يومياً). الإعداد الكامل في <code>docs/ocr-conversion.md</code> وفي <code>site/convert/README.md</code>. بلا خادم، يعمل كل شيء هنا — التحسين مجرد دقّة إضافية.</p>
+  </details>
+</div>
+
+<p id="notice" class="note hidden"></p>
+<noscript><p class="note err">هذه الصفحة تحتاج JavaScript — فعّلها في المتصفح ثم أعد التحميل.</p></noscript>
+<p class="note"><a href="/site/tools/">← رجوع إلى الأدوات</a> · <a href="/">RliBook</a></p>
+</body>
+</html>

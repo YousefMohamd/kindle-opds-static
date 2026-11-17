@@ -11,7 +11,13 @@
 //      cap), with cache-control: no-store and NO <script> except the
 //      two Mini App loader scripts (Workstream 3b — both defer,
 //      inert outside Telegram; the Kindle browser ignores them and
-//      the page still works with JS off);
+//      the page still works with JS off). Step 3 names Amazon's
+//      exact buttons ("Select files from device" / "Drag and drop
+//      files here" / "Add to your library" / "Send"), the page
+//      lists Amazon's supported types + the 200 MB limit, and it
+//      says plainly that Amazon cannot fetch the file — the user
+//      uploads it themselves (Send-to-Kindle deep-link verdict,
+//      2026-11-16: NO auto-upload is possible);
 //   2. a Telegram book renders the same shape, and the short link
 //      resolves to the signed proxy URL;
 //   3. a flagged Telegram book -> 403 with no token minted (no
@@ -132,6 +138,16 @@ console.log("1. OPDS delivery page:");
     r.body.slice(0, 300));
   check("1c amazon.com/sendtokindle link present",
     r.body.includes("https://www.amazon.com/sendtokindle"));
+  check("1c2 step 3 names Amazon's exact buttons: 'Select files from device', 'Drag and drop files here', 'Add to your library', 'Send'",
+    r.body.includes("Select files from device") && r.body.includes("Drag and drop files here")
+    && r.body.includes("Add to your library") && r.body.includes("Send"));
+  check("1c3 supported-types + 200 MB note present (Amazon's list, EPUB included)",
+    r.body.includes("الصيغ التي يقبلها موقع أمازون") && r.body.includes("200 MB")
+    && r.body.includes("EPUB"));
+  check("1c4 honest note: Amazon cannot fetch the file — the user uploads it themselves",
+    r.body.includes("أمازون لا يجلب الملف من RliBook"));
+  check("1c5 step 2 tells phone users the file is in Downloads",
+    r.body.includes("Downloads"));
   check("1d short link present (/k/<16 chars>)",
     shortCodeIn(r.body) !== null, r.body.slice(0, 600));
   check("1e short link resolves to the Hindawi acquisition URL",
@@ -427,6 +443,8 @@ console.log("11. Kindle PDF path + honest caveat + dual paths (round 2):");
   check("11c Kindle PDF: no step 4 (3 steps), email + sendtokindle alternatives kept",
     !pdf.body.includes("الخطوة 4") && pdf.body.includes("/api/send-to-kindle")
     && pdf.body.includes("amazon.com/sendtokindle"), "status " + pdf.status);
+  check("11c2 Kindle PDF fallback names the Amazon button ('Select files from device')",
+    pdf.body.includes("Select files from device"));
 
   const epub = await call({ lib: "hindawi", id: "13028368", f: "epub", t: "Kindle EPUB" }, env, "10.5.0.2", KINDLE_UA);
   check("11d Kindle EPUB: HONEST CAVEAT present (no EPUB into the library without email or phone/computer)",

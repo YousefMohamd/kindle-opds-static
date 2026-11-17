@@ -49,13 +49,23 @@
 //   BREVO_API_KEY   (optional) — the Brevo fallback key (round 3):
 //                     when Resend fails (429 daily cap or any other
 //                     failure) the same email is retried via Brevo
-//                     (300/day free). At least one of the two keys
+//                     (300/day free). At least one of the three keys
 //                     must be set. rlibook.tech must be verified in
 //                     Brevo first (Brevo code + DKIM TXT records in
 //                     the Cloudflare DNS); Brevo's free plan adds a
 //                     "Sent with Brevo" footer to fallback emails, and
 //                     .epub is NOT on Brevo's supported-attachment
 //                     list (unverified — test a live EPUB send first).
+//                     See functions/api/email-send.js.
+//   SMTP2GO_API_KEY (optional) — the SMTP2GO fallback key (round 4):
+//                     when Brevo also fails the same email is
+//                     retried via SMTP2GO (200/day free, 1,000/month).
+//                     The sending domain must be verified in SMTP2GO
+//                     first (until then: 25/hour cap, lifted on
+//                     request after verification). No evidence of a
+//                     forced footer on free (unconfirmed — verify
+//                     with a live test send); .epub is not blocked
+//                     by any published rule (live send untested).
 //                     See functions/api/email-send.js.
 //   RLIBOOK_KV      (required) — KV binding, the SAME namespace the bot
 //                     uses (id b5c90a91d24c424db87bf09e3883654f).
@@ -70,7 +80,8 @@
 //                     Unset -> same honest 503 as above.
 //
 // Limits (abuse bounds; Resend free tier is 100 emails/day, Brevo
-// fallback 300/day — 400/day combined, project-wide):
+// fallback 300/day, SMTP2GO fallback 200/day — 600/day combined,
+// project-wide):
 //   MAX_FILE_BYTES  25 MB raw (~33 MB base64, under Resend's 40 MB
 //                   per-email cap after encoding, and inside a Worker's
 //                   128 MB memory). Send-to-Kindle itself caps at 50 MB.
@@ -402,7 +413,8 @@ export async function onRequest(context) {
   }
   const resendKey = (env.RESEND_API_KEY || "").trim();
   const brevoKey = (env.BREVO_API_KEY || "").trim();
-  if (!resendKey && !brevoKey) {
+  const smtp2goKey = (env.SMTP2GO_API_KEY || "").trim();
+  if (!resendKey && !brevoKey && !smtp2goKey) {
     return page("الخدمة غير جاهزة",
       "<p>خدمة الإرسال إلى جهازك غير مهيأة بعد على الخادم (لا يوجد مفتاح بريد).</p>\n"
       + "<p><a href=\"/\">← الرئيسية</a></p>", 503);
@@ -631,14 +643,15 @@ export async function onRequest(context) {
       + "حاول مجدداً لاحقاً.</p>", 502);
   }
 
-  // ---- send via Resend, Brevo fallback, queue for tomorrow -------
-  // Round 3 (see functions/api/email-send.js): Resend is primary;
+  // ---- send via Resend, Brevo fallback, SMTP2GO fallback, queue for tomorrow -------
+  // Round 4 (see functions/api/email-send.js): Resend is primary;
   // any Resend failure (429 daily cap or anything else) retries the
-  // SAME email via Brevo (300/day). Both providers at their cap
-  // queues the send job for tomorrow (KV, idempotent per
-  // destination + book + day) and the user is told so — never
-  // silently dropped. A non-capacity failure on both sides is a
-  // plain 502 (queueing would not help tomorrow).
+  // SAME email via Brevo (300/day); any Brevo failure retries it via
+  // SMTP2GO (200/day). All three providers at their cap queues the
+  // send job for tomorrow (KV, idempotent per destination + book +
+  // day) and the user is told so — never silently dropped. A
+  // non-capacity failure on all sides is a plain 502 (queueing
+  // would not help tomorrow).
   const filename = safeFilename(title, lib, id, fmt);
   const subject = ("RliBook: " + (title || filename)).slice(0, 120);
   const html = "<p>Your book from RliBook is attached.</p>"
@@ -647,6 +660,7 @@ export async function onRequest(context) {
   const sendResult = await sendEmailWithFallback({
     resendApiKey: resendKey,
     brevoApiKey: brevoKey,
+    smtp2goApiKey: smtp2goKey,
     resendApiUrl: RESEND_API_URL,
     message: {
       from: RESEND_FROM,
@@ -672,7 +686,7 @@ export async function onRequest(context) {
   if (!sendResult.ok) {
     if (sendResult.code === "E_QUEUED") {
       return await queuedPage("⏳ سيصل غداً",
-        "<p>⏳ وصلت خدمتا البريد إلى الحد اليومي، فأجّلنا إرسال «" + esc(title || filename) + "» إلى "
+        "<p>⏳ وصلت خدمات البريد الثلاث إلى الحد اليومي، فأجّلنا إرسال «" + esc(title || filename) + "» إلى "
         + "<b>" + esc(maskEmail(kindleEmail)) + "</b> — سيصل غداً، ولا تحتاج إلى فعل شيء.</p>\n"
         + "<p class=\"note\">تأكد أن <b>send@rlibook.tech</b> مضاف إلى المرسلين المعتمدين "
         + "في amazon.com/myk، حتى يصل الكتاب عند إرساله.</p>\n"
@@ -680,7 +694,7 @@ export async function onRequest(context) {
     }
     if (sendResult.code === "E_BOTH_EXHAUSTED") {
       return await failPage("تعذّر الإرسال",
-        "<p>وصلت خدمتا البريد إلى الحد اليومي — جرّب مجدداً غداً.</p>\n"
+        "<p>وصلت خدمات البريد الثلاث إلى الحد اليومي — جرّب مجدداً غداً.</p>\n"
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى صفحة الكتاب</a></p>", 502);
     }
     return await failPage("تعذّر الإرسال",

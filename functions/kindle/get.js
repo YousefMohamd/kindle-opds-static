@@ -6,7 +6,13 @@
 //     -> 200 text/html — the 4 numbered steps: (1) open the short
 //        link on a phone/computer, (2) download the file there,
 //        (3) upload it at amazon.com/sendtokindle, (4) turn on the
-//        Kindle's Wi-Fi and wait. Plus the plain-HTML reader link
+//        Kindle's Wi-Fi and wait. Step 3 names Amazon's exact
+//        buttons — "Select files from device" / "Drag and drop
+//        files here" / "Add to your library" / "Send" — plus the
+//        supported-types list and the 200 MB limit, because no
+//        website can pre-fill Amazon's file input (see the verdict
+//        doc: the user uploads the file themselves, always).
+//        Plus the plain-HTML reader link
 //        (EPUB/PDF/TXT, token-gated) and the email link (unlimited — the primary
 //        path; this page is the download alternative).
 //
@@ -262,7 +268,9 @@ export async function onRequest(context) {
   // EPUB/PDF/DOC/DOCX/TXT; anything else goes by USB (Calibre).
   const step3 = SENDTOKINDLE_WEB_FORMATS.has(book.fmt)
     ? "<li><b>الخطوة 3:</b> افتح <a href=\"https://www.amazon.com/sendtokindle\">amazon.com/sendtokindle</a> "
-      + "من هاتفك/حاسوبك، اختر جهاز Kindle الخاص بك، ثم ارفع الملف.</li>\n"
+      + "من هاتفك/حاسوبك وسجّل دخولك بحساب أمازون المسجّل عليه جهاز Kindle، ثم اضغط زر «Select files from device» "
+      + "(أو اسحب الملف إلى منطقة «Drag and drop files here»)، واختر ملف " + esc(fmtLabel) + " الذي نزّلته في الخطوة 2، "
+      + "وتأكّد من تفعيل «Add to your library»، ثم اضغط «Send».</li>\n"
     : "<li><b>الخطوة 3:</b> صيغة هذا الكتاب (" + esc(fmtLabel) + ") لا يقبلها موقع Send to Kindle — "
       + "انقل الملف إلى جهازك عبر USB (ببرنامج Calibre مثلاً).</li>\n";
 
@@ -364,7 +372,7 @@ export async function onRequest(context) {
       + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
       + "<ol start=\"2\">\n"
       + "<li><b>الخطوة 2:</b> سينزّل ملف PDF ويظهر في مكتبتك.</li>\n"
-      + "<li><b>الخطوة 3:</b> إن لم ينزّل المتصفح الملف، استخدم الإيميل (أدناه) أو ارفع الملف في amazon.com/sendtokindle من هاتفك/حاسوبك.</li>\n"
+      + "<li><b>الخطوة 3:</b> إن لم ينزّل المتصفح الملف، استخدم الإيميل (أدناه) أو ارفع الملف في amazon.com/sendtokindle من هاتفك/حاسوبك (اضغط «Select files from device» واختر ملف PDF، ثم «Send»).</li>\n"
       + "</ol>\n"
       + tenMinuteNote
       + readerLink
@@ -386,10 +394,12 @@ export async function onRequest(context) {
       + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
       + "<p class=\"note tg-only\">في تيليجرام: اضغط الرابط وسيُفتح في متصفح جهازك لتنزيل الملف — من هناك ارفعه إلى Send to Kindle.</p>\n"
       + "<ol start=\"2\">\n"
-      + "<li><b>الخطوة 2:</b> نزّل ملف " + esc(fmtLabel) + " على هاتفك/حاسوبك (ضغطة واحدة على الرابط).</li>\n"
+      + "<li><b>الخطوة 2:</b> نزّل ملف " + esc(fmtLabel) + " على هاتفك/حاسوبك (ضغطة واحدة على الرابط) — على الهاتف ستجد الملف في مجلد التنزيلات (Downloads)، وستختاره من هناك في الخطوة 3.</li>\n"
       + step3
       + "<li><b>الخطوة 4:</b> افتح الواي فاي في جهازك — سيظهر الكتاب في مكتبتك خلال دقائق.</li>\n"
       + "</ol>\n"
+      + "<p class=\"note\">الصيغ التي يقبلها موقع أمازون: PDF و DOC و DOCX و TXT و RTF و HTM و HTML و PNG و GIF و JPG و JPEG و BMP و EPUB — وأقصى حجم للملف 200 MB.</p>\n"
+      + "<p class=\"note\"><b>مهم:</b> أمازون لا يجلب الملف من RliBook — أنت من يرفعه بنفسك من جهازك في الخطوة 3؛ رابطنا يفتح صفحة أمازون فقط، ولا يمكن لأي موقع أن يملأ خانة رفع الملفات بدلاً عنك.</p>\n"
       + "<p class=\"note\"><b>طريقة ثالثة:</b> انقل الملف إلى جهازك عبر USB (ببرنامج Calibre مثلاً) إن لم يعمل الإيميل أو Send to Kindle.</p>\n"
       + tenMinuteNote
       + "<p class=\"note\">ليس لديك Kindle؟ بعد الخطوة 2 افتح الملف في أي تطبيق قراءة على هاتفك أو حاسوبك — وصل الكتاب إليك، ولا حاجة للخطوتين 3 و 4.</p>\n"
