@@ -271,14 +271,14 @@ function emailFormHtml(lib, id, fmt, title, note, extraHidden = "") {
     + "<input type=\"hidden\" name=\"f\" value=\"" + q(fmt) + "\">\n"
     + "<input type=\"hidden\" name=\"t\" value=\"" + q(title) + "\">\n"
     + "<input type=\"email\" name=\"to\" placeholder=\"name@kindle.com\" required> "
-    + "<input type=\"submit\" value=\"أرسل إلى جهازي\"></form>\n"
+    + "<input type=\"submit\" value=\"أرسل لميل قارئي\"></form>\n"
     + "<p class=\"note\">مرة واحدة فقط: أضف <b>send@rlibook.tech</b> إلى المرسلين المعتمدين "
     + "في أمازون (amazon.com/myk) — وإلا لن يصل الكتاب. لو سبق وأضفته، لا تفعل شيئاً.</p>\n"
     + "<p class=\"note\"><a href=\"/book?q=" + encodeURIComponent(title || "") + "\">← رجوع إلى صفحة الكتاب</a></p>\n";
 }
 
 function emailForm(lib, id, fmt, title, note, extraHidden = "") {
-  return page("أرسل إلى جهازي", emailFormHtml(lib, id, fmt, title, note, extraHidden));
+  return page("أرسل لميل قارئي", emailFormHtml(lib, id, fmt, title, note, extraHidden));
 }
 
 /** One rate-limit counter: returns { over, counted }. over=true
@@ -466,7 +466,7 @@ export async function onRequest(context) {
   // Defense in depth: the website hides the send button for flagged
   // books, but a direct link to this endpoint must not bypass that.
   // Same denylist as tg-search.js / dl-token.js: a KV key
-  // flag:<handle>:<post_id> means flagged/commercial -> no send, no
+  // flag:<handle>:<post_id> means flagged -> no send, no
   // reading here; the book is reachable via the bot. OPDS books are
   // public-domain / CC libraries and are never flagged. Placed BEFORE
   // the dedupe claim so a refused book never occupies the window.
@@ -476,8 +476,8 @@ export async function onRequest(context) {
       flagged = (await env.RLIBOOK_KV.get(`flag:${tgHandle}:${tgPostId}`)) !== null;
     } catch { flagged = false; }
     if (flagged) {
-      return page("⚑ كتاب تجاري",
-        "<p>⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+      return page("🚩 كتاب عليه علامة",
+        "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
         + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);

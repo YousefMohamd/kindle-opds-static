@@ -457,7 +457,7 @@
     }).catch(function (err) {
       var msg = String(err && err.message || err);
       if (msg === "flagged") {
-        openError("This book is flagged (commercial) — the website cannot read it. Ask for it from the bot @RliBook_bot.");
+        openError("This book is flagged 🚩 — the website cannot read it. Ask for it from the bot @RliBook_bot.");
       } else if (msg === "no-download" || msg.indexOf("token-") === 0) {
         openError("The download link is not ready yet — try «احصل على الكتاب على جهازك» on the book page instead.");
       } else if (msg === "not-an-epub") {

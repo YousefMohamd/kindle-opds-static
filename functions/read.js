@@ -1595,8 +1595,8 @@ export async function onRequest(context) {
   // as dl-token.js). OPDS books are PD/CC and never flagged.
   if (book.kind === "tg" && !ownEntry
     && (await isFlaggedBook(env, book.handle, book.postId))) {
-    return page("⚑ كتاب تجاري",
-      "<p>⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو قراءته.</p>\n"
+    return page("🚩 كتاب عليه علامة",
+      "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو قراءته.</p>\n"
       + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
       + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
       + "<p><a href=\"" + esc(backToBook) + "\">← رجوع</a></p>\n", 403);

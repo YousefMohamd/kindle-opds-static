@@ -3,8 +3,8 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, an "أرسله إلى Kindle
-//        بالإيميل" PRIMARY button (the Send-to-Kindle email —
+//        title, author, library, format, an "أرسل لميل قارئي"
+//        PRIMARY button (the Send-to-Kindle email —
 //        UNLIMITED, no per-user cap), a device download button
 //        below it ONLY for an e-reader User-Agent (Workstream 1b:
 //        Kobo "📥 نزّل الكتاب على جهاز Kobo", PocketBook likewise,
@@ -49,7 +49,7 @@
 // cards appear with no further change to this file.
 //
 // Telegram cards are NORMAL cards (title, author, source, format)
-// with the SAME "أرسله إلى Kindle بالإيميل" primary button as
+// with the SAME "أرسل لميل قارئي" primary button as
 // OPDS cards — the button sends the book to the Kindle by email
 // (unlimited, no per-user cap). Under it, the SAME device download
 // button as OPDS cards (Workstream 1b: shown only for an e-reader
@@ -65,7 +65,7 @@
 // under the book info, never the button label and never a t.me link:
 // tapping a source link opened the Telegram website, which is not a
 // download.
-// Flagged (commercial) Telegram books show a "تجاري" marker and ONE
+// Flagged Telegram books show a 🚩 flag and ONE
 // button, "View in bot" (Workstream 2b) — the bot deep link from
 // /api/tg-search — and NO send button and NO reading on the website,
 // per the website rule that flagged books are flagged but not
@@ -607,6 +607,59 @@ export async function onRequest(context) {
   let body = head("بحث: " + q);
   if (familyNote) body += familyNote;
   if (hits.length === 0 && tg.results.length === 0) {
+    // P1-6 (2026-11-17): the no-match page must say plainly the book
+    // is NOT available, show RELATED recommendations, and link to the
+    // bot. Related = a relaxed search on the query's words, longest
+    // first (max 3 words — the most specific word usually matches;
+    // a nonsense word simply yields nothing and the next is tried),
+    // same sources and same substring matching for OPDS, the
+    // endpoint's own longest-word fallback for Telegram, capped at 5,
+    // deduped by title. Runs only on the no-match path, so a hit page
+    // pays nothing; an index error here is skipped silently (the main
+    // loop above already 500s on a genuinely broken index).
+    const related = [];
+    const seenRelated = new Set();
+    const pushRelated = (title, author, source) => {
+      const key = (title || "").toLowerCase();
+      if (!title || seenRelated.has(key) || related.length >= 5) return;
+      seenRelated.add(key);
+      related.push({title, author, source});
+    };
+    const relWords = q.split(/\s+/).filter((w) => w.length >= 2)
+      .sort((a, b) => b.length - a.length).slice(0, 3);
+    for (const relWord of relWords) {
+      if (related.length >= 5) break;
+      const rw = relWord.toLowerCase();
+      for (const lib of LIBS) {
+        const loaded = await loadSearchIndex(url.origin, lib.slug, rw);
+        if (loaded.error || loaded.skip) continue;
+        for (const b of loaded.books) {
+          if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(rw)) {
+            pushRelated(b.t, b.a, lib.label);
+            if (related.length >= 5) break;
+          }
+        }
+        if (related.length >= 5) break;
+      }
+      if (related.length < 5) {
+        const tgRel = await fetchTelegramResults(url.origin, relWord, 5);
+        for (const r of tgRel.results || []) {
+          pushRelated(r.title, r.author, r.source || "تيليجرام");
+        }
+      }
+    }
+    const relatedHtml = related.length
+      ? "<h2>كتب مشابهة قد تعجبك</h2>\n<ul>\n"
+        + related.map((r) =>
+          "<li><a href=\"/book?q=" + encodeURIComponent(r.title) + "\">"
+          + esc(r.title) + "</a>"
+          + (r.author ? " — " + esc(r.author) : "")
+          + (r.source ? " (" + esc(r.source) + ")" : "")
+          + "</li>\n").join("")
+        + "</ul>\n"
+      : "";
+    const botLine = "<p>أو اطلبه من البوت "
+      + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
     if (tg.available) {
       // Telegram WAS searched (endpoint + D1 live) and found nothing
       // either — say so, instead of sending the user to the index.
@@ -614,8 +667,10 @@ export async function onRequest(context) {
       // a missing book may only be missing from D1 so far: say so,
       // but only when the endpoint reports D1 as still partial — the
       // note disappears on its own once the import finishes.
-      body += "<p>لم نجد «" + esc(q) + "» في كل المكتبات (الخمس + تيليجرام).</p>\n"
-        + "<p>جرّب كلمة أخرى من العنوان أو اسم المؤلف.</p>\n";
+      body += "<p>لم نجد «" + esc(q) + "» في كل المكتبات (الخمس + تيليجرام) — الكتاب غير متاح حالياً.</p>\n"
+        + "<p>جرّب كلمة أخرى من العنوان أو اسم المؤلف.</p>\n"
+        + relatedHtml
+        + botLine;
       if (tg.coverage && tg.coverage.partial) {
         body += "<p class=\"note\">ملاحظة: فهرس تيليجرام ما زال يُستورَد — "
           + "يكتمل الخميس 19 نوفمبر 2026، فالكتاب قد يظهر لاحقًا.</p>\n";
@@ -628,9 +683,11 @@ export async function onRequest(context) {
       // shown on the homepage/stats). No partial-import note here:
       // this branch points at the static /telegram/ index (the full
       // manifest), not the partial D1 search.
-      body += "<p>لم نجد «" + esc(q) + "» في المكتبات الخمس.</p>\n"
+      body += "<p>لم نجد «" + esc(q) + "» في المكتبات الخمس — الكتاب غير متاح حالياً.</p>\n"
         + "<p>الكتاب قد يكون في <a href=\"/telegram/\">فهرس تيليجرام</a> "
         + "— ابحث عنه هناك بالعنوان أو المؤلف.</p>\n"
+        + relatedHtml
+        + botLine
         + foot;
     }
     return new Response(body, {headers: {
@@ -697,7 +754,7 @@ export async function onRequest(context) {
     // mobile / no-UA visitors see email + reader only — no
     // /kindle/get link anywhere on their page.
     if (sendUrl) {
-      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسله إلى Kindle بالإيميل</a></p>\n";
+      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
     }
     if (getUrl && downloadLabel) {
       anyDownload = true;
@@ -734,9 +791,9 @@ export async function onRequest(context) {
   // functions/api/send-to-kindle.js, lib=tg); the source is plain
   // TEXT under the book info, never the button label and never a
   // t.me link — tapping a source link opened the Telegram website,
-  // which is not a download. Flagged (commercial) books get NO send
+  // which is not a download. Flagged books get NO send
   // button and NO reading on the website, per the website rule
-  // (flagged = shown with a "تجاري" marker, reachable via the bot, which
+  // (flagged = shown with a 🚩 flag, reachable via the bot, which
   // enforces the 3/day cap); a book that cannot be sent (private
   // group, no usable format, MOBI/AZW3/KFX) gets a note instead.
   if (tg.results.length > 0) {
@@ -800,7 +857,7 @@ export async function onRequest(context) {
       }
       body += "<p>تيليجرام"
         + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
-        + (r.flagged ? " · تجاري" : "")
+        + (r.flagged ? " · 🚩" : "")
         + "</p>\n";
       // Metadata (Workstream 3): file size + page count UNDER the format
       // line — only when known (size comes from the index via tg-search;
@@ -810,14 +867,14 @@ export async function onRequest(context) {
       if (tgMeta) body += "<p class=\"meta\">" + esc(tgMeta) + "</p>\n";
       body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
       if (r.flagged) {
-        // Flagged (commercial) book (Workstream 2b): shown with the
-        // "تجاري" marker and ONE button, "View in bot" — the bot
+        // Flagged book (Workstream 2b): shown with the
+        // 🚩 flag and ONE button, "View in bot" — the bot
         // deep link from /api/tg-search (the bot shows 🚩 + the
         // source channel link under the 3/day cap and never
         // downloads it). No send, no delivery page, no reader.
         // A missing bot field (an older endpoint reply) falls back
         // to the bot home link.
-        body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+        body += "<p class=\"note\">🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
           + "<p><a class=\"btn\" href=\"" + esc(r.bot || "https://t.me/RliBook_bot") + "\">View in bot</a></p>\n";
       } else {
         // Button order (2026-11-16): email FIRST (primary button,
@@ -830,7 +887,7 @@ export async function onRequest(context) {
         // a catalog user never re-types their reader email.
         const sendUrl = r.send ? esc(r.send) + fpQ : null;
         if (sendUrl) {
-          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسله إلى Kindle بالإيميل</a></p>\n";
+          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
         }
         // WS1b: same gate as the OPDS cards — a download button
         // only for an e-reader family UA. A flagged book has no

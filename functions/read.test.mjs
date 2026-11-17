@@ -606,7 +606,7 @@ console.log("6. Refusals / failures:");
   fetchMode = "epub";
   const r = await call({ lib: "tg", h: "kotobkhana", p: "7559" }, env);
   check("6a flagged Telegram book -> 403, no fetch, no chapter",
-    r.status === 403 && r.body.includes("كتاب تجاري"), "status " + r.status);
+    r.status === 403 && r.body.includes("كتاب عليه علامة"), "status " + r.status);
   const unflagged = await call({ lib: "tg", h: "kotobkhana", p: "7558" }, env);
   check("6a unflagged Telegram book renders (proxy URL fetched)",
     unflagged.status === 200 && lastFetchUrl.startsWith(ENV.PROXY_BASE_URL + "/dl?h=kotobkhana&p=7558"),
@@ -803,7 +803,7 @@ console.log("7. Token renewal + own books:");
   const env = { ...ENV, RLIBOOK_KV: kv };
   const r = await call({ lib: "tg", h: "kotobkhana", p: "7559", rtok: oldTok }, env);
   check("7c flagged-mid-read: entry flag check stops reading at once -> 403",
-    r.status === 403 && r.body.includes("كتاب تجاري"), "status " + r.status);
+    r.status === 403 && r.body.includes("كتاب عليه علامة"), "status " + r.status);
   const navToks = rtoksIn(r.body);
   check("7c2 no chapter, no fresh token on the 403 page",
     navToks.length === 0 && !r.body.includes("هذا نص الفصل الأول للاختبار"),

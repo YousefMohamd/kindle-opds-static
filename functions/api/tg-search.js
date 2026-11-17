@@ -47,7 +47,7 @@
 //     a "removed" notice.
 //
 // Hidden books (owner-only /hide, Workstream 2b): DIFFERENT from
-// flagged. A flagged book is commercial and still SHOWN (🚩 badge
+// flagged. A flagged book is still SHOWN (🚩 badge
 // + "View in bot", under the bot's 3/day cap). A hidden book was
 // removed by the owner directly (/hide in the bot, or a manual KV
 // put of `hidden:<handle>:<post_id>`), and is REMOVED from search
@@ -61,7 +61,7 @@
 // through a notice). dl-token.js refuses a token for a hidden book
 // (403 "hidden"); send-to-kindle.js and read-token.js refuse it too.
 //
-// Flagged (commercial) books: the endpoint IDENTIFIES them, it does not
+// Flagged books: the endpoint IDENTIFIES them, it does not
 //   GET /api/tg-search?source=EBook_Library&q=...  — same search, but only
 //     books whose source (channel/group handle) is exactly EBook_Library.
 //     Powers the per-library browse links on /telegram/libraries.html.
@@ -101,10 +101,10 @@
 // alone (the bot's "Did you mean" does its own suggestion on top).
 // Results are ordered by FTS5 rank (best match first).
 //
-// Flagged (commercial) books: the endpoint IDENTIFIES them, it does not
+// Flagged books: the endpoint IDENTIFIES them, it does not
 // enforce the cap. For each result it checks the shared KV denylist
 // (same mechanism as functions/api/dl-token.js): a KV key
-// `flag:<handle>:<post_id>` means the book IS flagged/commercial.
+// `flag:<handle>:<post_id>` means the book IS flagged.
 // The handle + post_id come from the result's t.me post URL. The bot
 // enforces the 3/day successful-flagged-search cap and the
 // invite-unlocks-3-more rule. If RLIBOOK_KV is not bound, or no flag
@@ -297,7 +297,7 @@ export function parsePostUrl(url) {
 }
 
 // Flag check against the shared KV denylist (same as dl-token.js).
-// A key `flag:<handle>:<post_id>` means flagged/commercial.
+// A key `flag:<handle>:<post_id>` means flagged.
 async function isFlagged(env, url) {
   const kv = env && env.RLIBOOK_KV;
   if (!kv) return false;

@@ -526,12 +526,12 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   );
   const body = await res.text();
   check("22 tg flagged: 403 + bot hint", res.status === 403 && body.includes("RliBook_bot"), `status=${res.status}`);
-  check("22 tg flagged: reason first — commercial, site cannot send",
-    body.includes("هذا الكتاب تجاري (عليه علامة)")
+  check("22 tg flagged: reason first — flagged, site cannot send",
+    body.includes("🚩 هذا الكتاب عليه علامة")
     && body.includes("الموقع لا يتيح تحميله أو إرساله"));
   check("22 tg flagged: reason comes BEFORE the bot direction",
-    body.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
-    && body.indexOf("هذا الكتاب تجاري (عليه علامة)") < body.indexOf("قناة النشر")
+    body.indexOf("🚩 هذا الكتاب عليه علامة") !== -1
+    && body.indexOf("🚩 هذا الكتاب عليه علامة") < body.indexOf("قناة النشر")
     && body.includes("قناة النشر"));
   check("22 tg flagged: nothing fetched or sent", calls.book.length === 0 && calls.resend.length === 0);
 }

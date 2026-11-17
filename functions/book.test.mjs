@@ -20,8 +20,8 @@
 //   B. Combined mode (mocked tg-search ok): Telegram cards appear
 //      alongside OPDS cards, OPDS first, with the SAME send button
 //      (lib=tg, via the proxy fetch) and the source as TEXT under the
-//      book info (no t.me link anywhere). Flagged books get a ⚑
-//      marker, NO send button and NO reading, pointing at the bot.
+//      book info (no t.me link anywhere). Flagged books get a 🚩
+//      flag, NO send button and NO reading, pointing at the bot.
 //      Invalid endpoint records are dropped, "N من total" heading.
 //   C. Degradation: every tg-search failure mode still returns
 //      HTTP 200 with the OPDS-only page (never a 500, never a
@@ -72,7 +72,7 @@ const TG_OK_RESULTS = [
     description: "وصف المنشور: سرقة بنك تتحول إلى لغز.",
   },
   {
-    title: "كتاب تجاري تجريبي",
+    title: "كتاب مُعلَّم تجريبي",
     author: "مؤلف تجريبي",
     source: "darkromancenovels",
     kind: "channel",
@@ -141,7 +141,7 @@ globalThis.fetch = async (u) => {
         description: { text: "A bank heist gone wrong, told by the thief.",
           source: "Google Books" } });
     }
-    if (title.includes("كتاب تجاري")) {
+    if (title.includes("كتاب مُعلَّم")) {
       return jsonRes({ ok: true, title, rating: null,
         description: { text: "وصف تجريبي من Google Books.",
           source: "Google Books" } });
@@ -209,7 +209,7 @@ tgMode = "throw";
   check("A1 OPDS title: card + author", r.body.includes("لؤلؤة الحب") && r.body.includes("هربرت جورج ويلز"));
   check("A1 OPDS title: email is now the PRIMARY button (class btn, /api/send-to-kindle)",
     r.body.includes('class="btn" href="/api/send-to-kindle?lib=hindawi')
-    && r.body.includes("أرسله إلى Kindle بالإيميل"));
+    && r.body.includes("أرسل لميل قارئي"));
   check("A1 OPDS title: NO VISIBLE download button without an e-reader UA (WS1b: desktop/no-UA get email + reader only; WS3b: the /kindle/get link is tg-only, hidden outside Telegram)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
     && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
@@ -237,6 +237,27 @@ tgMode = "throw";
     !r.body.includes("ما زال يُستورَد"));
   check("A2 TG-only title: no Telegram card rendered", !r.body.includes("kotobkhana"));
   check("A2 TG-only title: no send button", !r.body.includes("/api/send-to-kindle"));
+  check("A2 TG-only title: P1-6 says plainly the book is NOT available",
+    r.body.includes("غير متاح"));
+  check("A2 TG-only title: P1-6 links to the bot",
+    r.body.includes("https://t.me/RliBook_bot"));
+}
+{
+  // P1-6 (2026-11-17): a no-match query whose words DO match other
+  // books shows RELATED recommendations (same-word titles), each
+  // linking to its own /book page.
+  const r = await getBook("لؤلؤة غيرموجودة");
+  check("A2b no-match + related words: 200, no-match page", r.status === 200 && r.body.includes("لم نجد"));
+  check("A2b no-match + related words: says the book is NOT available",
+    r.body.includes("غير متاح"));
+  check("A2b no-match + related words: related list shown",
+    r.body.includes("كتب مشابهة قد تعجبك"));
+  check("A2b no-match + related words: same-word book recommended",
+    r.body.includes("لؤلؤة الحب"));
+  check("A2b no-match + related words: recommendation links to its book page",
+    r.body.includes("/book?q=" + encodeURIComponent("لؤلؤة الحب")));
+  check("A2b no-match + related words: bot link present",
+    r.body.includes("https://t.me/RliBook_bot"));
 }
 {
   tgCalls = 0;
@@ -274,7 +295,7 @@ tgMode = "ok";
   check("B1 TG-only title: email is the PRIMARY button (class btn, lib=tg, handle+post)",
     r.body.includes('class="btn" href="/api/send-to-kindle?lib=tg')
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
-    && r.body.includes("أرسله إلى Kindle بالإيميل"));
+    && r.body.includes("أرسل لميل قارئي"));
   check("B1 TG-only title: NO VISIBLE Get-on-Kindle button without an e-reader UA (WS1b; WS3b: the link is tg-only, hidden outside Telegram)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
     && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=tg")
@@ -287,15 +308,15 @@ tgMode = "ok";
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
     && r.body.includes("📖 اقرأ أونلاين"));
   check("B1 TG-only title: email button comes first, then Read online (the Get in between is tg-only, hidden outside Telegram)",
-    r.body.indexOf("أرسله إلى Kindle بالإيميل") !== -1
-    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.indexOf("اقرأ أونلاين")
+    r.body.indexOf("أرسل لميل قارئي") !== -1
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("اقرأ أونلاين")
     && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
   check("B1 TG-only title: NO delivery footer note without an e-reader UA (no download button rendered)",
     !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("B1 TG-only title: NO telegram download note without an e-reader UA",
     !r.body.includes("يجلب الملف من تيليجرام"));
-  check("B1 TG-only title: the word Kindle appears only in the email button label (2026-11-16: the button now names Kindle explicitly)",
-    (r.body.match(/Kindle/g) || []).length === 1 && !r.body.includes("كيندلي"));
+  check("B1 TG-only title: the word Kindle appears nowhere on the page (P1/P2: the email button is now 'أرسل لميل قارئي' and no longer names Kindle)",
+    (r.body.match(/Kindle/g) || []).length === 0 && !r.body.includes("كيندلي"));
   check("B1 TG-only title: count line is 2", r.body.includes("وجدنا 2 نتيجة لـ"));
   check("B1 tg-search called with q + limit=10",
     lastTgUrl.includes("/api/tg-search?q=") && lastTgUrl.includes("limit=10"), lastTgUrl);
@@ -327,7 +348,7 @@ tgMode = "ok";
   const r = await getBook("الحب");
   check("B2 combined query: OPDS + Telegram both present",
     r.body.includes("وجدنا 102 نتيجة لـ") && r.body.includes("من تيليجرام"));
-  const opdsPos = r.body.indexOf("أرسله إلى Kindle بالإيميل");
+  const opdsPos = r.body.indexOf("أرسل لميل قارئي");
   const tgPos = r.body.indexOf("من تيليجرام");
   check("B2 combined query: OPDS cards before Telegram section",
     opdsPos !== -1 && tgPos !== -1 && opdsPos < tgPos);
@@ -343,22 +364,22 @@ tgMode = "ok";
   check("B2 combined query: OPDS EPUB cards have a Read online button",
     r.body.includes("/site/reader/?lib=hindawi") && r.body.includes("اقرأ أونلاين"));
   check("B2 combined query: email button comes first on the OPDS card, then Read online (the Get in between is tg-only)",
-    r.body.indexOf("أرسله إلى Kindle بالإيميل") !== -1
-    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.indexOf("اقرأ أونلاين")
+    r.body.indexOf("أرسل لميل قارئي") !== -1
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("اقرأ أونلاين")
     && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
-  check("B3 flagged card: تجاري marker shown (F2: the word, no glyph)",
-    r.body.includes("تجاري") && !r.body.includes("⚑"));
+  check("B3 flagged card: 🚩 flag shown, no 'تجاري' word (P1/P2 wording)",
+    r.body.includes("🚩") && !r.body.includes("تجاري"));
   check("B3 flagged card: NO t.me link for the flagged book",
     !r.body.includes("https://t.me/darkromancenovels/123"));
   check("B3 flagged card: points at the bot instead — ONE 'View in bot' button",
     r.body.includes("View in bot")
     && r.body.includes("https://t.me/RliBook_bot?start=dl_darkromancenovels_123_any"));
   check("B3 flagged card: reason comes BEFORE the bot button",
-    r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
-    && r.body.indexOf("هذا الكتاب تجاري (عليه علامة)") < r.body.indexOf("View in bot"));
+    r.body.indexOf("🚩 هذا الكتاب عليه علامة") !== -1
+    && r.body.indexOf("🚩 هذا الكتاب عليه علامة") < r.body.indexOf("View in bot"));
   check("B3 flagged card: NO send button for the flagged book",
     !r.body.includes("h=darkromancenovels"));
   check("B3 flagged card: NO Read online button for the flagged book",
@@ -772,7 +793,7 @@ tgMode = "throw";
     // lastIndexOf: the banner at the top of the page quotes the
     // same label, so the FIRST occurrence is the banner, not the
     // button — the button is the LAST occurrence.
-    && r.body.indexOf("أرسله إلى Kindle بالإيميل") < r.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"));
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"));
   check("J1 hit page: cache-control: no-store",
     r.cache === "no-store", r.cache);
   check("J1 hit page (Kobo): footer explains the 10-minute link + on-device download, NO sendtokindle",
@@ -976,7 +997,7 @@ console.log("M. E-reader download button gate (WS1b):");
     && (kobo.body.match(/نزّل الكتاب على جهاز Kobo/g) || []).length >= 2
     // lastIndexOf: the banner quotes the same label, so the button
     // is the LAST occurrence; it must sit after email, before Read.
-    && kobo.body.indexOf("أرسله إلى Kindle بالإيميل") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo")
+    && kobo.body.indexOf("أرسل لميل قارئي") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo")
     && kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < kobo.body.indexOf("اقرأ أونلاين"),
     "status " + kobo.status);
   check("M1 Kobo UA: Telegram download note + footer download note present, no sendtokindle",
@@ -1029,7 +1050,7 @@ console.log("M. E-reader download button gate (WS1b):");
   check("M1b Kobo UA: no tg-only button either (visible button only)",
     !kobo.body.includes("class=\"tg-only\""));
   check("M7 Kobo UA: flagged Telegram card still gets NO download button (flag denylist beats the UA gate)",
-    kobo.body.includes("كتاب تجاري تجريبي")
+    kobo.body.includes("كتاب مُعلَّم تجريبي")
     && !kobo.body.includes("/kindle/get?lib=tg&amp;h=darkromancenovels")
     && !kobo.body.includes("/kindle/get?lib=tg&h=darkromancenovels"));
   check("M8 ereaderDownloadLabel unit: kobo/pocketbook/generic/kindle/desktop",
@@ -1101,7 +1122,7 @@ console.log("N. Mini App hub tg-only button (WS3b):");
     kindle.status === 200 && kindle.body.includes("احصل على الكتاب على جهازك")
     && !kindle.body.includes("class=\"tg-only\""));
   check("N4 flagged card: no tg-only button for the flagged book",
-    kobo.body.includes("كتاب تجاري تجريبي")
+    kobo.body.includes("كتاب مُعلَّم تجريبي")
     && !kobo.body.includes("class=\"tg-only\"><a class=\"btn\" href=\"/kindle/get?lib=tg&amp;h=darkromancenovels"));
 }
 

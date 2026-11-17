@@ -35,7 +35,7 @@
 //
 // Flag gate — read this before wiring the button:
 //   * If env.RLIBOOK_KV is bound, a KV key `flag:<handle>:<post_id>`
-//     means the book IS flagged/commercial -> 403, no token.
+//     means the book IS flagged -> 403, no token.
 //     (Block 7 populates those keys; the bot's flags.ts list is the
 //     source of truth for which titles are flagged.)
 //   * If the KV binding is missing, a token IS issued. That is the
@@ -57,7 +57,7 @@
 // BEFORE any counter is taken (a refused mint never burns quota).
 // Hidden is NOT flagged: a flagged book still mints nothing
 // either (403 "flagged"), but the two refusals are distinct —
-// flagged books are commercial and the bot points at the source
+// flagged books are shown with 🚩 and the bot points at the source
 // channel; hidden books are removed from search entirely. Like
 // the flag check, a KV outage fails CLOSED for Telegram books.
 // OPDS books are never hidden (they have no post identity to

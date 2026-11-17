@@ -50,6 +50,10 @@
 <h1 style="text-align:center">RliBook</h1>
 <p class="slogan">Reply. Read. Fly. — رد. اقرأ. حلّق.</p>
 
+<!-- COVERAGE-WARNING-START (P1-14, 2026-11-17): the catalog coverage is not yet complete. REMOVE this whole block — from this comment to COVERAGE-WARNING-END — when the catalog import completes. -->
+<p id="coverage-warning" class="note" style="text-align:center">⚠️ تنبيه: فهرس الكتب ما زال يُستكمَل — قد لا تجد كل الكتب بعد.</p>
+<!-- COVERAGE-WARNING-END -->
+
 <div class="card">
   <h2>ابحث في كل المكتبات</h2>
   <p>بحث واحد يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (223 مكتبة)
@@ -60,7 +64,7 @@
   </form>
   <p id="status" class="note" role="status"></p>
   <div id="results"></div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسله إلى Kindle بالإيميل» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «📥 احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «📥 احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -213,14 +217,14 @@ function renderGroup(heading, items, tg) {
     for (var j = 0; j < formats.length; j++) {
       fmts += "<span class=\"fmt\">" + esc(formats[j]) + "</span>";
     }
-    // Flagged (commercial) books have NO source link anywhere on the
+    // Flagged books have NO source link anywhere on the
     // site — the title links to /book, which points at the bot — so
     // the flag must not claim a source link exists. A flagged book
     // gets ONE button, "View in bot" (Workstream 2b): the bot deep
     // link from the endpoint, where the bot shows 🚩 + the source
     // channel link under the 3/day cap and never downloads it. No
     // download, no email, no reader button for flagged books.
-    var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 كتاب تجاري — اطلبه من البوت</span>" : "";
+    var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 اطلبه من البوت</span>" : "";
     var botBtn = (tg && b.flagged)
       ? "<div><a class=\"btn\" href=\"" + esc(botDeepLink(b.bot)) + "\">View in bot</a></div>" : "";
     var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
@@ -282,11 +286,57 @@ function runSearch(q) {
       // (v4.2.0) and the bot searches the same partial D1 index, not
       // the channels live — sending the user there finds nothing
       // either. While the import is still running, say so.
-      var nf = "«" + esc(q) + "» مش موجود في نتائج البحث — جرّب كلمة تانية من العنوان أو اسم المؤلف.";
+      // P1-6 (2026-11-17): say plainly the book is NOT available,
+      // show RELATED recommendations (relaxed search on the query's
+      // words, longest first), and link to the bot.
+      var nf = "«" + esc(q) + "» غير متاح حالياً — مش موجود في نتائج البحث. جرّب كلمة تانية من العنوان أو اسم المؤلف، أو اطلبه من البوت <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.";
       if (tgPartial) {
         nf += " ملاحظة: فهرس تيليجرام ما زال يُستورَد — يكتمل الخميس 19 نوفمبر 2026، فالكتاب قد يظهر لاحقًا.";
       }
       notfoundEl.innerHTML = nf;
+      var rq = q;
+      var words = q.split(/\s+/).filter(function (w) { return w.length >= 2; });
+      words.sort(function (a, b) { return b.length - a.length; });
+      words = words.slice(0, 3);
+      if (words.length) {
+        // Related recommendations: re-search each word (longest first)
+        // across both halves, in parallel; merge in word order, dedupe,
+        // cap at 5. A newer keystroke already started another search —
+        // never append stale recommendations to it.
+        var jobs = [];
+        for (var wi = 0; wi < words.length; wi++) {
+          var relEnc = encodeURIComponent(words[wi]);
+          jobs.push(fetch("/api/tg-search?q=" + relEnc + "&limit=5").then(function (r) { return r.json(); }));
+          jobs.push(fetch("/opds/search?q=" + relEnc).then(function (r) { return r.text(); }).then(parseOpds));
+        }
+        Promise.allSettled(jobs).then(function (rout) {
+          if (qEl.value.trim() !== rq) return;
+          var rel = [], seen = {};
+          function pushRel(t, a) {
+            var k = String(t || "").toLowerCase();
+            if (!t || seen[k] || rel.length >= 5) return;
+            seen[k] = 1;
+            rel.push({ title: t, author: a || "" });
+          }
+          for (var j = 0; j < rout.length; j += 2) {
+            if (rout[j].status === "fulfilled" && rout[j].value && rout[j].value.ok) {
+              (rout[j].value.results || []).forEach(function (b) { pushRel(b.title, b.author); });
+            }
+            if (rout[j + 1].status === "fulfilled") {
+              (rout[j + 1].value || []).forEach(function (b) { pushRel(b.title, b.author); });
+            }
+          }
+          if (rel.length) {
+            var html = "<p><b>كتب مشابهة قد تعجبك:</b></p><ul>";
+            for (var i = 0; i < rel.length; i++) {
+              html += "<li><a href=\"/book?q=" + encodeURIComponent(rel[i].title) + "\">"
+                + esc(rel[i].title) + "</a>"
+                + (rel[i].author ? " — " + esc(rel[i].author) : "") + "</li>";
+            }
+            notfoundEl.innerHTML += html + "</ul>";
+          }
+        });
+      }
     }
   });
 }

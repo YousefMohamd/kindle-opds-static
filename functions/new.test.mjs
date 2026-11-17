@@ -82,7 +82,7 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
     !text.includes(NEWEST.books[0].url) && !text.includes("المصدر في تليجرام"));
   check("1 send button present (lib=tg, handle+post)",
     text.includes("/api/send-to-kindle?lib=tg")
-    && text.includes("أرسل إلى جهازي"));
+    && text.includes("أرسل لميل قارئي"));
   check("1 no colour emoji on the page (F3: old Kindle shows tofu)",
     !text.includes("📧") && !text.includes("📚") && !text.includes("⚑") && !text.includes("🆕"));
   check("1 NO direct-download link anywhere (removed from /book 2026-11-13; /new never had one)",
@@ -176,7 +176,7 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
   // live newest.json rotates daily, so its first book is no longer
   // books_p/11692 — pin the flagged book first instead of assuming
   // the fixture's order (Workstream H: test-only fix, no page change).
-  const flaggedFirst = { title: "كتاب تجاري تجريبي", author: "مؤلف تجريبي",
+  const flaggedFirst = { title: "كتاب مُعلَّم تجريبي", author: "مؤلف تجريبي",
     source: "books_p", format: "PDF", date: "2026-11-16",
     url: "https://t.me/books_p/11692" };
   const pinned = { ...NEWEST, count: 30,
@@ -195,17 +195,17 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
     },
   };
   const { text } = await get("/new", null, pinned, kv);
-  check("7 flagged: تجاري marker on the flagged book (F3: the word, no glyph)",
-    text.includes("تجاري") && !text.includes("⚑"));
+  check("7 flagged: 🚩 flag on the flagged book, no 'تجاري' word (P1/P2 wording)",
+    text.includes("🚩") && !text.includes("تجاري"));
   check("7 flagged: NO send button for the flagged book", !text.includes("p=11692"));
   check("7 flagged: one-line bot explanation, no reading",
-    text.includes("هذا الكتاب تجاري (عليه علامة)")
+    text.includes("🚩 هذا الكتاب عليه علامة")
     && text.includes("الموقع لا يتيح تحميله أو إرساله")
     && text.includes("قناة النشر")
     && text.includes("@RliBook_bot"));
   check("7 flagged: reason comes BEFORE the bot direction",
-    text.indexOf("هذا الكتاب تجاري (عليه علامة)") !== -1
-    && text.indexOf("هذا الكتاب تجاري (عليه علامة)") < text.indexOf("قناة النشر"));
+    text.indexOf("🚩 هذا الكتاب عليه علامة") !== -1
+    && text.indexOf("🚩 هذا الكتاب عليه علامة") < text.indexOf("قناة النشر"));
   check("7 flagged: other books still have send buttons",
     text.includes("/api/send-to-kindle?lib=tg"));
   check("7 flag check cost: one KV get per shown book (30)",

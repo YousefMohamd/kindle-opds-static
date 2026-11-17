@@ -9,7 +9,7 @@
 // (prepare().bind().first() / .all()), mocks RLIBOOK_KV with a Map,
 // imports the real Function module, and calls onRequest() over HTTP
 // semantics. It asserts the response contract for:
-//   1. a known Telegram-only book (recent commercial title),
+//   1. a known Telegram-only book (recent flagged title),
 //   2. an author search,
 //   3. Arabic normalization (diacritics + "ال" stripping),
 //   4. a null author (author: null, not ""),
@@ -173,7 +173,7 @@ async function botCall(path, key = BOT_KEY) {
 
 const D1 = mockD1(db);
 
-// 1. Known Telegram-only book (recent commercial title, kotobkhana).
+// 1. Known Telegram-only book (recent flagged title, kotobkhana).
 {
   const { status, body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("1a status 200", status === 200, `got ${status}`);

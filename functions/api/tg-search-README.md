@@ -49,7 +49,7 @@ Success (200):
 - `formats`: the format(s) actually available for the linked file
   (Telegram books have one file each, so one element, e.g. `["PDF"]`).
 - `url`: the t.me post link (the only way to get the book).
-- `flagged`: `true` when the book is flagged/commercial (see below).
+- `flagged`: `true` when the book is flagged (see below).
 - `size`: the book file's size as recorded in the Telegram index
   (D1 `books.size`, from the indexer's `size_text` — e.g. `"2.7 MB"`).
   Present only when the index holds a size for the book; a book with
@@ -100,12 +100,12 @@ post URL alone — 15 URLs in shard 0 map to 2–3 books each. The D1
 schema stores `filename` and enforces `UNIQUE(url, filename)`; the
 population script keys its incremental state file the same way.
 
-## Flagged (commercial) books
+## Flagged books
 
 The endpoint **identifies** flagged books; it does **not** enforce the
 cap. For each result it checks the shared KV denylist — the same
 mechanism as `functions/api/dl-token.js`: a KV key
-`flag:<handle>:<post_id>` means flagged/commercial. Handle + post_id
+`flag:<handle>:<post_id>` means flagged. Handle + post_id
 come from the result's t.me URL. The **bot** enforces the 3/day
 successful-flagged-search cap and the invite-unlocks-3-more rule.
 If `RLIBOOK_KV` is not bound, or no flag key exists, `flagged` is

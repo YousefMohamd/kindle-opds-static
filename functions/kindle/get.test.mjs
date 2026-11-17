@@ -164,7 +164,7 @@ console.log("1. OPDS delivery page:");
     && r.body.includes("rtok=v1."));
   check("1i email link present, stating email is unlimited (no daily cap)",
     r.body.includes("/api/send-to-kindle?lib=hindawi")
-    && r.body.includes("أرسله بالإيميل — بلا حد يومي (لمن أضاف المرسل من قبل)")
+    && r.body.includes("أرسل لميل قارئي — بلا حد يومي (لمن أضاف المرسل من قبل)")
     && !r.body.includes("أرسل إلى جهازي"));
   check("1j book title shown", r.body.includes("Test Book"));
   check("1k cache-control: no-store", r.cache === "no-store", r.cache);
@@ -396,7 +396,7 @@ console.log("9. Hidden book:");
   const envBoth = { RLIBOOK_KV: kvBoth, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
   const rBoth = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "Both" }, envBoth, "10.3.0.2");
   check("9d hidden + flagged -> flagged page (flag first)",
-    rBoth.status === 403 && rBoth.body.includes("هذا الكتاب تجاري (عليه علامة)"), "status " + rBoth.status);
+    rBoth.status === 403 && rBoth.body.includes("🚩 هذا الكتاب عليه علامة"), "status " + rBoth.status);
 }
 
 // ================= 10. Mini App hub hooks ============================

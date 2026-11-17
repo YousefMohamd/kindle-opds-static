@@ -61,7 +61,7 @@
 //
 // Plain HTML, NO JavaScript at all (the Kindle browser is ES5-level
 // and the page must work with JS off), `cache-control: no-store`.
-// Flagged (commercial) Telegram books: 403, no token minted.
+// Flagged Telegram books: 403, no token minted.
 // Hidden (owner-removed) Telegram books: 403, no token minted —
 // the `hidden` error comes from mintTokenForBook (WS2's dl-token.js
 // hidden gate; that file must be merged before this branch can fire).
@@ -198,8 +198,8 @@ export async function onRequest(context) {
   const result = await mintTokenForBook(env, book, { ip, fp, own });
   if (!result.ok) {
     if (result.error === "flagged") {
-      return page("⚑ كتاب تجاري",
-        "<p>⚑ هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+      return page("🚩 كتاب عليه علامة",
+        "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
         + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
         + backLink, 403);
@@ -286,7 +286,7 @@ export async function onRequest(context) {
     + "&amp;t=" + encodeURIComponent(title || "")
     + (fp ? "&amp;fp=" + encodeURIComponent(fp) : "");
   const emailLink = EMAIL_FORMATS.has(book.fmt)
-    ? "<p><a href=\"/api/send-to-kindle?" + emailParams + "\">أرسله بالإيميل — بلا حد يومي (لمن أضاف المرسل من قبل)</a></p>\n"
+    ? "<p><a href=\"/api/send-to-kindle?" + emailParams + "\">أرسل لميل قارئي — بلا حد يومي (لمن أضاف المرسل من قبل)</a></p>\n"
     : "";
 
   const tenMinuteNote = "<p class=\"note\">الرابط يعمل مرة واحدة فقط، خلال 10 دقائق، ولكتاب واحد (5 كتب في اليوم كحد أقصى) — إن استخدمته أو انتهى، عُد هنا واضغط الزر مجدداً.</p>\n";
@@ -316,7 +316,7 @@ export async function onRequest(context) {
     // page (the email button lives on the book page instead).
     const secondPath = family === "kobo"
       ? "<p class=\"note\"><b>طريقة ثانية:</b> إن كنت في تيليجرام، اضغط الرابط من داخل التطبيق — سيُفتح في متصفح جهازك وينزّل الكتاب مباشرة.</p>\n"
-      : "<p class=\"note\"><b>طريقة ثانية:</b> أرسل الملف إلى بريد PocketBook الخاص بك (username@pbsync.com) — من صفحة الكتاب اضغط «أرسله بالإيميل» واكتب بريد جهازك (أضف send@rlibook.tech إلى المرسلين المسموحين مرة واحدة).</p>\n"
+      : "<p class=\"note\"><b>طريقة ثانية:</b> أرسل الملف إلى بريد PocketBook الخاص بك (username@pbsync.com) — من صفحة الكتاب اضغط «أرسل لميل قارئي» واكتب بريد جهازك (أضف send@rlibook.tech إلى المرسلين المسموحين مرة واحدة).</p>\n"
         + "<p class=\"note\"><b>طريقة ثالثة:</b> انقل الملف عبر PocketBook Cloud أو Dropbox أو USB.</p>\n";
     body = "<h1>احصل على الكتاب على جهازك</h1>\n"
       + titleLine

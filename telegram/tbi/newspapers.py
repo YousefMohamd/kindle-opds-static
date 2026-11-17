@@ -65,9 +65,20 @@ Reading paths (in order, per source):
 
 Daily rotation: the generator OVERWRITES ``site/newspapers.json`` on
 every run, so yesterday's papers disappear the moment today's are
-written. If no source yields a paper for the day, the file is still
-written — with empty lists and ``"empty": true`` — and the pages show
-"لا يوجد جرائد اليوم" instead of rendering broken or stale papers.
+written — EXCEPT when today has no papers yet. When today yields 0
+entries, the generator FALLS BACK to the most recent day WITH entries
+inside the lookback window (:data:`FALLBACK_LOOKBACK_DAYS`, 7 days):
+the page then shows that day's papers, and the JSON ``"date"`` field
+is that day's date, not today's. If NO day in the window has entries,
+the run writes NOTHING: the previous JSON and the two baked HTML
+pages are left untouched and the run exits 0 with a
+``NO ENTRIES — keeping previous files`` log line. A 0-entry file is
+NEVER committed over a good page — an empty page (2026-11-17: the
+generator overwrote the non-empty 11-15 page with a 3,139-byte empty
+one because no 11-17 papers had been posted yet) is strictly worse
+than showing the latest available day's papers. The same guard
+applies to the ``--write-empty`` fallback: it only writes the empty
+file when no previous good file exists.
 
 Static pages (Kindle browser): the home page's newspapers card
 (``index.html``) and the per-country page (``site/newspapers/index.html``)
@@ -122,7 +133,9 @@ Run from the repo root (or pass ``--out``)::
 
 Exit code is 0 whenever the file was written (even an empty-day file:
 source failures are recorded in the file's ``sources`` list, not
-raised). A non-zero exit means the file itself could not be written.
+raised) AND whenever a 0-entry run keeps the previous files instead
+of writing (see above — that is a deliberate no-op, not a failure).
+A non-zero exit means the file itself could not be written.
 """
 
 from __future__ import annotations
@@ -148,6 +161,20 @@ from . import scrape
 from .scrape import Post
 
 CAIRO_TZ = ZoneInfo("Africa/Cairo") if ZoneInfo is not None else timezone(timedelta(hours=2))
+
+# Fallback window: when today has 0 entries, try each earlier day in
+# turn, back to this many days ago (7 days + today = an 8-day window).
+# The papers' own dates decide — the first day with >= 1 entry wins
+# and its date becomes the output's "date". 7 days covers a long
+# holiday / posting gap; anything older than that is too stale to
+# show as "today's" papers, so the run then keeps the previous files.
+FALLBACK_LOOKBACK_DAYS = 7
+
+# How many recent messages the API path reads per source. 60 was
+# enough when only today mattered; the fallback needs the window's
+# posts in hand, so this covers roughly a week of hub traffic
+# (metadata only, no downloads — still a tiny read).
+API_FETCH_LIMIT = 300
 
 # ---------------------------------------------------------------------------
 # Sources
@@ -1014,12 +1041,16 @@ def entries_from_posts(posts: list[Post], today: date, source: dict, dropped: li
 # Reading paths
 # ---------------------------------------------------------------------------
 
-def collect_preview(today: date, source: dict, max_pages: int = 3, delay: float = 1.5):
+def collect_preview(today: date, source: dict, max_pages: int = 3, delay: float = 1.5,
+                    earliest: date | None = None):
     """Read one username source via the public t.me/s/ preview.
 
     Returns (posts, report). A redirect / missing preview is the
     EXPECTED failure for preview-disabled channels — it is reported as
-    ``no_preview``, not raised.
+    ``no_preview``, not raised. Pages are walked until the oldest post
+    seen is older than ``earliest`` (default: yesterday — the old
+    behaviour); :func:`collect` passes the fallback horizon so the
+    window's posts are in hand for the date loop.
     """
     name = source["key"]
     try:
@@ -1041,7 +1072,7 @@ def collect_preview(today: date, source: dict, max_pages: int = 3, delay: float 
             posts.extend(page)
             before = min(p.post_id for p in page)
             oldest = min((post_cairo_date(p) for p in page if post_cairo_date(p)), default=None)
-            if oldest is not None and oldest < today - timedelta(days=1):
+            if oldest is not None and oldest < (earliest if earliest is not None else today - timedelta(days=1)):
                 break
     except ValueError as exc:  # fetch_page: no public preview after all
         return [], {"key": name, "label": source["label"], "status": "no_preview",
@@ -1149,17 +1180,28 @@ async def _collect_api_all(today: date, sources: list[dict], limit: int = 60):
             pass
 
 
-def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: float = 1.5):
-    """Collect today's entries from all sources. Returns the data dict.
+def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: float = 1.5,
+            lookback_days: int = FALLBACK_LOOKBACK_DAYS):
+    """Collect entries from all sources. Returns the data dict.
 
     Preview first for username sources; the API pass runs only for
     sources the preview could not read (and only when credentials are
     present — otherwise they report ``unavailable_no_credentials``).
     Invite-link sources are API-only by construction.
+
+    The posts are fetched ONCE, then tried day by day, newest first:
+    ``today``, ``today - 1 day``, ... back to ``today - lookback_days``.
+    The first day with >= 1 entry wins and its date becomes the
+    output's ``"date"`` (so a run before today's papers drop shows
+    yesterday's papers instead of an empty page). With
+    ``lookback_days=0`` this is the old today-only behaviour. When NO
+    day in the window has entries, the empty-day dict for ``today`` is
+    returned — :func:`main` then keeps the previous files instead of
+    writing it, so an empty file never overwrites a good page.
     """
-    entries: list[dict] = []
+    earliest = today - timedelta(days=lookback_days)
+    fetched: list[tuple[list[Post], dict]] = []
     reports: list[dict] = []
-    dropped: list[dict] = []
     api_needed: list[dict] = []
 
     def _report(report: dict) -> None:
@@ -1169,14 +1211,13 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
 
     for source in SOURCES:
         if source["kind"] == "username":
-            posts, report = collect_preview(today, source, max_pages=max_pages, delay=delay)
+            posts, report = collect_preview(today, source, max_pages=max_pages, delay=delay,
+                                            earliest=earliest)
             if report["status"] in ("no_preview", "error") and use_api:
                 api_needed.append(source)
                 _report(report)  # replaced below if the API succeeds
             else:
-                found = entries_from_posts(posts, today, source, dropped=dropped)
-                report["entries"] = len(found)
-                entries.extend(found)
+                fetched.append((posts, source))
                 _report(report)
         else:
             api_needed.append(source)
@@ -1198,12 +1239,10 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
                 _report({"key": source["key"], "label": source["label"],
                          "status": status, "posts_seen": 0, "entries": 0, "detail": detail})
         else:
-            api_results = asyncio.run(_collect_api_all(today, api_needed))
+            api_results = asyncio.run(_collect_api_all(today, api_needed, limit=API_FETCH_LIMIT))
             for source in api_needed:
                 posts, api_report = api_results[source["key"]]
-                found = entries_from_posts(posts, today, source, dropped=dropped)
-                api_report["entries"] = len(found)
-                entries.extend(found)
+                fetched.append((posts, source))
                 _report(api_report)
     elif api_needed:
         for source in api_needed:
@@ -1213,7 +1252,21 @@ def collect(today: date, *, use_api: bool = True, max_pages: int = 3, delay: flo
     # Keep reports in SOURCES order.
     order = {s["key"]: i for i, s in enumerate(SOURCES)}
     reports.sort(key=lambda r: order.get(r["key"], 99))
-    return build_data(today, entries, reports, dropped=dropped)
+    # Newest day with entries wins; each attempt uses a fresh dropped
+    # list so junk titles are reported once, for the winning day only.
+    for back in range(lookback_days + 1):
+        day = today - timedelta(days=back)
+        entries: list[dict] = []
+        dropped: list[dict] = []
+        for posts, source in fetched:
+            entries.extend(entries_from_posts(posts, day, source, dropped=dropped))
+        if entries:
+            for report in reports:
+                report["entries"] = sum(1 for e in entries if e["source"] == report["key"])
+            return build_data(day, entries, reports, dropped=dropped)
+    for report in reports:
+        report["entries"] = 0
+    return build_data(today, [], reports, dropped=[])
 
 
 def write_data(data: dict, out: Path) -> Path:
@@ -1244,6 +1297,22 @@ def empty_data(today: date, detail: str = "") -> dict:
         for s in SOURCES
     ]
     return build_data(today, [], reports)
+
+
+def _previous_data_is_good(out: Path) -> bool:
+    """True when the previous ``newspapers.json`` at ``out`` exists and
+    holds entries (``"empty": false`` with at least one paper). A
+    missing, unreadable, or itself-empty previous file is NOT good —
+    overwriting it with a fresh (possibly empty) file loses nothing.
+    This is the no-overwrite guard: a 0-entry run must never commit
+    an empty file over a good page."""
+    try:
+        prev = json.loads(Path(out).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(prev, dict):
+        return False
+    return bool(not prev.get("empty") and (prev.get("egypt") or prev.get("other")))
 
 
 # ---------------------------------------------------------------------------
@@ -1424,6 +1493,19 @@ def _parse_date_arg(value: str) -> date:
         raise argparse.ArgumentTypeError(f"not a YYYY-MM-DD date: {value!r}")
 
 
+def _print_source_reports(data: dict) -> None:
+    """Per-source status lines, shared by the write path and the
+    keep-previous-files path so both logs show what was read."""
+    for rep in data["sources"]:
+        print(f"  {rep['key']}: {rep['status']} (posts {rep['posts_seen']}, entries {rep['entries']})"
+              + (f" — {rep['detail']}" if rep.get("detail") else ""))
+    if data["unmatched"]:
+        print(f"  unmatched names (country unknown, listed under 'other'): {', '.join(data['unmatched'])}")
+    if data.get("dropped"):
+        print(f"  dropped junk titles ({len(data['dropped'])}): "
+              + ", ".join(f"{d['name']} ({d['reason']})" for d in data["dropped"]))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate site/newspapers.json and bake the day's papers as static HTML "
@@ -1438,7 +1520,9 @@ def main(argv=None) -> int:
     parser.add_argument("--max-pages", type=int, default=3,
                         help="preview pages to walk per username source (default 3)")
     parser.add_argument("--write-empty", action="store_true",
-                        help="write an empty-day file without reading any source (workflow fallback)")
+                        help="write an empty-day file without reading any source (workflow fallback); "
+                             "a previous good file is still kept instead — an empty file never "
+                             "overwrites one with entries")
     parser.add_argument("--pages-root", default=None,
                         help="repo root holding index.html and site/newspapers/index.html "
                              "(default: the repo root this module lives in)")
@@ -1455,6 +1539,19 @@ def main(argv=None) -> int:
         data = empty_data(today, detail="--write-empty fallback (previous step failed)")
     else:
         data = collect(today, use_api=not args.no_api, max_pages=args.max_pages)
+    if data["empty"] and _previous_data_is_good(out):
+        # No entries anywhere in the lookback window (or the
+        # --write-empty fallback): NEVER overwrite a good page with an
+        # empty file. JSON + baked HTML stay exactly as they were.
+        print("NO ENTRIES — keeping previous files")
+        print(f"newspapers {data['date']}: 0 entries in the last "
+              f"{FALLBACK_LOOKBACK_DAYS + 1} days (incl. today) — previous JSON + HTML kept untouched")
+        _print_source_reports(data)
+        print(f"kept {out} unchanged")
+        return 0
+    if data["date"] != today.isoformat() and not data["empty"]:
+        print(f"newspapers: no papers for {today.isoformat()} — fell back to "
+              f"{data['date']} (latest day with entries)")
     write_data(data, out)
     if not args.no_pages:
         written = write_pages(data, pages_root)
@@ -1464,14 +1561,7 @@ def main(argv=None) -> int:
     n_other = len(data["other"])
     print(f"newspapers {data['date']}: {n_eg} Egyptian, {n_other} other"
           + (" — EMPTY DAY (لا يوجد جرائد اليوم)" if data["empty"] else ""))
-    for rep in data["sources"]:
-        print(f"  {rep['key']}: {rep['status']} (posts {rep['posts_seen']}, entries {rep['entries']})"
-              + (f" — {rep['detail']}" if rep.get("detail") else ""))
-    if data["unmatched"]:
-        print(f"  unmatched names (country unknown, listed under 'other'): {', '.join(data['unmatched'])}")
-    if data.get("dropped"):
-        print(f"  dropped junk titles ({len(data['dropped'])}): "
-              + ", ".join(f"{d['name']} ({d['reason']})" for d in data["dropped"]))
+    _print_source_reports(data)
     print(f"wrote {out}")
     return 0
 

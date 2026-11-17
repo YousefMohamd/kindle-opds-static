@@ -4,13 +4,13 @@
 //   GET /new
 //     -> 200 text/html — the newest 30 books added to the catalog:
 //        title, author, source (as TEXT under the book info), format,
-//        post date, and a "أرسل إلى جهازي" send button (the button
+//        post date, and a "أرسل لميل قارئي" send button (the button
 //        is the send action, via /api/send-to-kindle?lib=tg, which
 //        fetches the file from the Block 2 proxy first). No JavaScript,
 //        minimal CSS, tiny page — built for the Kindle experimental
 //        browser. Same style as functions/book.js.
 //
-// Flagged (commercial) books: a "تجاري" marker, NO send button, NO
+// Flagged books: a 🚩 flag, NO send button, NO
 // reading on the website — with a one-line explanation that the book
 // can be reached via Telegram (the bot). The flag lives in KV as
 // flag:<handle>:<post_id>, the same denylist functions/api/tg-search.js
@@ -147,7 +147,7 @@ export function telegramSendUrl(b, fpQ = "") {
 
 // Flag check against the shared KV denylist (same as
 // functions/api/tg-search.js and dl-token.js): a KV key
-// `flag:<handle>:<post_id>` means flagged/commercial.
+// `flag:<handle>:<post_id>` means flagged.
 async function isFlagged(env, url) {
   const kv = env && env.RLIBOOK_KV;
   if (!kv || typeof kv.get !== "function") return false;
@@ -263,17 +263,17 @@ export async function onRequest(context) {
     if (b.author) body += "<p>المؤلف: " + esc(b.author) + "</p>\n";
     const meta = [b.format, b.date].filter(Boolean).join(" · ");
     if (meta || isFlag) {
-      body += "<p>" + esc(meta) + (isFlag ? (meta ? " · " : "") + "تجاري" : "") + "</p>\n";
+      body += "<p>" + esc(meta) + (isFlag ? (meta ? " · " : "") + "🚩" : "") + "</p>\n";
     }
     if (b.source) body += "<p>المصدر: " + esc(b.source) + "</p>\n";
     if (isFlag) {
-      body += "<p class=\"note\">هذا الكتاب تجاري (عليه علامة) — الموقع لا يتيح تحميله أو إرساله. "
+      body += "<p class=\"note\">🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله. "
         + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
     } else {
       const sendUrl = telegramSendUrl(b, fpQ);
       if (sendUrl) {
-        body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل إلى جهازي</a></p>\n";
+        body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
       } else {
         body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
           + "اطلبه من البوت "
@@ -282,8 +282,8 @@ export async function onRequest(context) {
     }
     body += "</div>\n";
   }
-  body += "<p class=\"note\">زر «أرسل إلى جهازي» يجلب الكتاب من تيليجرام "
-    + "ثم يرسله إلى بريد جهازك. الكتب التجارية تُطلب من البوت.</p>\n"
+  body += "<p class=\"note\">زر «أرسل لميل قارئي» يجلب الكتاب من تيليجرام "
+    + "ثم يرسله إلى بريد جهازك. الكتب التي عليها 🚩 تُطلب من البوت.</p>\n"
     + foot;
   return new Response(body, { headers });
 }
