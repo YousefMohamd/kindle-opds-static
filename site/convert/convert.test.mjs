@@ -45,8 +45,25 @@
 //      the send payload's ticket/pages/quality extras, the
 //      started/failed status pings, E_TOO_MANY_PAGES, and the
 //      200-page cap.
+//   M. OCR.space tier (2026-11-18, ocr-space.js): the free
+//      per-user OCR API — language mapping, response parsing
+//      (success / empty / quota / timeout / parse error), the
+//      multipart POST (apikey header, FormData fields), 429/403
+//      quota, oversize image never sent, no key never sent.
+//      The demo key "helloworld" is used ONLY here in tests.
+//   N. Smart routing (mean confidence): the 75 threshold, the
+//      mean of Tesseract word confidences, strong pages keep
+//      Tesseract, weak pages go to the tiers, missing confidence
+//      (resumed jobs) counts as weak, blank pages never sent.
+//   O. Tiered queue + content-hash cache (enhance-queue.js):
+//      cache hit skips both network tiers, OCR.space wins and
+//      is cached, OCR.space failure falls through to GPU, Qari
+//      pages skip OCR.space, no tiers -> no-tier, per-tier quota
+//      disables only that tier, strong pages never attempted,
+//      second run is all cache hits (zero network).
 import * as O from "./ocr-client.js";
 import * as Q from "./enhance-queue.js";
+import * as S from "./ocr-space.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
@@ -503,6 +520,474 @@ check("miniappSendErrorMessage: E_TOO_MANY_PAGES has a message", () => {
   assert.ok(msg.includes("200"), msg);
 });
 check("CONVERT_MAX_PAGES is 200", () => eq(O.CONVERT_MAX_PAGES, 200));
+
+console.log("M. OCR.space tier (ocr-space.js)");
+// A mock fetch that records url + headers + body (FormData) and
+// answers with a canned OCR.space JSON response.
+function mockOcrSpaceFetch(response, status = 200) {
+  const calls = [];
+  const fn = async (url, init) => {
+    calls.push({ url, headers: (init && init.headers) || {}, body: init ? init.body : null });
+    return mockResponse(status, response);
+  };
+  fn.calls = calls;
+  return fn;
+}
+const OCR_OK = {
+  ParsedResults: [{ FileParseExitCode: "1", ParsedText: "  نص من OCR.space\n\n", ErrorMessage: null, ErrorDetails: null }],
+  OCRExitCode: "1",
+  IsErroredOnProcessing: false,
+  ErrorMessage: null,
+  ErrorDetails: null,
+};
+
+check("ocrSpaceLanguageForPage: overrides + script", () => {
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar"), "ara");
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar-classical"), "ara");
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "en"), "eng");
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE), "ara");
+  eq(S.ocrSpaceLanguageForPage(EN_PAGE), "eng");
+  eq(S.ocrSpaceLanguageForPage(MIXED_PAGE), "auto");
+  eq(S.ocrSpaceLanguageForPage({ text: "" }), "auto");
+});
+
+check("parseOcrSpaceResponse: success (string + numeric exit code)", () => {
+  const r1 = S.parseOcrSpaceResponse(OCR_OK);
+  eq(r1.ok, true);
+  eq(r1.text, "نص من OCR.space");
+  eq(r1.engine, "ocr-space");
+  const r2 = S.parseOcrSpaceResponse({
+    ParsedResults: [{ FileParseExitCode: 1, ParsedText: "hello", ErrorMessage: null }],
+    OCRExitCode: 1,
+    IsErroredOnProcessing: false,
+  });
+  eq(r2.ok, true);
+  eq(r2.text, "hello");
+});
+check("parseOcrSpaceResponse: empty text -> empty", () => {
+  eq(S.parseOcrSpaceResponse({
+    ParsedResults: [{ FileParseExitCode: "1", ParsedText: "   \n ", ErrorMessage: null }],
+    OCRExitCode: "1",
+    IsErroredOnProcessing: false,
+  }), { ok: false, reason: "empty" });
+});
+check("parseOcrSpaceResponse: limit error -> quota", () => {
+  eq(S.parseOcrSpaceResponse({
+    ParsedResults: [],
+    OCRExitCode: "4",
+    IsErroredOnProcessing: true,
+    ErrorMessage: "Your free API key has reached the limit of 500 requests per day",
+    ErrorDetails: "",
+  }), { ok: false, reason: "quota" });
+});
+check("parseOcrSpaceResponse: other processing error -> unavailable", () => {
+  eq(S.parseOcrSpaceResponse({
+    ParsedResults: [],
+    OCRExitCode: "4",
+    IsErroredOnProcessing: true,
+    ErrorMessage: "Some internal error",
+    ErrorDetails: "",
+  }), { ok: false, reason: "unavailable" });
+});
+check("parseOcrSpaceResponse: -20 timeout, -10 parse error, no results", () => {
+  eq(S.parseOcrSpaceResponse({
+    ParsedResults: [{ FileParseExitCode: "-20", ParsedText: null, ErrorMessage: "timeout" }],
+    OCRExitCode: "3",
+    IsErroredOnProcessing: false,
+  }), { ok: false, reason: "timeout" });
+  eq(S.parseOcrSpaceResponse({
+    ParsedResults: [{ FileParseExitCode: "-10", ParsedText: null, ErrorMessage: "parse" }],
+    OCRExitCode: "3",
+    IsErroredOnProcessing: false,
+  }), { ok: false, reason: "unavailable" });
+  eq(S.parseOcrSpaceResponse({ ParsedResults: [], OCRExitCode: "3", IsErroredOnProcessing: false }), { ok: false, reason: "unavailable" });
+  eq(S.parseOcrSpaceResponse(null), { ok: false, reason: "unavailable" });
+});
+
+check("ocrSpacePage: success posts multipart to api.ocr.space with apikey header", async () => {
+  const fetchFn = mockOcrSpaceFetch(OCR_OK);
+  const r = await S.ocrSpacePage({ fetchFn, apiKey: "helloworld", image: IMG, langHint: "ara" });
+  eq(r.ok, true);
+  eq(r.text, "نص من OCR.space");
+  eq(r.engine, "ocr-space");
+  eq(fetchFn.calls.length, 1);
+  eq(fetchFn.calls[0].url, "https://api.ocr.space/parse/image");
+  eq(fetchFn.calls[0].headers.apikey, "helloworld");
+  const body = fetchFn.calls[0].body;
+  eq(body.get("language"), "ara");
+  eq(body.get("OCREngine"), "2");
+  eq(body.get("isOverlayRequired"), "false");
+  eq(body.get("scale"), "true");
+  const file = body.get("file");
+  assert.ok(file instanceof Blob, "file part is a Blob");
+  eq(file.size, IMG.length);
+});
+check("ocrSpacePage: 429 and 403 -> quota", async () => {
+  const f1 = mockOcrSpaceFetch({ ErrorMessage: "limit" }, 429);
+  eq(await S.ocrSpacePage({ fetchFn: f1, apiKey: "helloworld", image: IMG }), { ok: false, reason: "quota" });
+  const f2 = mockOcrSpaceFetch({ ErrorMessage: "forbidden" }, 403);
+  eq(await S.ocrSpacePage({ fetchFn: f2, apiKey: "helloworld", image: IMG }), { ok: false, reason: "quota" });
+});
+check("ocrSpacePage: 500 -> unavailable, network throw -> unavailable", async () => {
+  const f1 = mockOcrSpaceFetch({ ErrorMessage: "x" }, 500);
+  eq(await S.ocrSpacePage({ fetchFn: f1, apiKey: "helloworld", image: IMG }), { ok: false, reason: "unavailable" });
+  const f2 = async () => {
+    throw new Error("conn refused");
+  };
+  eq(await S.ocrSpacePage({ fetchFn: f2, apiKey: "helloworld", image: IMG }), { ok: false, reason: "unavailable" });
+});
+check("ocrSpacePage: timeout -> timeout", async () => {
+  const fetchFn = () => new Promise(() => {}); // never answers
+  const r = await S.ocrSpacePage({ fetchFn, apiKey: "helloworld", image: IMG, timeoutMs: 50 });
+  eq(r, { ok: false, reason: "timeout" });
+});
+check("ocrSpacePage: oversize image never sent -> too-big", async () => {
+  const big = new Uint8Array(S.OCR_SPACE_MAX_IMAGE_BYTES + 1);
+  let called = 0;
+  const fetchFn = async () => {
+    called++;
+    return mockResponse(200, OCR_OK);
+  };
+  eq(await S.ocrSpacePage({ fetchFn, apiKey: "helloworld", image: big }), { ok: false, reason: "too-big" });
+  eq(called, 0);
+});
+check("ocrSpacePage: no api key -> unavailable, never sent", async () => {
+  let called = 0;
+  const fetchFn = async () => {
+    called++;
+    return mockResponse(200, OCR_OK);
+  };
+  eq(await S.ocrSpacePage({ fetchFn, apiKey: "", image: IMG }), { ok: false, reason: "unavailable" });
+  eq(await S.ocrSpacePage({ fetchFn, apiKey: "   ", image: IMG }), { ok: false, reason: "unavailable" });
+  eq(called, 0);
+});
+
+console.log("N. Smart routing (mean confidence)");
+check("ENHANCE_MEAN_CONFIDENCE_THRESHOLD is 75", () => eq(O.ENHANCE_MEAN_CONFIDENCE_THRESHOLD, 75));
+check("meanWordConfidence: mean, null on no words, ignores non-numeric", () => {
+  eq(O.meanWordConfidence([{ confidence: 90 }, { confidence: 80 }, { confidence: 70 }]), 80);
+  eq(O.meanWordConfidence([]), null);
+  eq(O.meanWordConfidence(null), null);
+  eq(O.meanWordConfidence([{ confidence: 90 }, { confidence: "x" }, {}]), 90);
+  eq(O.meanWordConfidence([{ confidence: NaN }]), null);
+});
+check("pageNeedsEnhancement: strong keeps Tesseract, weak goes to tiers", () => {
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 90 }), false);
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 75 }), false); // at threshold = keep
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 74.9 }), true);
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 50 }), true);
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 0 }), true);
+});
+check("pageNeedsEnhancement: missing confidence -> weak (resumed jobs keep old behaviour)", () => {
+  eq(O.pageNeedsEnhancement({ text: AR }), true);
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: null }), true);
+  eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: undefined }), true);
+});
+check("pageNeedsEnhancement: blank page never sent", () => {
+  eq(O.pageNeedsEnhancement({ text: "", meanConfidence: 10 }), false);
+  eq(O.pageNeedsEnhancement({ text: "   \n ", meanConfidence: null }), false);
+  eq(O.pageNeedsEnhancement({ text: "", meanConfidence: null }), false);
+});
+
+console.log("O. Tiered queue + content-hash cache (enhance-queue.js)");
+// In-memory cache for the tier tests (stands in for IndexedDB).
+function memCache() {
+  const map = new Map();
+  return {
+    map,
+    getCached: async (h) => map.get(h) || null,
+    putCached: async (h, e) => {
+      map.set(h, e);
+    },
+  };
+}
+// A fetch that answers OCR.space and the GPU from different URLs.
+function mockTierFetch({ ocrSpace, gpu }) {
+  const calls = [];
+  const fn = async (url, init) => {
+    calls.push({ url, headers: (init && init.headers) || {} });
+    if (String(url).includes("ocr.space")) {
+      const r = typeof ocrSpace === "function" ? ocrSpace() : ocrSpace;
+      return mockResponse(r.status, r.data);
+    }
+    const r = typeof gpu === "function" ? gpu() : gpu;
+    return mockResponse(r.status, r.data);
+  };
+  fn.calls = calls;
+  return fn;
+}
+const GPU_OK = { ok: true, text: "نص GPU محسّن", engine: "qari", confidence: null, lang: "ar" };
+const WEAK_AR = { n: 1, text: AR, script: "arabic", route: O.routePage(AR), meanConfidence: 50 };
+const WEAK_EN = { n: 2, text: EN, script: "latin", route: O.routePage(EN), meanConfidence: 40 };
+const WEAK_QARI = { n: 3, text: AR_DIACRITIC, script: "arabic", route: O.routePage(AR_DIACRITIC), meanConfidence: 30 };
+const STRONG_AR = { n: 4, text: AR, script: "arabic", route: O.routePage(AR), meanConfidence: 92 };
+
+check("enhanceOnePage: cache hit by stored imageHash — no network at all", async () => {
+  const cache = memCache();
+  const hash = O.cacheKey(IMG);
+  await cache.putCached(hash, { text: "نص مخزّن", engine: "ocr-space", updatedAt: "2026-11-18" });
+  let called = 0;
+  const fetchFn = async () => {
+    called++;
+    return mockResponse(200, OCR_OK);
+  };
+  const page = { ...WEAK_AR, imageHash: hash };
+  const r = await Q.enhanceOnePage({
+    page,
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+  });
+  eq(r, { ok: true, text: "نص مخزّن", engine: "ocr-space", source: "cache" });
+  eq(called, 0);
+});
+check("enhanceOnePage: cache miss -> OCR.space wins, result is cached", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({ ocrSpace: { status: 200, data: OCR_OK }, gpu: { status: 200, data: GPU_OK } });
+  const page = { ...WEAK_AR };
+  const r = await Q.enhanceOnePage({
+    page,
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+  });
+  eq(r.ok, true);
+  eq(r.text, "نص من OCR.space");
+  eq(r.source, "ocr-space");
+  eq(fetchFn.calls.length, 1); // GPU never called
+  assert.ok(fetchFn.calls[0].url.includes("ocr.space"));
+  // The result is now in the cache under the image hash.
+  const hit = await cache.getCached(page.imageHash);
+  eq(hit.text, "نص من OCR.space");
+  eq(hit.engine, "ocr-space");
+});
+check("enhanceOnePage: OCR.space fails -> falls through to GPU", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({
+    ocrSpace: { status: 500, data: { ErrorMessage: "x" } },
+    gpu: { status: 200, data: GPU_OK },
+  });
+  const page = { ...WEAK_AR };
+  const r = await Q.enhanceOnePage({
+    page,
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+  });
+  eq(r.ok, true);
+  eq(r.text, "نص GPU محسّن");
+  eq(r.source, "gpu");
+  eq(fetchFn.calls.length, 2);
+});
+check("enhanceOnePage: diacritic (Qari) page skips OCR.space, goes straight to GPU", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({ ocrSpace: { status: 200, data: OCR_OK }, gpu: { status: 200, data: GPU_OK } });
+  const page = { ...WEAK_QARI };
+  const r = await Q.enhanceOnePage({
+    page,
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+  });
+  eq(r.ok, true);
+  eq(r.source, "gpu");
+  eq(fetchFn.calls.length, 1);
+  assert.ok(fetchFn.calls[0].url.includes("enhance-page"));
+});
+check("enhanceOnePage: no tiers and cache miss -> no-tier", async () => {
+  const cache = memCache();
+  let called = 0;
+  const fetchFn = async () => {
+    called++;
+    return mockResponse(200, OCR_OK);
+  };
+  const r = await Q.enhanceOnePage({
+    page: { ...WEAK_AR },
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "",
+    gpuBaseUrl: "",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+  });
+  eq(r, { ok: false, reason: "no-tier" });
+  eq(called, 0);
+});
+check("enhanceOnePage: GPU quota -> reason quota + gpuDisabled flag set", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({
+    ocrSpace: { status: 500, data: { ErrorMessage: "x" } },
+    gpu: { status: 429, data: { ok: false, error: "daily budget" } },
+  });
+  const gpuDisabled = { current: false };
+  const r = await Q.enhanceOnePage({
+    page: { ...WEAK_AR },
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+    gpuDisabled,
+  });
+  eq(r, { ok: false, reason: "quota" });
+  eq(gpuDisabled.current, true);
+});
+check("enhanceOnePage: OCR.space quota disables OCR.space, GPU still runs", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({
+    ocrSpace: { status: 429, data: { ErrorMessage: "limit" } },
+    gpu: { status: 200, data: GPU_OK },
+  });
+  const ocrSpaceDisabled = { current: false };
+  const r = await Q.enhanceOnePage({
+    page: { ...WEAK_AR },
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    ocrSpaceKey: "helloworld",
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceFetchFn: fetchFn,
+    gpuFetchFn: fetchFn,
+    ocrSpaceDisabled,
+  });
+  eq(r.ok, true);
+  eq(r.source, "gpu");
+  eq(ocrSpaceDisabled.current, true);
+});
+
+check("runTieredEnhancementQueue: strong page never attempted, weak pages enhanced", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({ ocrSpace: { status: 200, data: OCR_OK }, gpu: { status: 200, data: GPU_OK } });
+  let images = 0;
+  const enhanced = [];
+  const summary = await Q.runTieredEnhancementQueue({
+    fetchFn,
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceKey: "helloworld",
+    pages: [{ ...STRONG_AR }, { ...WEAK_AR }, { ...WEAK_EN }],
+    // Distinct image bytes per page, so the pages do NOT share
+    // a cache entry (identical bytes would — correctly — hit the
+    // cache on the second page).
+    getImage: async (page) => {
+      images++;
+      return new Uint8Array([page.n, 0x50, 0x4e, 0x47]);
+    },
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+    onPageEnhanced: (page, result) => enhanced.push([page.n, result.source]),
+  });
+  eq(summary.attempted, 2); // the strong page was never attempted
+  eq(summary.enhanced, 2);
+  eq(summary.enhancedFromOcrSpace, 2);
+  eq(summary.enhancedFromCache, 0);
+  eq(summary.enhancedFromGpu, 0);
+  eq(summary.skipped, 0);
+  eq(enhanced, [[1, "ocr-space"], [2, "ocr-space"]]);
+  eq(images, 2); // no image render for the strong page
+});
+check("runTieredEnhancementQueue: second run hits the cache — zero network", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({ ocrSpace: { status: 200, data: OCR_OK }, gpu: { status: 200, data: GPU_OK } });
+  const pages = [{ ...WEAK_AR }, { ...WEAK_EN }];
+  // Distinct images per page so each gets its own cache entry.
+  const getImage = async (page) => new Uint8Array([page.n, 0x50, 0x4e, 0x47]);
+  const first = await Q.runTieredEnhancementQueue({
+    fetchFn,
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceKey: "helloworld",
+    pages,
+    getImage,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+  });
+  eq(first.enhanced, 2);
+  eq(first.enhancedFromOcrSpace, 2);
+  const callsAfterFirst = fetchFn.calls.length;
+  // Reset the pages to "un-enhanced" (a second reader) — the
+  // imageHash is kept, so the cache answers without any network.
+  const secondPages = pages.map((p) => ({ ...p, quality: "standard" }));
+  const second = await Q.runTieredEnhancementQueue({
+    fetchFn,
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceKey: "helloworld",
+    pages: secondPages,
+    getImage,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+  });
+  eq(second.enhanced, 2);
+  eq(second.enhancedFromCache, 2);
+  eq(fetchFn.calls.length, callsAfterFirst); // zero new network calls
+});
+check("runTieredEnhancementQueue: OCR.space quota disables it, GPU carries the rest", async () => {
+  const cache = memCache();
+  let ocrCalls = 0;
+  const fetchFn = async (url, init) => {
+    if (String(url).includes("ocr.space")) {
+      ocrCalls++;
+      return mockResponse(429, { ErrorMessage: "limit" });
+    }
+    return mockResponse(200, GPU_OK);
+  };
+  const summary = await Q.runTieredEnhancementQueue({
+    fetchFn,
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceKey: "helloworld",
+    pages: [{ ...WEAK_AR }, { ...WEAK_AR, n: 2 }],
+    // Distinct images so the second page is NOT a cache hit of
+    // the first page's GPU result (same bytes would share it).
+    getImage: async (page) => new Uint8Array([page.n, 0x50, 0x4e, 0x47]),
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+  });
+  eq(summary.enhanced, 2);
+  eq(summary.enhancedFromGpu, 2);
+  eq(summary.stoppedOnOcrSpaceQuota, true);
+  eq(ocrCalls, 1); // only the first page tried OCR.space
+});
+check("runTieredEnhancementQueue: already-enhanced pages are skipped", async () => {
+  const cache = memCache();
+  const fetchFn = mockTierFetch({ ocrSpace: { status: 200, data: OCR_OK }, gpu: { status: 200, data: GPU_OK } });
+  const summary = await Q.runTieredEnhancementQueue({
+    fetchFn,
+    gpuBaseUrl: "https://example.test",
+    ocrSpaceKey: "helloworld",
+    pages: [{ ...WEAK_AR, quality: "enhanced" }],
+    getImage: async () => IMG,
+    getCached: cache.getCached,
+    putCached: cache.putCached,
+  });
+  eq(summary, {
+    attempted: 0,
+    enhanced: 0,
+    skipped: 0,
+    enhancedFromCache: 0,
+    enhancedFromOcrSpace: 0,
+    enhancedFromGpu: 0,
+    stoppedOnGpuQuota: false,
+    stoppedOnOcrSpaceQuota: false,
+  });
+  eq(fetchFn.calls.length, 0);
+});
 
 await Promise.all(pending);
 

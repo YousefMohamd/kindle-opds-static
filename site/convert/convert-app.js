@@ -73,7 +73,9 @@ import {
   convertBookDlTokenUrl,
   detectPageScript,
   isTelegramWebAppInitData,
+  meanWordConfidence,
   miniappSendErrorMessage,
+  pageNeedsEnhancement,
   parseConvertBookParams,
   routePage,
   tesseractLangsForOverride,
@@ -81,9 +83,10 @@ import {
 
 import {
   ENHANCE_PAGE_TIMEOUT_MS,
-  pageQualifiesForEnhancement,
-  runEnhancementQueue,
+  runTieredEnhancementQueue,
 } from "./enhance-queue.js";
+
+import { OCR_SPACE_MAX_IMAGE_BYTES } from "./ocr-space.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/site/convert/vendor/pdf.worker.min.mjs";
 
@@ -91,7 +94,10 @@ export const CONVERT_MAX_INPUT_BYTES = 10 * 1024 * 1024;
 export const CONVERT_MAX_DPI = 300;
 const DB_NAME = "rlibook-convert";
 const DB_STORE = "jobs";
+const DB_ENHANCED_STORE = "enhanced";
+const DB_VERSION = 2;
 const CLOUD_URL_KEY = "rlibook-ocr-cloud-url";
+const OCRSPACE_KEY = "rlibook-ocrspace-key";
 const ENHANCE_TIMEOUT_MS = 10000;
 const ENHANCE_POLL_MS = 5000;
 const ENHANCE_POLL_MAX_MS = 10 * 60 * 1000;
@@ -125,8 +131,18 @@ function esc(s) {
 /* ------------------------------------------------------------------ */
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE, { keyPath: "hash" });
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      // v1 store (whole-book resume) is kept as-is; v2 adds the
+      // per-page enhancement cache (see below).
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE, { keyPath: "hash" });
+      }
+      if (!db.objectStoreNames.contains(DB_ENHANCED_STORE)) {
+        db.createObjectStore(DB_ENHANCED_STORE, { keyPath: "hash" });
+      }
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -144,6 +160,34 @@ async function dbGet(hash) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const req = db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(hash);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* per-page enhancement cache (IndexedDB store "enhanced")             */
+/*                                                                     */
+/* Key: sha256 of the page IMAGE bytes (the exact bytes sent for      */
+/* enhancement). Value: { hash, text, engine, updatedAt }. A second  */
+/* reader of the same book/page — or the same reader resuming — hits */
+/* the cache and pays zero: no OCR.space call, no GPU call. The     */
+/* hash is stored on the page object (page.imageHash) so a resumed   */
+/* job can hit the cache without re-rendering the page image.        */
+/* ------------------------------------------------------------------ */
+async function dbPutEnhanced(entry) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_ENHANCED_STORE, "readwrite");
+    tx.objectStore(DB_ENHANCED_STORE).put(entry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function dbGetEnhanced(hash) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(DB_ENHANCED_STORE, "readonly").objectStore(DB_ENHANCED_STORE).get(hash);
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => reject(req.error);
   });
@@ -467,7 +511,11 @@ async function ocrPage(canvas, pageNo) {
   const text = cleanOcrText(data.text || "");
   const script = detectPageScript(text);
   const route = routePage(text, current.override);
-  return { n: pageNo, text, script, route };
+  // Mean word confidence (0–100) — the smart-routing signal:
+  // pages at/above the threshold keep this Tesseract text and are
+  // never sent to any enhancement tier (see pageNeedsEnhancement).
+  const meanConfidence = meanWordConfidence(data.words || []);
+  return { n: pageNo, text, script, route, meanConfidence };
 }
 
 async function runJob() {
@@ -646,9 +694,19 @@ function updateEnhanceBox() {
   show($("enhanceActions"), !!url);
   if (!url) {
     $("cloudStatus").textContent = "لا يوجد خادم تحسين مضبوط — التحويل على جهازك يعمل كاملاً بدونه.";
-    return;
+  } else {
+    $("cloudStatus").textContent = "خادم التحسين: " + url;
   }
-  $("cloudStatus").textContent = "خادم التحسين: " + url;
+  // OCR.space key status (the cheap tier — the reader's own key,
+  // stored in their browser only).
+  const key = ocrSpaceKey();
+  $("ocrSpaceKey").value = key;
+  show($("retryEnhanceBtn"), !!(current && current.pages && current.pages.size > 0));
+  if (!key) {
+    $("ocrSpaceStatus").textContent = "بلا مفتاح — تُتخطى طبقة OCR.space بصمت، ويبقى GPU / Tesseract.";
+  } else {
+    $("ocrSpaceStatus").textContent = "مفتاح OCR.space محفوظ في متصفحك (500 صفحة/يوم لكل جهاز).";
+  }
 }
 
 async function healthCheck(url, timeoutMs) {
@@ -666,16 +724,23 @@ async function healthCheck(url, timeoutMs) {
 }
 
 /* Per-page cloud enhancement queue (automatic, after the
- *  client-side result is shown). For each QUALIFYING page
- *  (Arabic/mixed — or English when the user chose "en"), the page
- *  image is POSTed to POST /enhance-page on the configured cloud
- *  URL and the page text is replaced by the enhanced text; the
- *  EPUB is rebuilt in place, so the download / send-to-Kindle
- *  buttons always serve the best text so far. Any failure, quota
- *  error, or timeout leaves that page's standard text untouched
- *  and is noted only in the status line — never an error dialog,
- *  never a blocked download. A resumed job (finishJob on a saved
- *  file) enhances only pages not yet enhanced. */
+ *  client-side result is shown). The TIERED queue (2026-11-18,
+ *  capacity research): for each WEAK page (Tesseract mean
+ *  confidence below the threshold — strong pages are never sent),
+ *  in order: content-hash cache -> OCR.space (the reader's own
+ *  free key, browser-side) -> GPU (the configured cloud URL).
+ *  A cache hit skips both network tiers, so a second reader of
+ *  the same book/page pays zero. A dead tier never breaks the
+ *  conversion: the page keeps its standard text and the queue
+ *  goes on; a quota disables only that tier for the rest of the
+ *  run. The standard result is already shown and downloadable
+ *  before this starts; the queue only upgrades weak pages in
+ *  place, and the EPUB is rebuilt so the download / send-to-Kindle
+ *  buttons always serve the best text so far. */
+function ocrSpaceKey() {
+  return (localStorage.getItem(OCRSPACE_KEY) || "").trim();
+}
+
 function canvasToBlob(canvas) {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("canvas toBlob failed"))), "image/png");
@@ -704,27 +769,81 @@ async function getPageImage(page) {
   return blob;
 }
 
+/** The page image for the OCR.space tier: the free tier caps at
+ *  1 MB, so a PNG over the cap is re-encoded as JPEG (quality
+ *  0.85, long side capped at 2000 px) — text pages compress far
+ *  better as JPEG and stay readable. If the JPEG is still over
+ *  the cap the PNG is returned and the tier answers "too-big"
+ *  (the GPU tier, 10 MB cap, still gets its shot). */
+async function getPageImageForOcrSpace(page) {
+  const png = await getPageImage(page);
+  if (!png || (typeof png.size === "number" && png.size <= OCR_SPACE_MAX_IMAGE_BYTES)) {
+    return png;
+  }
+  // Re-encode as JPEG via a canvas.
+  const url = URL.createObjectURL(png);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = url;
+    });
+    const scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.floor(img.naturalHeight * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    canvas.width = 0;
+    canvas.height = 0;
+    return jpeg || png;
+  } catch (e) {
+    return png;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function autoEnhance() {
   if (!current || current.enhancing) return;
   const url = cloudUrl();
-  if (!url) return; // no cloud URL configured — standard result stands
+  const key = ocrSpaceKey();
   const pages = [...current.pages.values()].sort((a, b) => a.n - b.n);
-  const qualifying = pages.filter((p) => p.quality !== "enhanced" && pageQualifiesForEnhancement(p, current.override));
-  if (qualifying.length === 0) return;
+  const weak = pages.filter((p) => p.quality !== "enhanced" && pageNeedsEnhancement(p));
+  if (weak.length === 0) return;
+  // Nothing to gain without any tier AND without a stored image
+  // hash to check the cache by: a fresh book with no key and no
+  // GPU URL would only re-render pages for cache lookups that
+  // must miss. Resumed books (stored imageHash) still get their
+  // cache-only pass.
+  const hasTier = !!(key || url);
+  const hasStoredHash = weak.some((p) => typeof p.imageHash === "string" && p.imageHash);
+  if (!hasTier && !hasStoredHash) return;
   current.enhancing = true;
   const statusEl = $("enhanceStatus");
   const setStatus = (t) => {
     if (statusEl) statusEl.textContent = t;
   };
-  setStatus(`جارٍ تحسين ${qualifying.length} صفحة على الخادم… (نسختك القياسية جاهزة بالفعل)`);
+  const tierNote = [
+    key ? "OCR.space" : null,
+    url ? "GPU" : null,
+  ].filter(Boolean).join(" + ") || "الكاش فقط";
+  setStatus(`جارٍ تحسين ${weak.length} صفحة ضعيفة (${tierNote})… (نسختك القياسية جاهزة بالفعل)`);
   let failed = 0;
-  let failedReason = "";
   try {
-    const summary = await runEnhancementQueue({
+    const summary = await runTieredEnhancementQueue({
       fetchFn: fetch,
-      baseUrl: url,
-      pages: qualifying,
+      gpuBaseUrl: url,
+      ocrSpaceKey: key,
+      pages: weak,
       getImage: getPageImage,
+      getOcrSpaceImage: getPageImageForOcrSpace,
+      getCached: (hash) => dbGetEnhanced(hash).catch(() => null),
+      putCached: (hash, entry) => dbPutEnhanced({ hash, ...entry }).catch(() => {}),
       override: current.override,
       timeoutMs: ENHANCE_PAGE_TIMEOUT_MS,
       onPageEnhanced: async (page, result) => {
@@ -733,6 +852,10 @@ async function autoEnhance() {
         page.route = routePage(result.text, current.override);
         page.quality = "enhanced";
         page.enhancedEngine = result.engine;
+        page.enhancedSource = result.source;
+        // Any enhanced page lifts the whole job to "enhanced" so
+        // the send-to-Kindle payload carries quality=enhanced.
+        current.quality = "enhanced";
         await saveProgress();
         // Rebuild the EPUB so the download / send-to-Kindle
         // buttons serve the enhanced text immediately.
@@ -743,21 +866,28 @@ async function autoEnhance() {
         current.epubBlob = rebuilt.blob;
         renderProgress();
       },
-      onPageSkipped: (_page, reason) => {
+      onPageSkipped: (_page, _reason) => {
         failed++;
-        failedReason = reason;
       },
       isCancelled: () => !current,
     });
+    const fromCache = summary.enhancedFromCache;
+    const fromOcr = summary.enhancedFromOcrSpace;
+    const fromGpu = summary.enhancedFromGpu;
+    const parts = [];
+    if (fromCache > 0) parts.push(`${fromCache} من الكاش`);
+    if (fromOcr > 0) parts.push(`${fromOcr} عبر OCR.space`);
+    if (fromGpu > 0) parts.push(`${fromGpu} عبر GPU`);
     if (summary.enhanced > 0 && summary.skipped === 0) {
-      setStatus(`✅ حُسّنت ${summary.enhanced} صفحة على الخادم (✦) — نسخة EPUB الحالية تتضمنها.`);
+      setStatus(`✅ حُسّنت ${summary.enhanced} صفحة (${parts.join("، ")}) — نسخة EPUB الحالية تتضمنها.`);
     } else if (summary.enhanced > 0) {
       setStatus(
-        `حُسّنت ${summary.enhanced} صفحة؛ ${summary.skipped} صفحة بقيت بالجودة القياسية` +
-          (summary.stoppedOnQuota ? " (بلغ الخادم حدّه اليومي)." : ".")
+        `حُسّنت ${summary.enhanced} صفحة (${parts.join("، ")})؛ ${summary.skipped} صفحة بقيت بالجودة القياسية` +
+          (summary.stoppedOnGpuQuota ? " (بلغ خادم GPU حدّه اليومي)." : "") +
+          (summary.stoppedOnOcrSpaceQuota ? " (بلغ OCR.space حدّه اليومي)." : ".")
       );
-    } else if (summary.stoppedOnQuota || failedReason === "quota") {
-      setStatus("بلغ خادم التحسين حدّه اليومي — نسختك القياسية جاهزة وتعمل.");
+    } else if (summary.stoppedOnGpuQuota || summary.stoppedOnOcrSpaceQuota) {
+      setStatus("بلغت طبقات التحسين حدّها اليومي — نسختك القياسية جاهزة وتعمل.");
     } else {
       // Small note only: the standard result is unaffected.
       setStatus("التحسين غير متاح الآن — نسختك القياسية جاهزة وتعمل.");
@@ -902,6 +1032,25 @@ document.addEventListener("DOMContentLoaded", () => {
     $("cloudStatus").textContent =
       `متصل — المحركات المتاحة: ${engines || "؟"}، ` +
       `الحصة اليومية: ${health.quota ? health.quota.pages_today + "/" + (health.quota.budget || "∞") + " صفحة" : "؟"}.`;
+  });
+  $("saveOcrSpaceBtn").addEventListener("click", async () => {
+    const key = $("ocrSpaceKey").value.trim();
+    localStorage.setItem(OCRSPACE_KEY, key);
+    updateEnhanceBox();
+    if (!key) {
+      $("ocrSpaceStatus").textContent = "حُفظ — بلا مفتاح، تُتخطى طبقة OCR.space.";
+      return;
+    }
+    $("ocrSpaceStatus").textContent = "حُفظ المفتاح في متصفحك — تُفعّل طبقة OCR.space للصفحات الضعيفة.";
+    // A key saved after the run: retry the tiered queue over the
+    // weak pages that are still un-enhanced (autoEnhance reads
+    // the key fresh for each page).
+    if (current && current.pages && current.pages.size > 0) {
+      await autoEnhance();
+    }
+  });
+  $("retryEnhanceBtn").addEventListener("click", async () => {
+    await autoEnhance();
   });
   $("enhanceBtn").addEventListener("click", requestEnhanced);
   updateEnhanceBox();

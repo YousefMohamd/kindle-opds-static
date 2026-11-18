@@ -98,6 +98,53 @@ export function tesseractLangsForOverride(override = "auto") {
   return "ara+eng";
 }
 
+// --- smart routing (demand reduction) --------------------------------
+// The enhancement tiers (OCR.space, then the GPU) only ever see
+// pages where the base Tesseract result looks weak. The signal is
+// Tesseract's mean word confidence (0–100, from data.words in
+// worker.recognize). A page at or above the threshold keeps its
+// Tesseract text and is never sent anywhere — that is what cuts
+// enhancement demand to roughly 20–30% of pages (see the capacity
+// research: at 25% routing, 1,000 user-pages/day need only ~250
+// GPU pages/day). The threshold is a named constant so it can be
+// tuned after measuring real books; 75 is the starting point
+// (Tesseract word confidence on clean modern print is typically
+// 85–95, on degraded/old print it drops well below 70).
+export const ENHANCE_MEAN_CONFIDENCE_THRESHOLD = 75;
+
+/** Mean Tesseract word confidence (0–100) for a recognize() result.
+ *  `words` is data.words (each { confidence }). Returns null when
+ *  there are no usable word confidences (empty page / no words). */
+export function meanWordConfidence(words) {
+  if (!Array.isArray(words) || words.length === 0) return null;
+  let sum = 0;
+  let n = 0;
+  for (const w of words) {
+    const c = w && typeof w.confidence === "number" ? w.confidence : NaN;
+    if (Number.isFinite(c)) {
+      sum += c;
+      n++;
+    }
+  }
+  if (n === 0) return null;
+  return sum / n;
+}
+
+/** True when this page should go to the enhancement tiers.
+ *  page: { text, meanConfidence? } — meanConfidence is recorded
+ *  at OCR time (see convert-app.js ocrPage); pages OCR'd before
+ *  this feature (resumed jobs) have no meanConfidence and are
+ *  treated as weak, so resumed jobs keep the old behaviour (they
+ *  were all sent to the GPU tier before). A blank page (no text)
+ *  has nothing to enhance and is never sent. */
+export function pageNeedsEnhancement(page, threshold = ENHANCE_MEAN_CONFIDENCE_THRESHOLD) {
+  const text = (page && page.text) || "";
+  if (!text.trim()) return false;
+  const conf = page && typeof page.meanConfidence === "number" ? page.meanConfidence : null;
+  if (conf === null || !Number.isFinite(conf)) return true;
+  return conf < threshold;
+}
+
 // --- OCR text cleanup --------------------------------------------------
 /** Drop a line that is only a page number (with optional dashes /
  *  brackets), and lines that are only punctuation. */

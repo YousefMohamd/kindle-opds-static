@@ -123,9 +123,16 @@
   <input type="url" id="cloudUrl" placeholder="https://example.com" dir="ltr">
   <p><button class="btn" id="saveCloudBtn">حفظ والتحقق</button></p>
   <div id="enhanceActions" class="hidden">
-    <p><button class="btn" id="enhanceBtn">اطلب النسخة المحسّنة</button></p>
+    <p><button class="btn" id="enhanceBtn">اطلب النسخة المحسّنة</button>
+    <button class="btn hidden" id="retryEnhanceBtn">إعادة محاولة تحسين الصفحات الضعيفة</button></p>
     <p id="enhanceStatus" class="note"></p>
   </div>
+  <h2>🔑 مفتاح OCR.space المجاني <span class="note">(اختياري)</span></h2>
+  <p class="note">طبقة تحسين رخيصة قبل خادم GPU: خدمة OCR مجانية (25,000 طلب/شهر، 500 صفحة/يوم لكل جهاز، بلا بطاقة) تقرأ الصفحات الضعيفة من متصفحك أنت — كل قارئ له حصته الخاصة، فلا تُقتسم الحصة مع غيرك. بدون مفتاح تُتخطى هذه الطبقة بصمت ويبقى GPU / Tesseract. احصل على مفتاحك المجاني من <a href="https://ocr.space/ocrapi" target="_blank" rel="noopener">ocr.space/ocrapi</a> (تسجيل بالإيميل فقط، بلا بطاقة) والصقه هنا — يُحفظ في متصفحك فقط ولا يغادر جهازك إلا إلى خوادم OCR.space نفسها. تنبيه: هذه الطبقة جيدة للعربي الحديث والإنجليزي، لكنها لا تنافس Qari على العربي التراثي المشكَّل — تلك الصفحات تذهب مباشرة إلى GPU.</p>
+  <label for="ocrSpaceKey">مفتاح OCR.space</label>
+  <input type="password" id="ocrSpaceKey" placeholder="الصق مفتاحك هنا" dir="ltr" autocomplete="off">
+  <p><button class="btn" id="saveOcrSpaceBtn">حفظ المفتاح</button></p>
+  <p id="ocrSpaceStatus" class="note"></p>
   <details>
     <summary>كيف أشغّل خادم تحسين مجانياً؟</summary>
     <p class="note">خادم التحسين هو نفسه خدمة المحوّل في مستودع البوت (<code>converter/</code>) — يعمل على Kaggle (30 ساعة GPU أسبوعياً) أو Colab أو Hugging Face ZeroGPU (5 دقائق يومياً). الإعداد الكامل في <code>docs/ocr-conversion.md</code> وفي <code>site/convert/README.md</code>. بلا خادم، يعمل كل شيء هنا — التحسين مجرد دقّة إضافية.</p>
