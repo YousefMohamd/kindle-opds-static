@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-18",
-  "generated_at": "2026-11-18T09:31:04.218366+00:00",
+  "generated_at": "2026-11-18T14:42:05.459580+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 47,
+      "entries": 51,
       "detail": ""
     },
     {
@@ -28,7 +28,34 @@
       "detail": "private channel — the owner's join request is pending; this tool never joins"
     }
   ],
-  "egypt": [],
+  "egypt": [
+    {
+      "name": "Al Wafd",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-18",
+      "url": "https://t.me/Arabic_News_Papers/134799",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134799,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشروق",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-18",
+      "url": "https://t.me/Arabic_News_Papers/134798",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134798,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    }
+  ],
   "other": [
     {
       "name": "Arab News",
@@ -668,6 +695,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "Ahaly VOL",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-18",
+      "url": "https://t.me/Arabic_News_Papers/134802",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134802,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "البلاد",
       "country": "XX",
       "country_name": "غير محدد",
@@ -811,6 +851,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "مساء",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-18",
+      "url": "https://t.me/Arabic_News_Papers/134800",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134800,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "مكة",
       "country": "XX",
       "country_name": "غير محدد",
@@ -825,6 +878,12 @@
     }
   ],
   "countries": [
+    {
+      "code": "EG",
+      "name": "مصر",
+      "flag": "🇪🇬",
+      "count": 2
+    },
     {
       "code": "SA",
       "name": "السعودية",
@@ -883,7 +942,7 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 12
+      "count": 14
     }
   ],
   "empty": false,
@@ -895,6 +954,8 @@
     "الكأس",
     "الرحلة",
     "البلاد",
+    "Ahaly VOL",
+    "مساء",
     "كويت تايمز",
     "الوسط",
     "عرب تايمز",
@@ -983,6 +1044,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف مصر  😄😁😄",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف البحرين  😄😁😄",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -1030,11 +1096,6 @@
     {
       "name": "1-7.pdf",
       "reason": "empty",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف مصر  😄😁😄",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
