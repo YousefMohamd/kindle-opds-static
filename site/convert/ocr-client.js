@@ -337,10 +337,11 @@ export function cacheKey(bytes) {
 // bot's /convert command as a Mini App, never linked from any
 // public page. When it runs inside Telegram, the finished EPUB can
 // be sent to the user's own linked Kindle email through the bot:
-//   POST { initData, filename, epubBase64 } (JSON) to
+//   POST { initData, filename, epubBase64[, ticket, pages, quality] } (JSON) to
 //   MINIAPP_CONVERT_SEND_URL
 //   -> { ok: true } | { ok: false, code: 'E_NO_EMAIL' | 'E_LIMIT'
-//        | 'E_BAD_INITDATA' | 'E_TOO_BIG' | 'E_SEND_FAILED' }
+//        | 'E_BAD_INITDATA' | 'E_TOO_BIG' | 'E_TOO_MANY_PAGES'
+//        | 'E_SEND_FAILED' }
 // The bot validates the Telegram WebApp initData, looks up the
 // linked Kindle email, enforces the 3/day convert allowance, and
 // emails the EPUB via Resend. Conversion itself still runs on the
@@ -349,15 +350,32 @@ export function cacheKey(bytes) {
 // conversion is added here. Pure constants + message mapping, so
 // they stay testable in Node (convert.test.mjs §J); the fetch
 // itself lives in convert-app.js.
+//
+// v4.8.47 — Convert-button flow: the bot opens the page with a
+// book pre-loaded (?h=<handle>&p=<postId>&f=pdf&ticket=<id>).
+// The page fetches the PDF itself (via /api/dl-token, same
+// origin), converts it on the device, and POSTs the EPUB back
+// bound to the ticket — so the bot can cache it under the book's
+// source key (dedupe). It also pings /miniapp-convert-status
+// when the conversion starts ("converting…") or fails, so the
+// user gets the status in chat even after closing the browser.
 export const MINIAPP_CONVERT_SEND_URL =
   "https://rlibook-bot.mohamedyou1357.workers.dev/miniapp-convert-send";
+export const MINIAPP_CONVERT_STATUS_URL =
+  "https://rlibook-bot.mohamedyou1357.workers.dev/miniapp-convert-status";
 export const MINIAPP_SEND_MAX_EPUB_BYTES = 20 * 1024 * 1024;
+
+/** Max pages one conversion handles (v4.8.47 — mirrors the bot's
+ *  CONVERT_MAX_PAGES). The page enforces it when the PDF is
+ *  loaded (pdf.numPages) AND the bot enforces it on the send. */
+export const CONVERT_MAX_PAGES = 200;
 
 const MINIAPP_SEND_ERRORS = {
   E_NO_EMAIL: "لم تربط إيميل الكيندل بعد — اربطه أولاً في البوت ثم أعد المحاولة.",
   E_LIMIT: "استخدمتَ تحويلاتك الثلاثة لهذا اليوم — عُد غداً.",
   E_BAD_INITDATA: "افتح المحوّل من البوت مجدداً (أمر /convert) ثم أعد المحاولة.",
   E_TOO_BIG: "ملف EPUB أكبر من 20 MB — لا يمكن إرساله بالبريد.",
+  E_TOO_MANY_PAGES: "الكتاب أكبر من 200 صفحة — قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.",
   E_SEND_FAILED: "تعذّر الإرسال، حاول مجدداً — لم يُحتسب هذا التحويل من حصتك.",
 };
 
@@ -374,8 +392,67 @@ export function isTelegramWebAppInitData(value) {
   return typeof value === "string" && value.length > 0;
 }
 
-/** Request payload for POST miniapp-convert-send — exactly the
- *  three fields the bot endpoint expects, nothing else. */
-export function buildMiniappSendPayload(initData, filename, epubBase64) {
-  return { initData, filename, epubBase64 };
+/** Request payload for POST miniapp-convert-send — the three
+ *  base fields plus the Convert-button extras when present:
+ *  `ticket` (binds the EPUB to the bot's server-side source key
+ *  for the dedupe cache), `pages` (the PDF's page count, for the
+ *  bot's 200-page cap), `quality` ("enhanced" when any page was
+ *  GPU-enhanced, else "standard"). Extra fields are omitted when
+ *  absent so older bot versions see exactly the old shape. */
+export function buildMiniappSendPayload(initData, filename, epubBase64, extra) {
+  const payload = { initData, filename, epubBase64 };
+  if (extra && typeof extra.ticket === "string" && /^[0-9a-f]{16}$/.test(extra.ticket)) {
+    payload.ticket = extra.ticket;
+  }
+  if (extra && typeof extra.pages === "number" && Number.isFinite(extra.pages) && extra.pages > 0) {
+    payload.pages = Math.floor(extra.pages);
+  }
+  if (extra && extra.quality === "enhanced") payload.quality = "enhanced";
+  return payload;
+}
+
+/** Request payload for POST miniapp-convert-status — the
+ *  "converting…" / failure ping: { initData, ticket, status,
+ *  error? }. The bot resolves the ticket server-side (it must
+ *  belong to the initData user) and sends the status message in
+ *  chat. */
+export function buildMiniappStatusPayload(initData, ticket, status, error) {
+  const payload = { initData, ticket, status };
+  if (typeof error === "string" && error) payload.error = error.slice(0, 200);
+  return payload;
+}
+
+/** Parse the Convert-button query params from the page URL
+ *  (?h=<handle>&p=<postId>&f=pdf&ticket=<id>): the book the bot
+ *  pre-loaded for conversion. Returns null when the page was NOT
+ *  opened from a Convert tap (plain /convert — the user picks a
+ *  file by hand). `search` is the location.search string
+ *  (leading "?" optional) so it stays testable in Node. */
+export function parseConvertBookParams(search) {
+  try {
+    const q = new URLSearchParams((search || "").replace(/^\?/, ""));
+    const handle = (q.get("h") || "").trim();
+    const postId = (q.get("p") || "").trim();
+    const ticket = (q.get("ticket") || "").trim();
+    const format = (q.get("f") || "").trim().toLowerCase();
+    if (!handle || !/^\d+$/.test(postId) || format !== "pdf") return null;
+    if (!/^[0-9a-f]{16}$/.test(ticket)) return null;
+    return { handle, postId, format, ticket };
+  } catch {
+    return null;
+  }
+}
+
+/** The /api/dl-token URL that mints a signed proxy download URL
+ *  for a Convert-button book (same origin — the page calls it
+ *  relative). The token issuer enforces the flag/hidden gates and
+ *  the 5/day download budget; the Mini App fetches the PDF bytes
+ *  from the returned `url` (Telegram books) — in memory only, the
+ *  user never gets a download. */
+export function convertBookDlTokenUrl(params) {
+  const q =
+    `lib=tg&h=${encodeURIComponent(params.handle)}` +
+    `&p=${encodeURIComponent(params.postId)}` +
+    `&f=${encodeURIComponent(params.format || "pdf")}`;
+  return `/api/dl-token?${q}`;
 }

@@ -40,6 +40,11 @@
 //      empty text / oversize image), and runEnhancementQueue
 //      (success-replace, quota stops the queue, other failures
 //      only skip that page, non-qualifying pages never sent).
+//   L. Convert-button Mini App wiring (v4.8.47): the bot's
+//      ?h=&p=&f=pdf&ticket= URL params, the /api/dl-token URL,
+//      the send payload's ticket/pages/quality extras, the
+//      started/failed status pings, E_TOO_MANY_PAGES, and the
+//      200-page cap.
 import * as O from "./ocr-client.js";
 import * as Q from "./enhance-queue.js";
 import assert from "node:assert/strict";
@@ -421,6 +426,83 @@ check("queue: getImage failure skips that page only", async () => {
   });
   eq(summary, { attempted: 2, enhanced: 1, skipped: 1, stoppedOnQuota: false });
 });
+
+console.log("L. Convert-button Mini App wiring (v4.8.47)");
+check("parseConvertBookParams: a Convert tap URL parses", () => {
+  eq(
+    O.parseConvertBookParams("?h=khazendar&p=12345&f=pdf&ticket=abcdef0123456789"),
+    { handle: "khazendar", postId: "12345", format: "pdf", ticket: "abcdef0123456789" },
+  );
+});
+check("parseConvertBookParams: plain /convert and bad params -> null", () => {
+  eq(O.parseConvertBookParams(""), null);
+  eq(O.parseConvertBookParams("?"), null);
+  eq(O.parseConvertBookParams("?h=khazendar&p=abc&f=pdf&ticket=abcdef0123456789"), null);
+  eq(O.parseConvertBookParams("?h=khazendar&p=12345&f=epub&ticket=abcdef0123456789"), null);
+  eq(O.parseConvertBookParams("?h=khazendar&p=12345&f=pdf&ticket=zz"), null);
+  eq(O.parseConvertBookParams("?p=12345&f=pdf&ticket=abcdef0123456789"), null);
+});
+check("convertBookDlTokenUrl: the Telegram dl-token URL", () => {
+  eq(
+    O.convertBookDlTokenUrl({ handle: "khazendar", postId: "12345", format: "pdf" }),
+    "/api/dl-token?lib=tg&h=khazendar&p=12345&f=pdf",
+  );
+});
+check("buildMiniappSendPayload: plain shape unchanged without extras", () => {
+  eq(O.buildMiniappSendPayload("id", "b.epub", "AAA="), {
+    initData: "id",
+    filename: "b.epub",
+    epubBase64: "AAA=",
+  });
+});
+check("buildMiniappSendPayload: Convert extras ride along when valid", () => {
+  eq(
+    O.buildMiniappSendPayload("id", "b.epub", "AAA=", {
+      ticket: "abcdef0123456789",
+      pages: 42,
+      quality: "enhanced",
+    }),
+    {
+      initData: "id",
+      filename: "b.epub",
+      epubBase64: "AAA=",
+      ticket: "abcdef0123456789",
+      pages: 42,
+      quality: "enhanced",
+    },
+  );
+});
+check("buildMiniappSendPayload: invalid extras are dropped, never trusted", () => {
+  eq(
+    O.buildMiniappSendPayload("id", "b.epub", "AAA=", {
+      ticket: "not-a-ticket",
+      pages: -5,
+      quality: "standard",
+    }),
+    { initData: "id", filename: "b.epub", epubBase64: "AAA=" },
+  );
+});
+check("buildMiniappStatusPayload: started / failed pings", () => {
+  eq(O.buildMiniappStatusPayload("id", "abcdef0123456789", "started"), {
+    initData: "id",
+    ticket: "abcdef0123456789",
+    status: "started",
+  });
+  eq(
+    O.buildMiniappStatusPayload("id", "abcdef0123456789", "failed", "too many pages: 250"),
+    {
+      initData: "id",
+      ticket: "abcdef0123456789",
+      status: "failed",
+      error: "too many pages: 250",
+    },
+  );
+});
+check("miniappSendErrorMessage: E_TOO_MANY_PAGES has a message", () => {
+  const msg = O.miniappSendErrorMessage("E_TOO_MANY_PAGES");
+  assert.ok(msg.includes("200"), msg);
+});
+check("CONVERT_MAX_PAGES is 200", () => eq(O.CONVERT_MAX_PAGES, 200));
 
 await Promise.all(pending);
 

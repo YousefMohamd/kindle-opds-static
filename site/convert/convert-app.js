@@ -61,15 +61,20 @@
 
 import * as pdfjsLib from "./vendor/pdf.min.mjs";
 import {
+  CONVERT_MAX_PAGES,
   MINIAPP_CONVERT_SEND_URL,
+  MINIAPP_CONVERT_STATUS_URL,
   MINIAPP_SEND_MAX_EPUB_BYTES,
   buildEpubParts,
   buildMiniappSendPayload,
+  buildMiniappStatusPayload,
   cacheKey,
   cleanOcrText,
+  convertBookDlTokenUrl,
   detectPageScript,
   isTelegramWebAppInitData,
   miniappSendErrorMessage,
+  parseConvertBookParams,
   routePage,
   tesseractLangsForOverride,
 } from "./ocr-client.js";
@@ -237,10 +242,21 @@ async function sendToKindle() {
   sendStatus("جارٍ الإرسال إلى إيميل الكيندل…", "");
   try {
     const epubBase64 = await blobToBase64(current.epubBlob);
+    // v4.8.47 — Convert-button extras: the ticket binds the EPUB
+    // to the bot's server-side source key (dedupe cache), pages is
+    // the PDF's page count (bot's 200-page cap), quality is
+    // "enhanced" when any page was GPU-enhanced (else "standard"
+    // — the Tesseract fallback, which is what the send carries
+    // when the GPU server is down).
+    const extra = {
+      ticket: convertBook ? convertBook.ticket : undefined,
+      pages: current.totalPages || undefined,
+      quality: current.quality === "enhanced" ? "enhanced" : undefined,
+    };
     const res = await fetch(MINIAPP_CONVERT_SEND_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildMiniappSendPayload(initData, current.epubName, epubBase64)),
+      body: JSON.stringify(buildMiniappSendPayload(initData, current.epubName, epubBase64, extra)),
     });
     let data = null;
     try {
@@ -265,9 +281,97 @@ async function sendToKindle() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Convert-button book: fetch the pre-loaded PDF (v4.8.47)             */
+/* ------------------------------------------------------------------ */
+
+/** Fetch a Convert-button book's PDF and load it as the current
+ *  file, then start the conversion on its own. The PDF comes from
+ *  the signed proxy URL minted by /api/dl-token (same origin) —
+ *  fetched into memory only, never downloaded by the user — and
+ *  the conversion + email finish in the background, so the user
+ *  may close the browser. Any failure here leaves the page usable:
+ *  the user can still pick a file by hand. */
+async function loadConvertBook(params) {
+  note("أجلب ملف PDF من المكتبة…", "");
+  try {
+    const tokenRes = await fetch(convertBookDlTokenUrl(params));
+    let tokenData = null;
+    try {
+      tokenData = await tokenRes.json();
+    } catch (e) {
+      tokenData = null;
+    }
+    const url =
+      tokenData && tokenData.ok
+        ? tokenData.url || (tokenData.short ? tokenData.short : "")
+        : "";
+    if (!url) {
+      note("تعذّر جلب الملف من المكتبة — حاول مجدداً من البوت.", "err");
+      await postConvertStatus("failed", "could not fetch book");
+      return;
+    }
+    const pdfRes = await fetch(url);
+    if (!pdfRes.ok) throw new Error(`fetch ${pdfRes.status}`);
+    const bytes = new Uint8Array(await pdfRes.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > CONVERT_MAX_INPUT_BYTES) {
+      note(
+        bytes.length === 0
+          ? "الملف فارغ — حاول مجدداً من البوت."
+          : "الملف أكبر من 10 MB — لا يمكن تحويله هنا.",
+        "err",
+      );
+      await postConvertStatus("failed", "book too big or empty");
+      return;
+    }
+    const filename = `book-${params.postId}.pdf`;
+    await onFileChosen(new File([bytes], filename, { type: "application/pdf" }));
+    // Conversion starts on its own — the user may close the
+    // browser; the EPUB is emailed when it is ready.
+    await runJob();
+  } catch (e) {
+    console.error(e);
+    note("تعذّر جلب الملف من المكتبة — تحقق من الإنترنت وحاول مجدداً من البوت.", "err");
+    await postConvertStatus(
+      "failed",
+      e && e.message ? String(e.message).slice(0, 200) : "fetch failed",
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* conversion state                                                    */
 /* ------------------------------------------------------------------ */
 let current = null; // { hash, filename, title, bytes, totalPages, pages: Map(n -> page), quality, enhancedBlob }
+
+/* Convert-button book (v4.8.47): the bot opened the page with a
+ * library PDF pre-loaded (?h=&p=&f=pdf&ticket=). Null for a plain
+ * /convert open (the user picks a file by hand). */
+let convertBook = null; // { handle, postId, format, ticket }
+/** The "converting…" ping was already sent for this book (runJob
+ *  can run again on resume — the status is sent once). */
+let convertStatusSent = false;
+
+/** Best-effort status ping to the bot ("started" / "failed") for a
+ *  Convert-button book: the bot sends the "converting…" / failure
+ *  message in chat, so the user hears about it even after closing
+ *  the browser. Fire-and-forget — a ping failure never blocks the
+ *  conversion. */
+async function postConvertStatus(status, error) {
+  if (!convertBook || !convertBook.ticket) return;
+  const initData = telegramInitData();
+  if (!initData) return;
+  try {
+    await fetch(MINIAPP_CONVERT_STATUS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        buildMiniappStatusPayload(initData, convertBook.ticket, status, error),
+      ),
+    });
+  } catch (e) {
+    /* best-effort only */
+  }
+}
 let worker = null;
 let cancelled = false;
 
@@ -372,6 +476,14 @@ async function runJob() {
   show($("cancelBtn"), true);
   cancelled = false;
   note("");
+  // v4.8.47 — Convert-button book: the conversion is starting —
+  // tell the bot once (it sends "converting…" in chat). The user
+  // may close the browser from here: the EPUB is emailed when it
+  // is ready.
+  if (convertBook && !convertStatusSent) {
+    convertStatusSent = true;
+    await postConvertStatus("started");
+  }
   try {
     const data = current.bytes;
     const ext = current.filename.toLowerCase().split(".").pop();
@@ -381,6 +493,16 @@ async function runJob() {
       // later without re-parsing the file.
       current.pdfDoc = pdf;
       current.totalPages = pdf.numPages;
+      // v4.8.47 — 200-page cap: over the cap the book is refused
+      // before any OCR (the bot enforces the same cap on the send).
+      if (pdf.numPages > CONVERT_MAX_PAGES) {
+        note(
+          `هذا الكتاب فيه ${pdf.numPages} صفحة — فوق حد الـ 200 صفحة لكل تحويل. قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.`,
+          "err",
+        );
+        await postConvertStatus("failed", `too many pages: ${pdf.numPages}`);
+        return;
+      }
       renderProgress();
       for (let n = 1; n <= pdf.numPages; n++) {
         if (cancelled) break;
@@ -443,6 +565,13 @@ async function runJob() {
   } catch (err) {
     console.error(err);
     note("تعذّر التحويل: " + (err && err.message ? err.message : err) + " — تقدّمك محفوظ، حاول مجدداً.", "err");
+    // v4.8.47 — tell the bot the conversion failed (it sends the
+    // failure message in chat). A cancellation is not an error —
+    // it never reaches this catch.
+    await postConvertStatus(
+      "failed",
+      err && err.message ? String(err.message).slice(0, 200) : "conversion failed",
+    );
   } finally {
     if (worker) {
       try {
@@ -776,4 +905,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("enhanceBtn").addEventListener("click", requestEnhanced);
   updateEnhanceBox();
+  // v4.8.47 — Convert-button book: the bot opened the page with a
+  // library PDF pre-loaded (?h=&p=&f=pdf&ticket=). Fetch it and
+  // start the conversion on its own; a plain /convert open has no
+  // params and behaves exactly as before (the user picks a file).
+  convertBook = parseConvertBookParams(window.location.search || "");
+  if (convertBook) {
+    convertStatusSent = false;
+    loadConvertBook(convertBook);
+  }
 });
