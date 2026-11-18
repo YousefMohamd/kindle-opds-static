@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-17",
-  "generated_at": "2026-11-17T15:02:26.040171+00:00",
+  "generated_at": "2026-11-18T06:00:53.498211+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -15,8 +15,8 @@
       "key": "joinchat/VGPv_tnlgUJlNjdl",
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
-      "posts_seen": 274,
-      "entries": 48,
+      "posts_seen": 263,
+      "entries": 49,
       "detail": ""
     },
     {
@@ -29,6 +29,19 @@
     }
   ],
   "egypt": [
+    {
+      "name": "Al Ahram",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-17",
+      "url": "https://t.me/Arabic_News_Papers/134738",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134738,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
     {
       "name": "الأخبار",
       "country": "EG",
@@ -1168,7 +1181,7 @@
       "code": "EG",
       "name": "مصر",
       "flag": "🇪🇬",
-      "count": 6
+      "count": 7
     },
     {
       "code": "SA",
@@ -1346,6 +1359,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "1-7.pdf",
+      "reason": "empty",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف مصر  😄😁😄",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -1503,11 +1521,6 @@
     {
       "name": "a58e7026-2988-4527-be09-c53fcc7532f1.pdf",
       "reason": "uuid",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف اليوم الاربعاء 11-11-26  😄😁",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ]
