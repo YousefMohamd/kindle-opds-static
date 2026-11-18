@@ -109,11 +109,15 @@ def main():
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>مكتبات تلجرام — Telegram Libraries — RliBook</title>
 <style>
 {BRAND}
 </style>
+<!-- Telegram Mini App (v4.8.44): the official Telegram WebApp script + RliBook's init
+     (theme, Back button, viewport). No-ops outside Telegram. -->
+<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="/site/assets/telegram-webapp.js" defer></script>
 </head>
 <body>
 <h1>مكتبات تلجرام</h1>
