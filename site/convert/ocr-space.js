@@ -13,8 +13,10 @@
  *     Header: apikey: <the user's own free key>
  *     Body: multipart/form-data
  *       file: the page image (PNG/JPEG, free tier <= 1 MB)
- *       language: auto | ara | eng (Engine 2 auto-detects; the
- *         code is only a fallback — we send ara/eng/auto)
+ *       language: auto | eng (Engine 2 auto-detects; 'ara' is
+ *         REJECTED by the live API with E201 "Value for parameter
+ *         'language' is invalid" — verified live 2026-11-18, so
+ *         we send auto for Arabic, eng for English)
  *       isOverlayRequired: false (we need text only)
  *       OCREngine: 2 (default, best all-round)
  *       scale: true (upscale low-res scans — the front-page demo
@@ -52,13 +54,15 @@ export const OCR_SPACE_ENGINE = "2";
 import { cleanOcrText } from "./ocr-client.js";
 
 /** OCR.space language code for a page + override.
- *  Engine 2 auto-detects, so "auto" is the safe default for mixed
- *  pages; an explicit code is only a fallback hint. */
+ *  E201 REGRESSION (2026-11-18, verified live): the API rejects
+ *  "ara" with E201 "Value for parameter 'language' is invalid".
+ *  Engine 2 auto-detects the script, so Arabic pages send "auto"
+ *  (NOT "ara") and English pages send "eng". */
 export function ocrSpaceLanguageForPage(page, override = "auto") {
-  if (override === "ar" || override === "ar-classical") return "ara";
+  if (override === "ar" || override === "ar-classical") return "auto";
   if (override === "en") return "eng";
   const script = (page && page.script) || "";
-  if (script === "arabic") return "ara";
+  if (script === "arabic") return "auto";
   if (script === "latin") return "eng";
   return "auto";
 }

@@ -542,10 +542,12 @@ const OCR_OK = {
 };
 
 check("ocrSpaceLanguageForPage: overrides + script", () => {
-  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar"), "ara");
-  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar-classical"), "ara");
+  // E201 REGRESSION (2026-11-18): the live API rejects "ara" — Arabic
+  // pages must send "auto" (Engine 2 auto-detects the script).
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar"), "auto");
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE, "ar-classical"), "auto");
   eq(S.ocrSpaceLanguageForPage(AR_PAGE, "en"), "eng");
-  eq(S.ocrSpaceLanguageForPage(AR_PAGE), "ara");
+  eq(S.ocrSpaceLanguageForPage(AR_PAGE), "auto");
   eq(S.ocrSpaceLanguageForPage(EN_PAGE), "eng");
   eq(S.ocrSpaceLanguageForPage(MIXED_PAGE), "auto");
   eq(S.ocrSpaceLanguageForPage({ text: "" }), "auto");
@@ -606,7 +608,9 @@ check("parseOcrSpaceResponse: -20 timeout, -10 parse error, no results", () => {
 
 check("ocrSpacePage: success posts multipart to api.ocr.space with apikey header", async () => {
   const fetchFn = mockOcrSpaceFetch(OCR_OK);
-  const r = await S.ocrSpacePage({ fetchFn, apiKey: "helloworld", image: IMG, langHint: "ara" });
+  // langHint "auto" is what the fixed language function sends for Arabic
+  // pages (E201: the live API rejects "ara").
+  const r = await S.ocrSpacePage({ fetchFn, apiKey: "helloworld", image: IMG, langHint: "auto" });
   eq(r.ok, true);
   eq(r.text, "نص من OCR.space");
   eq(r.engine, "ocr-space");
@@ -614,7 +618,7 @@ check("ocrSpacePage: success posts multipart to api.ocr.space with apikey header
   eq(fetchFn.calls[0].url, "https://api.ocr.space/parse/image");
   eq(fetchFn.calls[0].headers.apikey, "helloworld");
   const body = fetchFn.calls[0].body;
-  eq(body.get("language"), "ara");
+  eq(body.get("language"), "auto");
   eq(body.get("OCREngine"), "2");
   eq(body.get("isOverlayRequired"), "false");
   eq(body.get("scale"), "true");
