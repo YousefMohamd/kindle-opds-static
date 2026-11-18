@@ -55,7 +55,7 @@
 // Exit 0 = all pass; non-zero = failure. No network, no production
 // KV, no deploy. The signing key below is FAKE test data.
 
-import { onRequest, bookQuery, SENDTOKINDLE_WEB_FORMATS, readerLinkFor, READER_FORMATS } from "./get.js";
+import { onRequest, bookQuery, SENDTOKINDLE_WEB_FORMATS, readerLinkFor, READER_FORMATS, actionsRow } from "./get.js";
 import { resolveShortLink, readerTokenOwn } from "../api/dl-token.js";
 
 let pass = 0;
@@ -548,6 +548,39 @@ console.log("13. Convert button under the email link (2026-11-18 rework):");
   check("13g TG PDF + Kobo: no Convert button (Kindle email only)",
     tgPdfKobo.status === 200 && !tgPdfKobo.body.includes("/api/convert-book")
     && !tgPdfKobo.body.includes("/api/send-to-kindle"));
+}
+
+// ================= 14. Horizontal action row =================
+console.log("14. Horizontal action row (2026-11-18):");
+{
+  const KINDLE_UA = "Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+";
+  const env = { RLIBOOK_KV: makeKv(), PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+
+  const tgPdf = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.7.0.1", KINDLE_UA);
+  check("14a row CSS: .actions is a wrapping flex row",
+    tgPdf.body.includes(".actions{display:flex;flex-wrap:wrap;"));
+  check("14b row CSS: light rise-in animation (rlb-rise, 0.25s) + reduced-motion off",
+    tgPdf.body.includes("@keyframes rlb-rise")
+    && tgPdf.body.includes("animation:rlb-rise .25s ease-out both")
+    && tgPdf.body.includes("@media (prefers-reduced-motion:reduce){.actions{animation:none}}"));
+  // The Kindle PDF page's actions (email + Convert + reader) sit in
+  // ONE row, email first, Convert next, reader last. (Anchor on the
+  // Convert button — only the Kindle PDF branch has one.)
+  const convPos = tgPdf.body.indexOf("🔄 حوّل إلى EPUB");
+  const rowStart = tgPdf.body.lastIndexOf('<div class="actions">', convPos);
+  const rowEnd = tgPdf.body.indexOf("</div>", convPos);
+  const row = rowStart !== -1 && rowEnd !== -1 ? tgPdf.body.slice(rowStart, rowEnd) : "";
+  check("14c TG PDF + Kindle: email + Convert + reader in ONE .actions row",
+    row.includes("أرسل لميل قارئي") && row.includes("🔄 حوّل إلى EPUB")
+    && row.includes("اقرأ الآن في المتصفح"));
+  check("14d TG PDF + Kindle: row order is email, Convert, reader",
+    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB")
+    && row.indexOf("🔄 حوّل إلى EPUB") < row.indexOf("اقرأ الآن في المتصفح"));
+  check("14e reader link is a .btn now (same button style as email/Convert)",
+    tgPdf.body.includes('class="btn" href="/read?lib=tg'));
+  check("14f actionsRow unit: empty -> '', links keep order, wrapped in one div",
+    actionsRow() === "" && actionsRow("") === ""
+    && actionsRow("<p>A</p>", "", "<p>B</p>") === "<div class=\"actions\">\n<p>A</p><p>B</p></div>\n");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

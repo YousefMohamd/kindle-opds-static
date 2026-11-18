@@ -207,16 +207,6 @@ async function buildEpubBlob(title, pages) {
   for (const ch of parts.chapters) zip.file("OEBPS/" + ch.name, ch.xhtml);
   return { blob: await zip.generateAsync({ type: "blob", mimeType: "application/epub+zip" }), language: parts.language };
 }
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
 function epubFilename(title) {
   const base = String(title || "book").replace(/[\\/:*?"<>|]+/g, "").trim() || "book";
   return base + ".epub";
@@ -230,7 +220,9 @@ function epubFilename(title) {
 /* EPUB — built on the END USER's device — is POSTed as base64 to      */
 /* the bot, which validates initData, checks the linked Kindle        */
 /* email + the 3/day allowance, and emails the EPUB via Resend.        */
-/* The download button stays as a fallback. No server-side            */
+/* There is NO direct download on this page (website rule,            */
+/* 2026-11-18): the EPUB reaches the reader by email, or as a file    */
+/* in the Telegram chat (USB) for in-chat conversions. No server-side */
 /* conversion, no localhost, nothing on the site owner's device.       */
 /* ------------------------------------------------------------------ */
 function telegramInitData() {
@@ -242,8 +234,19 @@ function telegramInitData() {
 function updateSendKindleButton() {
   const btn = $("sendKindleBtn");
   if (!btn) return;
-  // Visible only inside Telegram AND once an EPUB is ready.
-  show(btn, !!telegramInitData() && !!(current && current.epubBlob));
+  // Visible only inside Telegram AND once an EPUB is ready (the
+  // standard build, or the whole-book enhanced one — either is
+  // what the send carries).
+  show(btn, !!telegramInitData() && !!(current && (current.epubBlob || current.enhancedBlob)));
+}
+
+/** The EPUB the send carries: the whole-book enhanced build when
+ *  one was fetched (the user asked for it explicitly), else the
+ *  standard build (which the per-page queue rebuilds from the
+ *  enhanced pages as they land, so it is the best available too). */
+function sendableEpubBlob() {
+  if (!current) return null;
+  return current.enhancedBlob || current.epubBlob || null;
 }
 
 function blobToBase64(blob) {
@@ -269,7 +272,8 @@ function sendStatus(text, kind) {
 
 async function sendToKindle() {
   const btn = $("sendKindleBtn");
-  if (!current || !current.epubBlob) {
+  const blob = sendableEpubBlob();
+  if (!current || !blob) {
     sendStatus("لا توجد نسخة EPUB جاهزة بعد — أكمل التحويل أولاً.", "err");
     return;
   }
@@ -278,17 +282,17 @@ async function sendToKindle() {
     sendStatus("افتح المحوّل من بوت RliBook (أمر /convert) لتفعيل الإرسال.", "err");
     return;
   }
-  if (current.epubBlob.size > MINIAPP_SEND_MAX_EPUB_BYTES) {
+  if (blob.size > MINIAPP_SEND_MAX_EPUB_BYTES) {
     sendStatus(miniappSendErrorMessage("E_TOO_BIG"), "err");
     return;
   }
   btn.disabled = true;
   sendStatus("جارٍ الإرسال إلى إيميل الكيندل…", "");
   try {
-    const epubBase64 = await blobToBase64(current.epubBlob);
+    const epubBase64 = await blobToBase64(blob);
     // v4.8.47 — Convert-button extras: the ticket binds the EPUB
     // to the bot's server-side source key (dedupe cache), pages is
-    // the PDF's page count (bot's 200-page cap), quality is
+    // the PDF's page count (bot's 500-page cap), quality is
     // "enhanced" when any page was GPU-enhanced (else "standard"
     // — the Tesseract fallback, which is what the send carries
     // when the GPU server is down).
@@ -311,7 +315,7 @@ async function sendToKindle() {
     if (data && data.ok === true) {
       sendStatus("✅ تم الإرسال إلى إيميل الكيندل — سيصل كتابك إلى مكتبة الكيندل خلال دقائق.", "ok");
     } else if (data && data.ok === false && data.code) {
-      sendStatus(miniappSendErrorMessage(data.code), "err");
+      sendStatus(miniappSendErrorMessage(data.code, data.waitMinutes), "err");
     } else {
       sendStatus("تعذّر الإرسال، حاول مجدداً — لم يُحتسب هذا التحويل من حصتك.", "err");
     }
@@ -480,13 +484,36 @@ async function finishJob() {
   current.epubBlob = blob;
   current.epubName = epubFilename(current.title);
   renderProgress();
-  note("اكتمل التحويل — نسخة EPUB جاهزة للتحميل (جودة قياسية).", "ok");
+  // No direct download on this page (website rule, 2026-11-18):
+  // the EPUB reaches the reader by email (the send button below,
+  // or automatically for a Convert-button book) or as a file in
+  // the Telegram chat (in-chat conversions). A standalone visitor
+  // (no Telegram) is told to open the converter from the bot.
+  if (convertBook && convertBook.ticket && telegramInitData()) {
+    note("جارٍ التجهيز… جارٍ الإرسال إلى إيميل قارئك…", "");
+  } else if (!telegramInitData()) {
+    note(
+      "اكتمل التحويل — لتصلك نسخة EPUB، افتح المحوّل من بوت RliBook (أمر /convert) أو حوّل من داخل الشات؛ تُرسل النسخة إلى إيميل قارئك أو كملف في الشات (USB). لا يوجد تحميل مباشر هنا.",
+      "ok",
+    );
+  } else {
+    note("اكتمل التحويل — نسخة EPUB جاهزة. استخدم زر «📧 أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.", "ok");
+  }
   show($("enhanceBox"), true);
   updateEnhanceBox();
   // Per-page cloud enhancement, fire-and-forget: the standard
-  // result above is already shown and downloadable; the queue
-  // only upgrades qualifying pages in place, one at a time.
+  // result above is already shown; the queue only upgrades
+  // qualifying pages in place, one at a time.
   autoEnhance();
+  // Catalog Convert button (2026-11-18): the book came from the
+  // catalog — send the EPUB to the reader's email directly, no
+  // download link, no extra tap. The standard build is the
+  // sendable one; the queue rebuilds it in place, so a later
+  // manual send (the button stays visible) carries the enhanced
+  // pages.
+  if (convertBook && convertBook.ticket && telegramInitData()) {
+    await sendToKindle();
+  }
 }
 
 async function ocrPage(canvas, pageNo) {
@@ -532,6 +559,11 @@ async function runJob() {
     convertStatusSent = true;
     await postConvertStatus("started");
   }
+  // Catalog Convert button (2026-11-18): the page is preparing the
+  // book — say so plainly ("جارٍ التجهيز…") while it converts.
+  if (convertBook) {
+    note("جارٍ التجهيز… يحوّل الكتاب صفحة صفحة على جهازك.", "");
+  }
   try {
     const data = current.bytes;
     const ext = current.filename.toLowerCase().split(".").pop();
@@ -541,11 +573,11 @@ async function runJob() {
       // later without re-parsing the file.
       current.pdfDoc = pdf;
       current.totalPages = pdf.numPages;
-      // v4.8.47 — 200-page cap: over the cap the book is refused
+      // v4.8.48 — 500-page cap: over the cap the book is refused
       // before any OCR (the bot enforces the same cap on the send).
       if (pdf.numPages > CONVERT_MAX_PAGES) {
         note(
-          `هذا الكتاب فيه ${pdf.numPages} صفحة — فوق حد الـ 200 صفحة لكل تحويل. قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.`,
+          `هذا الكتاب فيه ${pdf.numPages} صفحة — فوق حد الـ ${CONVERT_MAX_PAGES} صفحة لكل تحويل. قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.`,
           "err",
         );
         await postConvertStatus("failed", `too many pages: ${pdf.numPages}`);
@@ -982,8 +1014,10 @@ async function requestEnhanced() {
   current.quality = "enhanced";
   await saveProgress();
   renderProgress();
-  $("enhanceStatus").textContent = "وصلت النسخة المحسّنة (جودة محسّنة) — يمكنك تحميلها بدلاً من القياسية.";
-  show($("downloadEnhancedBtn"), true);
+  // The enhanced build is now what the send button carries (no
+  // direct download on this page — website rule, 2026-11-18).
+  $("enhanceStatus").textContent = "وصلت النسخة المحسّنة (جودة محسّنة) — استخدم زر «📧 أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.";
+  updateSendKindleButton();
   btn.disabled = false;
 }
 
@@ -1004,13 +1038,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("cancelBtn").addEventListener("click", () => {
     cancelled = true;
   });
-  $("downloadBtn").addEventListener("click", () => {
-    if (current && current.epubBlob) downloadBlob(current.epubBlob, current.epubName);
-  });
   $("sendKindleBtn").addEventListener("click", sendToKindle);
-  $("downloadEnhancedBtn").addEventListener("click", () => {
-    if (current && current.enhancedBlob) downloadBlob(current.enhancedBlob, current.epubName);
-  });
   $("saveCloudBtn").addEventListener("click", async () => {
     const url = $("cloudUrl").value.trim().replace(/\/+$/, "");
     localStorage.setItem(CLOUD_URL_KEY, url);

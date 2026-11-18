@@ -1251,5 +1251,64 @@ console.log("P. Convert button under the email button (2026-11-18 rework):");
     && !r2.body.includes("🔄 حوّل إلى EPUB"));
 }
 
+console.log("Q. Horizontal action row (2026-11-18):");
+{
+  // The row CSS: flex, wraps, light rise-in, reduced-motion off.
+  tgMode = "okPdf";
+  const r = await getBook("كتاب PDF تجريبي");
+  check("Q1 row CSS: .actions is a wrapping flex row",
+    r.body.includes(".actions{display:flex;flex-wrap:wrap;"));
+  check("Q2 row CSS: light rise-in animation (rlb-rise, 0.25s)",
+    r.body.includes("@keyframes rlb-rise")
+    && r.body.includes("animation:rlb-rise .25s ease-out both"));
+  check("Q3 row CSS: animation disabled under prefers-reduced-motion",
+    r.body.includes("@media (prefers-reduced-motion:reduce){.actions{animation:none}}"));
+  check("Q4 row CSS: hover/tap feedback on .btn",
+    r.body.includes(".btn:hover") && r.body.includes(".btn:active{transform:scale(.98)}"));
+  // The TG PDF card's buttons all sit inside ONE .actions row,
+  // email first, Convert next, then the Mini App "get" button.
+  // (Anchor on the Convert button — only this card has one — so
+  // the row found is exactly this card's row, not another card's.
+  // Note the mock has read: null, so this card has no reader
+  // button; the download slot is the tg-only button because the
+  // request carries no e-reader UA.)
+  const convPos = r.body.indexOf("🔄 حوّل إلى EPUB");
+  const rowStart = r.body.lastIndexOf('<div class="actions">', convPos);
+  const rowEnd = r.body.indexOf("</div>", convPos);
+  const row = rowStart !== -1 && rowEnd !== -1 ? r.body.slice(rowStart, rowEnd) : "";
+  check("Q5 PDF card: email + Convert + get in ONE .actions row",
+    row.includes("أرسل لميل قارئي") && row.includes("🔄 حوّل إلى EPUB")
+    && row.includes("احصل على الكتاب على جهازك"));
+  check("Q6 PDF card: email is the first button in the row",
+    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB")
+    && row.indexOf("🔄 حوّل إلى EPUB") < row.indexOf("احصل على الكتاب على جهازك"));
+  // Flagged card: the single "View in bot" button is in a row too,
+  // and still the ONLY button on the card. (Anchor on the flag note.)
+  tgMode = "ok";
+  const r2 = await getBook("Everyone in This Bank Is a Thief");
+  const flagNote = r2.body.indexOf("🚩 هذا الكتاب عليه علامة");
+  const fStart = r2.body.indexOf('<div class="actions">', flagNote);
+  const fEnd = r2.body.indexOf("</div>", fStart);
+  const fRow = fStart !== -1 && fEnd !== -1 ? r2.body.slice(fStart, fEnd) : "";
+  check("Q7 flagged card: 'View in bot' in its own .actions row, no other button",
+    fRow.includes("View in bot") && !fRow.includes("أرسل لميل قارئي")
+    && !fRow.includes("اقرأ أونلاين"));
+  // OPDS card (Kobo UA, so a download button renders): email +
+  // download + reader in ONE row, email first. (Anchor on the
+  // download button's href — the label text also appears in the
+  // Kobo family note above the cards, so it cannot anchor this.)
+  tgMode = "throw";
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const r3 = await getBook("لؤلؤة الحب", "", KOBO_UA);
+  const dlPos = r3.body.indexOf('href="/kindle/get?lib=hindawi');
+  const oStart = r3.body.lastIndexOf('<div class="actions">', dlPos);
+  const oEnd = r3.body.indexOf("</div>", dlPos);
+  const oRow = oStart !== -1 && oEnd !== -1 ? r3.body.slice(oStart, oEnd) : "";
+  check("Q8 OPDS card: email + download + reader in ONE .actions row, email first",
+    oRow.includes("أرسل لميل قارئي") && oRow.includes("نزّل الكتاب على جهاز Kobo")
+    && oRow.includes("📖 اقرأ أونلاين")
+    && oRow.indexOf("أرسل لميل قارئي") < oRow.indexOf("نزّل الكتاب على جهاز Kobo"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

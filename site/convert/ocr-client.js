@@ -412,23 +412,31 @@ export const MINIAPP_CONVERT_STATUS_URL =
   "https://rlibook-bot.mohamedyou1357.workers.dev/miniapp-convert-status";
 export const MINIAPP_SEND_MAX_EPUB_BYTES = 20 * 1024 * 1024;
 
-/** Max pages one conversion handles (v4.8.47 — mirrors the bot's
+/** Max pages one conversion handles (v4.8.48 — mirrors the bot's
  *  CONVERT_MAX_PAGES). The page enforces it when the PDF is
  *  loaded (pdf.numPages) AND the bot enforces it on the send. */
-export const CONVERT_MAX_PAGES = 200;
+export const CONVERT_MAX_PAGES = 500;
 
 const MINIAPP_SEND_ERRORS = {
   E_NO_EMAIL: "لم تربط إيميل الكيندل بعد — اربطه أولاً في البوت ثم أعد المحاولة.",
   E_LIMIT: "استخدمتَ تحويلاتك الثلاثة لهذا اليوم — عُد غداً.",
   E_BAD_INITDATA: "افتح المحوّل من البوت مجدداً (أمر /convert) ثم أعد المحاولة.",
   E_TOO_BIG: "ملف EPUB أكبر من 20 MB — لا يمكن إرساله بالبريد.",
-  E_TOO_MANY_PAGES: "الكتاب أكبر من 200 صفحة — قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.",
+  E_TOO_MANY_PAGES: "الكتاب أكبر من 500 صفحة — قسّمه إلى أجزاء أصغر ثم حوّل كل جزء.",
   E_SEND_FAILED: "تعذّر الإرسال، حاول مجدداً — لم يُحتسب هذا التحويل من حصتك.",
+  // Fair use (2026-11-18): the bot throttles a member who converted
+  // a lot in the last hour, so others can use it too. The wait is
+  // filled in by miniappSendErrorMessage when waitMinutes is given.
+  E_FAIR_USE: "حوّلتَ كثيراً في الساعة الأخيرة — ليستفيد غيرك أيضاً، انتظر قليلاً قبل تحويلك التالي.",
 };
 
 /** Arabic message for a miniapp-convert-send error code. Unknown
- *  codes fall back to a generic retry message. */
-export function miniappSendErrorMessage(code) {
+ *  codes fall back to a generic retry message. E_FAIR_USE takes an
+ *  optional wait in minutes (from the bot's JSON body) and names it. */
+export function miniappSendErrorMessage(code, waitMinutes) {
+  if (code === "E_FAIR_USE" && typeof waitMinutes === "number" && waitMinutes > 0) {
+    return `حوّلتَ كثيراً في الساعة الأخيرة — ليستفيد غيرك أيضاً، انتظر ${waitMinutes} دقيقة قبل تحويلك التالي. يُفتح وحده بعدها.`;
+  }
   return MINIAPP_SEND_ERRORS[code] || "تعذّر الإرسال، حاول مجدداً.";
 }
 

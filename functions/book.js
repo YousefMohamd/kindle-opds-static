@@ -479,7 +479,16 @@ export async function onRequest(context) {
     + "margin:0 auto;padding:1rem;line-height:1.7;color:#1C2826;background:#DFF1F4}"
     + "h1{font-size:1.4rem;margin-bottom:.2rem}h2{font-size:1.1rem;margin:.6rem 0 .2rem}"
     + "a{color:#0b5cad}.btn{display:inline-block;padding:.5rem 1rem;margin:.3rem 0;"
-    + "border-radius:6px;background:#44667b;color:#fff;text-decoration:none;font-weight:600}"
+    + "border-radius:6px;background:#44667b;color:#fff;text-decoration:none;font-weight:600;"
+    + "transition:background-color .15s ease-out,transform .15s ease-out}"
+    + ".btn:hover{background:#0b5cad}.btn:active{transform:scale(.98)}"
+    + ".actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.6rem 0;"
+    + "animation:rlb-rise .25s ease-out both}"
+    + ".actions p{margin:0}.actions .btn{margin:0}"
+    + ".actions p:first-child .btn{background:#0b5cad}"
+    + "@supports not (gap:.5rem){.actions p{margin:.2rem 0 .2rem .5rem}.actions p:last-child{margin-left:0}}"
+    + "@keyframes rlb-rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}"
+    + "@media (prefers-reduced-motion:reduce){.actions{animation:none}}"
     + ".card{border:1px solid #C4E0EB;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
     + ".cover{max-width:120px;height:auto;border-radius:6px;border:1px solid #C4E0EB}"
     + ".rating{font-weight:600}.desc{font-size:.95rem}"
@@ -753,12 +762,20 @@ export async function onRequest(context) {
     // UA is an e-reader family (downloadLabel !== ""). Desktop /
     // mobile / no-UA visitors see email + reader only — no
     // /kindle/get link anywhere on their page.
+    // Action row (2026-11-18): the card's buttons sit side by side
+    // in one flex row (.actions) instead of stacked <p>s — email
+    // first (primary), then download, then Read online. Each button's
+    // own markup is unchanged; only the wrapper is new. The row
+    // wraps on narrow e-reader screens, and fades + rises in on
+    // load (see the .actions CSS — pure CSS, no JS, and disabled
+    // under prefers-reduced-motion).
+    let actions = "";
     if (sendUrl) {
-      body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
+      actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
     }
     if (getUrl && downloadLabel) {
       anyDownload = true;
-      body += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+      actions += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
     }
     // WS3b (Mini App hub): the SAME /kindle/get button, shown ONLY
     // inside Telegram (class tg-only, revealed by telegram-webapp.js
@@ -775,9 +792,10 @@ export async function onRequest(context) {
     // Telegram the button itself is the affordance; the note stays
     // hidden there (it is server-rendered once and cannot be both).
     if (getUrl && !downloadLabel) {
-      body += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+      actions += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
     }
-    if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+    if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+    if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
     if (!sendUrl) {
       body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
         + "اطلبه من البوت "
@@ -875,7 +893,9 @@ export async function onRequest(context) {
         // A missing bot field (an older endpoint reply) falls back
         // to the bot home link.
         body += "<p class=\"note\">🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
-          + "<p><a class=\"btn\" href=\"" + esc(r.bot || "https://t.me/RliBook_bot") + "\">View in bot</a></p>\n";
+          + "<div class=\"actions\">\n"
+          + "<p><a class=\"btn\" href=\"" + esc(r.bot || "https://t.me/RliBook_bot") + "\">View in bot</a></p>\n"
+          + "</div>\n";
       } else {
         // Button order (2026-11-16): email FIRST (primary button,
         // unlimited), then the delivery page (secondary button,
@@ -886,8 +906,13 @@ export async function onRequest(context) {
         // fingerprint rides along on the Get and Send links (fpQ), so
         // a catalog user never re-types their reader email.
         const sendUrl = r.send ? esc(r.send) + fpQ : null;
+        // Action row (2026-11-18): same horizontal .actions row as
+        // the OPDS cards — email first (primary), Convert next,
+        // then download, then Read online. Each button's own markup
+        // is unchanged; only the wrapper is new.
+        let actions = "";
         if (sendUrl) {
-          body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
+          actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
         }
         // Convert (2026-11-18 rework): UNDER the email button, for
         // Telegram PDF books only — the same gated identity as the
@@ -903,7 +928,7 @@ export async function onRequest(context) {
           && r.formats.some((f) => String(f).trim().toLowerCase() === "pdf");
         if (sendUrl && hasPdf && r.send.indexOf("/api/send-to-kindle?") === 0) {
           const convertUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/convert-book?")) + fpQ;
-          body += "<p><a class=\"btn\" href=\"" + convertUrl + "\">🔄 حوّل إلى EPUB</a></p>\n";
+          actions += "<p><a class=\"btn\" href=\"" + convertUrl + "\">🔄 حوّل إلى EPUB</a></p>\n";
         }
         // WS1b: same gate as the OPDS cards — a download button
         // only for an e-reader family UA. A flagged book has no
@@ -912,16 +937,17 @@ export async function onRequest(context) {
         if (getUrl && downloadLabel) {
           anyDownload = true;
           tgDownload = true;
-          body += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+          actions += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
         }
         // WS3b (Mini App hub): same rule as the OPDS cards — the
         // tg-only button appears only when the UA gate hid the
         // download button, so the two never duplicate.
         if (getUrl && !downloadLabel) {
-          body += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+          actions += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
         }
         const readerUrl = r.read ? esc(r.read) : null;
-        if (readerUrl) body += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+        if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+        if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
         if (!sendUrl) {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "

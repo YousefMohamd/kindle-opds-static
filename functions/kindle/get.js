@@ -105,7 +105,15 @@ const CSS = "body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
   + "margin:0 auto;padding:1rem;line-height:1.7;color:#1c1c1c;background:#fdfdf8}"
   + "h1{font-size:1.4rem}a{color:#0b5cad}.btn{display:inline-block;padding:.5rem 1rem;"
   + "margin:.3rem 0;border-radius:6px;background:#0b5cad;color:#fff;text-decoration:none;"
-  + "font-weight:600}.note{color:#555;font-size:.9rem}"
+  + "font-weight:600;transition:background-color .15s ease-out,transform .15s ease-out}"
+  + ".btn:hover{background:#095a9e}.btn:active{transform:scale(.98)}"
+  + ".actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.6rem 0;"
+  + "animation:rlb-rise .25s ease-out both}"
+  + ".actions p{margin:0}.actions .btn{margin:0}"
+  + "@supports not (gap:.5rem){.actions p{margin:.2rem 0 .2rem .5rem}.actions p:last-child{margin-left:0}}"
+  + "@keyframes rlb-rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}"
+  + "@media (prefers-reduced-motion:reduce){.actions{animation:none}}"
+  + ".note{color:#555;font-size:.9rem}"
   + ".short{font-size:1.3rem;font-weight:700;direction:ltr;text-align:center;"
   + "background:#fff;border:1px solid #0b5cad;border-radius:8px;padding:.8rem .4rem;"
   + "word-break:break-all;margin:.5rem 0}"
@@ -166,9 +174,23 @@ export async function readerLinkFor(env, book, opts = {}) {
     && (await isPersonalBook(env, opts.fp || "", opts.title || ""));
   const rtok = await makeReaderToken(key, handle, postId, book.fmt,
     READER_TOKEN_TTL_SECONDS, undefined, own);
-  return "<p><a href=\"/read?" + bookQuery(book)
+  return "<p><a class=\"btn\" href=\"/read?" + bookQuery(book)
     + "&amp;rtok=" + encodeURIComponent(rtok)
     + "\">📖 أو اقرأ الآن في المتصفح</a></p>\n";
+}
+
+/** The Kindle-branch action row (2026-11-18): the page's action
+ *  links (email, Convert, Read online) side by side in one flex
+ *  row (.actions) — the same horizontal row as the book card.
+ *  The links arrive as "<p><a ...>...</a></p>" strings ("" when
+ *  absent) and are laid out in the order given: callers pass
+ *  email first (primary), Convert next, Read online last. The row
+ *  wraps on narrow e-reader screens and is emitted only when at
+ *  least one action exists. Exported for tests. */
+export function actionsRow(...links) {
+  const items = links.filter((l) => l);
+  if (!items.length) return "";
+  return "<div class=\"actions\">\n" + items.join("") + "</div>\n";
 }
 
 export async function onRequest(context) {
@@ -286,7 +308,7 @@ export async function onRequest(context) {
     + "&amp;t=" + encodeURIComponent(title || "")
     + (fp ? "&amp;fp=" + encodeURIComponent(fp) : "");
   const emailLink = EMAIL_FORMATS.has(book.fmt)
-    ? "<p><a href=\"/api/send-to-kindle?" + emailParams + "\">أرسل لميل قارئي — بلا حد يومي (لمن أضاف المرسل من قبل)</a></p>\n"
+    ? "<p><a class=\"btn\" href=\"/api/send-to-kindle?" + emailParams + "\">أرسل لميل قارئي — بلا حد يومي (لمن أضاف المرسل من قبل)</a></p>\n"
     : "";
   // Convert (2026-11-18 rework): UNDER the email link, Telegram PDF
   // books only — the same identity params as the email link, with
@@ -296,7 +318,7 @@ export async function onRequest(context) {
   // generic never reach this (their branches have no email link);
   // OPDS books have no Telegram identity for the bot's convert job.
   const convertLink = book.kind === "tg" && book.fmt === "pdf" && emailLink
-    ? "<p><a href=\"/api/convert-book?" + emailParams + "\">🔄 حوّل إلى EPUB وأرسله لميل قارئي</a></p>\n"
+    ? "<p><a class=\"btn\" href=\"/api/convert-book?" + emailParams + "\">🔄 حوّل إلى EPUB وأرسله لميل قارئي</a></p>\n"
     : "";
 
   const tenMinuteNote = "<p class=\"note\">الرابط يعمل مرة واحدة فقط، خلال 10 دقائق، ولكتاب واحد (5 كتب في اليوم كحد أقصى) — إن استخدمته أو انتهى، عُد هنا واضغط الزر مجدداً.</p>\n";
@@ -385,9 +407,10 @@ export async function onRequest(context) {
       + "<li><b>الخطوة 3:</b> إن لم ينزّل المتصفح الملف، استخدم الإيميل (أدناه) أو ارفع الملف في amazon.com/sendtokindle من هاتفك/حاسوبك (اضغط «Select files from device» واختر ملف PDF، ثم «Send»).</li>\n"
       + "</ol>\n"
       + tenMinuteNote
-      + readerLink
-      + emailLink
-      + convertLink
+      // Action row (2026-11-18): email first (primary), Convert
+      // next, Read online last — the same horizontal .actions row
+      // as the book card.
+      + actionsRow(emailLink, convertLink, readerLink)
       + backLink;
   } else {
     body = "<h1>احصل على الكتاب على جهازك</h1>\n"
@@ -414,9 +437,10 @@ export async function onRequest(context) {
       + "<p class=\"note\"><b>طريقة ثالثة:</b> انقل الملف إلى جهازك عبر USB (ببرنامج Calibre مثلاً) إن لم يعمل الإيميل أو Send to Kindle.</p>\n"
       + tenMinuteNote
       + "<p class=\"note\">ليس لديك Kindle؟ بعد الخطوة 2 افتح الملف في أي تطبيق قراءة على هاتفك أو حاسوبك — وصل الكتاب إليك، ولا حاجة للخطوتين 3 و 4.</p>\n"
-      + readerLink
-      + emailLink
-      + convertLink
+      // Action row (2026-11-18): email first (primary), Convert
+      // next, Read online last — the same horizontal .actions row
+      // as the book card.
+      + actionsRow(emailLink, convertLink, readerLink)
       + backLink;
   }
   return page("احصل على الكتاب على جهازك", body, 200);

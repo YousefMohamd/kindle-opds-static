@@ -44,7 +44,7 @@
 //      ?h=&p=&f=pdf&ticket= URL params, the /api/dl-token URL,
 //      the send payload's ticket/pages/quality extras, the
 //      started/failed status pings, E_TOO_MANY_PAGES, and the
-//      200-page cap.
+//      500-page cap.
 //   M. OCR.space tier (2026-11-18, ocr-space.js): the free
 //      per-user OCR API — language mapping, response parsing
 //      (success / empty / quota / timeout / parse error), the
@@ -61,11 +61,17 @@
 //      pages skip OCR.space, no tiers -> no-tier, per-tier quota
 //      disables only that tier, strong pages never attempted,
 //      second run is all cache hits (zero network).
+//   P. No direct download + fair use (2026-11-18): the converter
+//      page offers NO EPUB download (website rule — delivery is by
+//      email or via the bot); the send path carries E_FAIR_USE with
+//      the wait in minutes, and the catalog flow shows
+//      "جارٍ التجهيز…" and auto-sends to the reader email.
 import * as O from "./ocr-client.js";
 import * as Q from "./enhance-queue.js";
 import * as S from "./ocr-space.js";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 let pass = 0;
 let fail = 0;
@@ -517,9 +523,9 @@ check("buildMiniappStatusPayload: started / failed pings", () => {
 });
 check("miniappSendErrorMessage: E_TOO_MANY_PAGES has a message", () => {
   const msg = O.miniappSendErrorMessage("E_TOO_MANY_PAGES");
-  assert.ok(msg.includes("200"), msg);
+  assert.ok(msg.includes("500"), msg);
 });
-check("CONVERT_MAX_PAGES is 200", () => eq(O.CONVERT_MAX_PAGES, 200));
+check("CONVERT_MAX_PAGES is 500", () => eq(O.CONVERT_MAX_PAGES, 500));
 
 console.log("M. OCR.space tier (ocr-space.js)");
 // A mock fetch that records url + headers + body (FormData) and
@@ -991,6 +997,38 @@ check("runTieredEnhancementQueue: already-enhanced pages are skipped", async () 
     stoppedOnOcrSpaceQuota: false,
   });
   eq(fetchFn.calls.length, 0);
+});
+
+console.log("P. No direct download + fair use (2026-11-18)");
+check("miniappSendErrorMessage: E_FAIR_USE names the wait in minutes", () => {
+  const msg = O.miniappSendErrorMessage("E_FAIR_USE", 10);
+  assert.ok(msg.includes("10") && msg.includes("دقيقة"), msg);
+  assert.ok(msg.includes("ليستفيد غيرك"), msg);
+});
+check("miniappSendErrorMessage: E_FAIR_USE without a wait still explains the throttle", () => {
+  const msg = O.miniappSendErrorMessage("E_FAIR_USE");
+  assert.ok(msg.includes("الساعة الأخيرة"), msg);
+});
+check("miniappSendErrorMessage: E_FAIR_USE with a non-number wait falls back to the plain message", () => {
+  const msg = O.miniappSendErrorMessage("E_FAIR_USE", "soon");
+  assert.ok(msg.includes("الساعة الأخيرة") && !msg.includes("soon"), msg);
+});
+check("index.html: no direct EPUB download button (website rule)", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  assert.ok(!html.includes("downloadBtn"), "downloadBtn must not exist");
+  assert.ok(!html.includes("downloadEnhancedBtn"), "downloadEnhancedBtn must not exist");
+  assert.ok(!html.includes("تحميل EPUB"), "no download wording");
+  assert.ok(html.includes("sendKindleBtn"), "the send-to-Kindle button stays");
+  assert.ok(html.includes("لا يوجد تحميل مباشر"), "the no-download note is shown");
+});
+check("convert-app.js: no downloadBlob, no download handlers (website rule)", () => {
+  const js = readFileSync(new URL("./convert-app.js", import.meta.url), "utf8");
+  assert.ok(!js.includes("downloadBlob"), "downloadBlob must be gone");
+  assert.ok(!js.includes("downloadBtn"), "downloadBtn must be gone");
+  assert.ok(!js.includes("downloadEnhancedBtn"), "downloadEnhancedBtn must be gone");
+  assert.ok(js.includes("جارٍ التجهيز"), "the preparing status is shown for catalog books");
+  assert.ok(js.includes("sendToKindle()"), "the catalog flow auto-sends");
+  assert.ok(js.includes("E_FAIR_USE") || js.includes("waitMinutes"), "the send carries the fair-use wait");
 });
 
 await Promise.all(pending);
