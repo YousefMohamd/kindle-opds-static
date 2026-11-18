@@ -288,6 +288,16 @@ export async function onRequest(context) {
   const emailLink = EMAIL_FORMATS.has(book.fmt)
     ? "<p><a href=\"/api/send-to-kindle?" + emailParams + "\">أرسل لميل قارئي — بلا حد يومي (لمن أضاف المرسل من قبل)</a></p>\n"
     : "";
+  // Convert (2026-11-18 rework): UNDER the email link, Telegram PDF
+  // books only — the same identity params as the email link, with
+  // the path swapped to /api/convert-book. The endpoint converts
+  // server-side and emails the EPUB to the linked Kindle email, so
+  // it works from the Kindle itself (no Mini App). Kobo/PocketBook/
+  // generic never reach this (their branches have no email link);
+  // OPDS books have no Telegram identity for the bot's convert job.
+  const convertLink = book.kind === "tg" && book.fmt === "pdf" && emailLink
+    ? "<p><a href=\"/api/convert-book?" + emailParams + "\">🔄 حوّل إلى EPUB وأرسله لميل قارئي</a></p>\n"
+    : "";
 
   const tenMinuteNote = "<p class=\"note\">الرابط يعمل مرة واحدة فقط، خلال 10 دقائق، ولكتاب واحد (5 كتب في اليوم كحد أقصى) — إن استخدمته أو انتهى، عُد هنا واضغط الزر مجدداً.</p>\n";
   const titleLine = title ? "<p>الكتاب: «" + esc(title) + "» (" + esc(fmtLabel) + ")</p>\n" : "";
@@ -377,6 +387,7 @@ export async function onRequest(context) {
       + tenMinuteNote
       + readerLink
       + emailLink
+      + convertLink
       + backLink;
   } else {
     body = "<h1>احصل على الكتاب على جهازك</h1>\n"
@@ -405,6 +416,7 @@ export async function onRequest(context) {
       + "<p class=\"note\">ليس لديك Kindle؟ بعد الخطوة 2 افتح الملف في أي تطبيق قراءة على هاتفك أو حاسوبك — وصل الكتاب إليك، ولا حاجة للخطوتين 3 و 4.</p>\n"
       + readerLink
       + emailLink
+      + convertLink
       + backLink;
   }
   return page("احصل على الكتاب على جهازك", body, 200);

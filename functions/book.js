@@ -889,6 +889,22 @@ export async function onRequest(context) {
         if (sendUrl) {
           body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
         }
+        // Convert (2026-11-18 rework): UNDER the email button, for
+        // Telegram PDF books only — the same gated identity as the
+        // send link (lib=tg&h=&p=&f=pdf&t=...), with the path swapped
+        // to /api/convert-book. The endpoint converts server-side
+        // and emails the EPUB to the linked Kindle email, so it works
+        // from the Kindle itself (no Mini App). Flagged books never
+        // reach this branch; OPDS cards have no r.send and no
+        // Telegram identity, so they get no button either. The
+        // formats array holds one uppercase ext per TG result
+        // (tg-search toResult), so "PDF" is the check.
+        const hasPdf = Array.isArray(r.formats)
+          && r.formats.some((f) => String(f).trim().toLowerCase() === "pdf");
+        if (sendUrl && hasPdf && r.send.indexOf("/api/send-to-kindle?") === 0) {
+          const convertUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/convert-book?")) + fpQ;
+          body += "<p><a class=\"btn\" href=\"" + convertUrl + "\">🔄 حوّل إلى EPUB</a></p>\n";
+        }
         // WS1b: same gate as the OPDS cards — a download button
         // only for an e-reader family UA. A flagged book has no
         // get link at all, so it never gets one here either.

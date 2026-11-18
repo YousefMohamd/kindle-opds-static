@@ -512,5 +512,43 @@ console.log("12. Personal books (own reader link + own download):");
     wrong.status === 403, "status " + wrong.status);
 }
 
+// ================= 13. Convert button under the email link ============
+console.log("13. Convert button under the email link (2026-11-18 rework):");
+{
+  const KINDLE_UA = "Mozilla/5.0 (X11; U; Linux armv7l like Android; en-us) AppleWebKit/531.2+ (KHTML, like Gecko) Version/5.0 Safari/533.2+ Kindle/3.0+";
+  const KOBO_UA = "Kobo Touch 0390/4.45.23684";
+  const env = { RLIBOOK_KV: makeKv(), PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+
+  const tgPdf = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.6.0.1", KINDLE_UA);
+  check("13a TG PDF + Kindle: Convert button present",
+    tgPdf.status === 200 && tgPdf.body.includes("/api/convert-book?lib=tg")
+    && tgPdf.body.includes("🔄 حوّل إلى EPUB"), "status " + tgPdf.status);
+  check("13b TG PDF + Kindle: Convert carries the book identity (h + p + f=pdf)",
+    tgPdf.body.includes("h=kotobkhana") && tgPdf.body.includes("p=9001")
+    && tgPdf.body.includes("f=pdf"));
+  check("13c TG PDF + Kindle: Convert sits UNDER the email link (email first)",
+    tgPdf.body.indexOf("أرسل لميل قارئي") !== -1
+    && tgPdf.body.indexOf("أرسل لميل قارئي") < tgPdf.body.indexOf("🔄 حوّل إلى EPUB"));
+
+  const tgPdfNoUa = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.6.0.2");
+  check("13d TG PDF + no UA (default Kindle): Convert button present",
+    tgPdfNoUa.status === 200 && tgPdfNoUa.body.includes("/api/convert-book?lib=tg"));
+
+  const tgEpub = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "TG EPUB" }, env, "10.6.0.3", KINDLE_UA);
+  check("13e TG EPUB + Kindle: no Convert button (EPUB is not convertible)",
+    tgEpub.status === 200 && !tgEpub.body.includes("/api/convert-book")
+    && tgEpub.body.includes("/api/send-to-kindle"));
+
+  const opdsPdf = await call({ lib: "hindawi", id: "13028368", f: "pdf", t: "OPDS PDF" }, env, "10.6.0.4", KINDLE_UA);
+  check("13f OPDS PDF + Kindle: no Convert button (no Telegram identity)",
+    opdsPdf.status === 200 && !opdsPdf.body.includes("/api/convert-book")
+    && opdsPdf.body.includes("/api/send-to-kindle"));
+
+  const tgPdfKobo = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.6.0.5", KOBO_UA);
+  check("13g TG PDF + Kobo: no Convert button (Kindle email only)",
+    tgPdfKobo.status === 200 && !tgPdfKobo.body.includes("/api/convert-book")
+    && !tgPdfKobo.body.includes("/api/send-to-kindle"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

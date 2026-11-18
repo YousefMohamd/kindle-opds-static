@@ -115,7 +115,23 @@ const TG_META_RESULTS = [
     flagged: false, size: "junk", pages: 0 },
 ];
 
-let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | okMeta | xss
+// Convert button (2026-11-18 rework): one non-flagged Telegram PDF
+// result — the only card that must show the button.
+const TG_PDF_RESULTS = [
+  {
+    title: "كتاب PDF تجريبي",
+    author: "مؤلف تجريبي",
+    source: "kotobkhana",
+    kind: "channel",
+    formats: ["PDF"],
+    flagged: false,
+    get: "/kindle/get?lib=tg&h=kotobkhana&p=9001&f=pdf&t=%D9%83%D8%AA%D8%A7%D8%A8%20PDF%20%D8%AA%D8%AC%D8%B1%D9%8A%D8%A8%D9%8A",
+    send: "/api/send-to-kindle?lib=tg&h=kotobkhana&p=9001&f=pdf&t=%D9%83%D8%AA%D8%A7%D8%A8%20PDF%20%D8%AA%D8%AC%D8%B1%D9%8A%D8%A8%D9%8A",
+    read: null,
+  },
+];
+
+let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | okMeta | xss | okPdf
 let tgCalls = 0;
 let lastTgUrl = "";
 // Ratings mock (Blocks 9): "ok" serves a rating+description for the
@@ -158,6 +174,7 @@ globalThis.fetch = async (u) => {
     if (tgMode === "empty") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 149996, target: 323325, partial: true }, results: [] });
     if (tgMode === "emptyFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: [] });
     if (tgMode === "okFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_OK_RESULTS });
+    if (tgMode === "okPdf") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_PDF_RESULTS });
     if (tgMode === "okMeta") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 5, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_META_RESULTS });
     if (tgMode === "xss") {
       return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, results: [
@@ -1206,6 +1223,32 @@ console.log("O. Book metadata (Workstream 3):");
   check("O23 OPDS card: no metadata line (indexes carry no size/pages)",
     rOpds.status === 200 && !rOpds.body.includes('<p class="meta">')
     && !rOpds.body.includes("الحجم:") && !rOpds.body.includes("عدد الصفحات:"));
+}
+
+console.log("P. Convert button under the email button (2026-11-18 rework):");
+{
+  // A non-flagged Telegram PDF: the button MUST appear, under the
+  // email button, with the same gated identity (lib=tg&h=&p=&f=pdf).
+  tgMode = "okPdf";
+  const r = await getBook("كتاب PDF تجريبي");
+  check("P1 PDF card: 200 + Convert button present",
+    r.status === 200 && r.body.includes("/api/convert-book?lib=tg")
+    && r.body.includes("🔄 حوّل إلى EPUB"), "status " + r.status);
+  check("P2 PDF card: Convert link carries the book identity (h + p + f=pdf)",
+    r.body.includes("h=kotobkhana") && r.body.includes("p=9001")
+    && r.body.includes("f=pdf"));
+  check("P3 PDF card: Convert sits UNDER the email button (email first)",
+    r.body.indexOf("أرسل لميل قارئي") !== -1
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("🔄 حوّل إلى EPUB"));
+  check("P4 PDF card: Convert is a plain GET link (no web_app, Kindle-safe)",
+    r.body.includes('class="btn" href="/api/convert-book?lib=tg'));
+  // The default TG page (EPUB card + flagged PDF card): NO Convert
+  // button anywhere — EPUB is not convertible, flagged is never offered.
+  tgMode = "ok";
+  const r2 = await getBook("Everyone in This Bank Is a Thief");
+  check("P5 EPUB + flagged cards: no Convert button anywhere",
+    r2.status === 200 && !r2.body.includes("/api/convert-book")
+    && !r2.body.includes("🔄 حوّل إلى EPUB"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
