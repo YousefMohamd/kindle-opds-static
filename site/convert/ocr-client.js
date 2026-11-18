@@ -130,6 +130,29 @@ export function meanWordConfidence(words) {
   return sum / n;
 }
 
+/** Overall book accuracy (0–100, rounded) — the mean of the
+ *  per-page measured Tesseract word confidences, the same number
+ *  the bot reports as "الدقة" for a personal conversion. Enhanced
+ *  pages keep their pre-enhancement Tesseract confidence here, so
+ *  this is a lower bound on the final EPUB's quality (the enhanced
+ *  pages were re-read by a stronger engine). Pages without a
+ *  measured confidence (older saved states) are left out. Returns
+ *  null when no page has a measured confidence. */
+export function overallAccuracy(pages) {
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  let sum = 0;
+  let n = 0;
+  for (const p of pages) {
+    const c = p && typeof p.meanConfidence === "number" ? p.meanConfidence : NaN;
+    if (Number.isFinite(c)) {
+      sum += c;
+      n++;
+    }
+  }
+  if (n === 0) return null;
+  return Math.round(sum / n);
+}
+
 /** True when this page should go to the enhancement tiers.
  *  page: { text, meanConfidence? } — meanConfidence is recorded
  *  at OCR time (see convert-app.js ocrPage); pages OCR'd before

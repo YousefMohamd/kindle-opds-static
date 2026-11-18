@@ -75,6 +75,7 @@ import {
   isTelegramWebAppInitData,
   meanWordConfidence,
   miniappSendErrorMessage,
+  overallAccuracy,
   pageNeedsEnhancement,
   parseConvertBookParams,
   routePage,
@@ -451,9 +452,16 @@ function renderProgress() {
   show($("result"), done === total && total > 0);
   updateSendKindleButton();
   if (done === total && total > 0) {
-    const enhancedCount = [...current.pages.values()].filter((p) => p.quality === "enhanced").length;
+    const pages = [...current.pages.values()];
+    const enhancedCount = pages.filter((p) => p.quality === "enhanced").length;
+    // Overall accuracy (v4.8.48) — see overallAccuracy in
+    // ocr-client.js: the mean of the per-page measured Tesseract
+    // word confidences, the same number the bot reports as "الدقة".
+    const accuracy = overallAccuracy(pages);
+    const accLabel = accuracy === null ? "" : `الدقة: ${accuracy}% — `;
     $("resultMeta").textContent =
-      `جودة قياسية (على جهازك) — ${total} صفحة، ` +
+      accLabel +
+      `جودة قياسية (على جهازك)، ${total} صفحة، ` +
       (enhancedCount > 0
         ? `${enhancedCount} صفحة حُسّنت على الخادم (✦).`
         : current.quality === "enhanced"

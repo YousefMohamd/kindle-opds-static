@@ -681,6 +681,15 @@ check("meanWordConfidence: mean, null on no words, ignores non-numeric", () => {
   eq(O.meanWordConfidence([{ confidence: 90 }, { confidence: "x" }, {}]), 90);
   eq(O.meanWordConfidence([{ confidence: NaN }]), null);
 });
+
+check("overallAccuracy: mean of page confidences, null when none measured", () => {
+  eq(O.overallAccuracy([{ meanConfidence: 90 }, { meanConfidence: 80 }, { meanConfidence: 70 }]), 80);
+  eq(O.overallAccuracy([{ meanConfidence: 95 }, { meanConfidence: 60 }, {}]), 78);
+  eq(O.overallAccuracy([{ meanConfidence: 92.4 }, { meanConfidence: 91.6 }]), 92);
+  eq(O.overallAccuracy([]), null);
+  eq(O.overallAccuracy([{}]), null);
+  eq(O.overallAccuracy([{ meanConfidence: NaN }]), null);
+});
 check("pageNeedsEnhancement: strong keeps Tesseract, weak goes to tiers", () => {
   eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 90 }), false);
   eq(O.pageNeedsEnhancement({ text: AR, meanConfidence: 75 }), false); // at threshold = keep
