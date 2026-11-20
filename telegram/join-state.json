@@ -363,20 +363,20 @@
       "folder": "added"
     },
     "pokidz": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "samaheltaweelkidsstories": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "Comics_gate": {
       "status": "pending",
