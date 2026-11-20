@@ -685,16 +685,46 @@ export async function onRequest(context) {
   });
   if (!sendResult.ok) {
     if (sendResult.code === "E_QUEUED") {
+      // v4.8.49 — email-cap overflow (design B.3): the send is queued
+      // for tomorrow, but a Telegram book can reach the reader NOW in
+      // their Telegram chat (free, instant, no email quota). The
+      // button goes to /api/tg-send with the same identity as this
+      // send (lib=tg&h=&p=&f=&t=...&fp=...); the email still arrives
+      // tomorrow, and the page says so. OPDS books and readers
+      // without a fingerprint get no button (the bot has no chat to
+      // send to).
+      const tgOverflow = isTg && fp && tgPostId != null
+        ? "<p>أو احصل عليه <strong>الآن</strong> في تيليجرام — بدون انتظار:</p>\n"
+          + "<p><a class=\"btn\" href=\"/api/tg-send?lib=tg&amp;h=" + encodeURIComponent(tgHandle)
+          + "&amp;p=" + encodeURIComponent(String(tgPostId))
+          + "&amp;f=" + encodeURIComponent(fmt)
+          + "&amp;t=" + encodeURIComponent(title)
+          + "&amp;fp=" + encodeURIComponent(fp) + "\">أرسله لي في تيليجرام</a></p>\n"
+        : "";
       return await queuedPage("⏳ سيصل غداً",
         "<p>⏳ وصلت خدمات البريد الثلاث إلى الحد اليومي، فأجّلنا إرسال «" + esc(title || filename) + "» إلى "
         + "<b>" + esc(maskEmail(kindleEmail)) + "</b> — سيصل غداً، ولا تحتاج إلى فعل شيء.</p>\n"
+        + tgOverflow
         + "<p class=\"note\">تأكد أن <b>send@rlibook.tech</b> مضاف إلى المرسلين المعتمدين "
         + "في amazon.com/myk، حتى يصل الكتاب عند إرساله.</p>\n"
         + "<p><a class=\"btn\" href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n");
     }
     if (sendResult.code === "E_BOTH_EXHAUSTED") {
+      // v4.8.49 — same overflow as E_QUEUED, but here the queue
+      // itself refused the send (full / KV error), so NO email is
+      // coming tomorrow: Telegram direct-send is the only immediate
+      // path, and the page says the email is not queued.
+      const tgOverflow = isTg && fp && tgPostId != null
+        ? "<p>أو احصل عليه <strong>الآن</strong> في تيليجرام — بدون انتظار:</p>\n"
+          + "<p><a class=\"btn\" href=\"/api/tg-send?lib=tg&amp;h=" + encodeURIComponent(tgHandle)
+          + "&amp;p=" + encodeURIComponent(String(tgPostId))
+          + "&amp;f=" + encodeURIComponent(fmt)
+          + "&amp;t=" + encodeURIComponent(title)
+          + "&amp;fp=" + encodeURIComponent(fp) + "\">أرسله لي في تيليجرام</a></p>\n"
+        : "";
       return await failPage("تعذّر الإرسال",
         "<p>وصلت خدمات البريد الثلاث إلى الحد اليومي — جرّب مجدداً غداً.</p>\n"
+        + tgOverflow
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى صفحة الكتاب</a></p>", 502);
     }
     return await failPage("تعذّر الإرسال",

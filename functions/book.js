@@ -914,6 +914,22 @@ export async function onRequest(context) {
         if (sendUrl) {
           actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
         }
+        // Telegram direct-send (v4.8.49 — design B.5): SECOND after
+        // the email button (email stays primary — the only zero-step
+        // path into the Kindle library). The button goes to
+        // /api/tg-send with the same identity as the send link
+        // (lib=tg&h=&p=&f=&t=...) plus the size hint (&s=) the bot
+        // uses for path selection. Gated on fp: without a
+        // fingerprint the bot has no chat to send to, so an
+        // anonymous visitor sees no button (the endpoint would only
+        // show the identity page). Flagged books never reach this
+        // branch; OPDS cards have no r.send and no Telegram
+        // identity, so they get no button either.
+        if (sendUrl && fp && r.send.indexOf("/api/send-to-kindle?") === 0) {
+          const tgSendUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/tg-send?"))
+            + "&amp;s=" + encodeURIComponent(r.size || "") + fpQ;
+          actions += "<p><a class=\"btn\" href=\"" + tgSendUrl + "\">أرسله لي في تيليجرام</a></p>\n";
+        }
         // Convert (2026-11-18 rework): UNDER the email button, for
         // Telegram PDF books only — the same gated identity as the
         // send link (lib=tg&h=&p=&f=pdf&t=...), with the path swapped

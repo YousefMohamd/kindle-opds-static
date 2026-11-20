@@ -766,6 +766,30 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   check("36 all 429: retry still says tomorrow", res2.status === 200 && (await res2.text()).includes("سيصل غداً"));
   check("36 all 429: retry did not add a second queue entry",
     [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:")).length === 1);
+  check("36 all 429: OPDS book — no Telegram button (no Telegram identity)",
+    !body.includes("/api/tg-send?"));
+}
+
+// --- 37. Telegram book, all three 429 -> tomorrow page + Telegram overflow button ---
+{
+  const kv = makeKv({ ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }), ["kindle_email:" + TG_ID]: KINDLE_EMAIL });
+  const { fetchImpl, calls } = makeFetch({ resendStatus: 429, brevoStatus: 429, smtp2goStatus: 429 });
+  const res = await run(
+    makeCtx({ kv, brevoKey: "xkeysib_test_key", smtp2goKey: "api-test-smtp2go-key", fetchImpl, params: TG_PARAMS, proxyBase: PROXY_BASE, proxyKey: PROXY_KEY }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("37 TG all 429: tomorrow page (not an error)", res.status === 200 && body.includes("سيصل غداً"), `status=${res.status}`);
+  check("37 TG all 429: Telegram overflow button present (lib=tg, handle+post+format+fp)",
+    body.includes("/api/tg-send?lib=tg")
+    && body.includes("h=kotobkhana") && body.includes("p=7559")
+    && body.includes("f=epub") && body.includes("fp=" + FP)
+    && body.includes("أرسله لي في تيليجرام"));
+  check("37 TG all 429: the button offers the book NOW (no waiting)",
+    body.includes("الآن"));
+  check("37 TG all 429: the email is still queued for tomorrow too",
+    [...kv.map.keys()].filter((k) => k.startsWith("stk:queue:")).length === 1);
+  check("37 TG all 429: all three providers tried once", calls.resend.length === 1 && calls.brevo.length === 1 && calls.smtp2go.length === 1);
 }
 
 // --- 37. Resend 500 (non-429) -> Brevo fallback still sends ---------------

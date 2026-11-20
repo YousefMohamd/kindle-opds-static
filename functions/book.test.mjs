@@ -341,6 +341,31 @@ tgMode = "ok";
     r.body.length < 8192, r.body.length + " B");
 }
 {
+  // Telegram direct-send button (v4.8.49 — design B.5): SECOND after
+  // the email button on Telegram cards, only when the reader opened
+  // the page with a fingerprint (fp). No 📥 emoji on the website
+  // button (F2: old Kindles render 📥 as tofu — the B1 "no VISIBLE
+  // 📥" check above still holds).
+  tgMode = "ok";
+  const r = await getBook("Everyone in This Bank Is a Thief", "&fp=test-fingerprint");
+  check("B6 tg-send button: present on the Telegram card (lib=tg, handle+post+format+fp)",
+    r.body.includes('class="btn" href="/api/tg-send?lib=tg')
+    && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
+    && r.body.includes("f=epub") && r.body.includes("fp=test-fingerprint")
+    && r.body.includes("أرسله لي في تيليجرام"));
+  check("B6 tg-send button: second — after the email button, before Read online",
+    r.body.indexOf("أرسل لميل قارئي") !== -1
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("أرسله لي في تيليجرام")
+    && r.body.indexOf("أرسله لي في تيليجرام") < r.body.indexOf("اقرأ أونلاين"));
+  check("B6 tg-send button: the flagged card has none (🚩 + View in bot only)",
+    !r.body.includes("/api/tg-send?lib=tg&amp;h=darkromancenovels")
+    && !r.body.includes("/api/tg-send?lib=tg&h=darkromancenovels"));
+  const rNoFp = await getBook("Everyone in This Bank Is a Thief");
+  check("B6 tg-send button: absent without a fingerprint (anonymous visitor)",
+    !rNoFp.body.includes("/api/tg-send?"));
+  tgMode = "ok";
+}
+{
   // Hit page while D1 is still partial: the Telegram half is
   // incomplete, so the partial-import note must appear here too —
   // not only on the no-match page — or "وجدنا N نتيجة" reads as

@@ -375,11 +375,12 @@ async function visibleResults(env, rows, includeUrl) {
   return { results, hiddenCount };
 }
 
-// D1 final-import target (distinct books). The import finishes
-// 2026-11-19; until then D1 holds fewer books and `partial` is true.
-// This is NOT the catalog manifest total (326,149 books on
-// 2026-11-14, and growing) — never conflate the two.
-const D1_FINAL_TARGET = 323325;
+// D1 final-import target (distinct books). The import finished
+// 2026-11-19 at 323,318 books (7 fewer than the 323,325 plan —
+// removed in author cleanup); `partial` is false once D1 holds
+// that many. This is NOT the catalog manifest total (326,149 books
+// on 2026-11-14, and growing) — never conflate the two.
+const D1_FINAL_TARGET = 323318;
 
 // Coverage cache: the D1 indexed count changes once a day (the daily
 // import), not per request — so it is cached in KV (same RLIBOOK_KV
@@ -393,8 +394,15 @@ const D1_FINAL_TARGET = 323325;
 // miss, a KV error, or a malformed cached value, the code falls back
 // to the live COUNT(*) (and best-effort repopulates the cache), so a
 // missing or broken cache can never break a search.
+//
+// 2026-11-20: the 1 h TTL broke live search — the coverage COUNT(*)
+// refreshes up to 24×/day × 323,318 rows = 7.76M rows/day against the
+// D1 free 5M rows/day budget (error 7500), so search died with HTTP
+// 500 for the rest of each day. TTL is now 6 h: at most 4 refreshes/
+// day (~1.29M rows/day), well inside the budget. The count is at most
+// 6 h stale — fine for a completeness indicator.
 const COVERAGE_CACHE_KEY = "tg-search:coverage";
-const COVERAGE_CACHE_TTL_SECONDS = 3600; // 1 h
+const COVERAGE_CACHE_TTL_SECONDS = 21600; // 6 h
 
 // Read the cached coverage count (an integer), or null. Never throws.
 async function coverageCacheGet(env) {

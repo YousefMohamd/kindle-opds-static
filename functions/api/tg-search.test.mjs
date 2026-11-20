@@ -320,15 +320,15 @@ const D1 = mockD1(db);
 // 9. coverage: every ok:true reply reports the D1 snapshot honestly.
 // The test DB holds SAMPLE rows (5000 by default), so indexed must be
 // exactly that — a direct COUNT(*), never the manifest total — and
-// partial must be true while indexed < target (323,325).
+// partial must be true while indexed < target (323,318).
 {
   const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("9a search reply carries coverage", !!body.coverage, JSON.stringify(body.coverage));
   check("9b coverage.indexed is the D1 COUNT(*)",
     body.coverage && body.coverage.indexed === TOTAL_ROWS,
     `indexed=${body.coverage && body.coverage.indexed} rows=${TOTAL_ROWS}`);
-  check("9c coverage.target is the D1 final-import target (323,325)",
-    body.coverage && body.coverage.target === 323325,
+  check("9c coverage.target is the D1 final-import target (323,318)",
+    body.coverage && body.coverage.target === 323318,
     JSON.stringify(body.coverage));
   check("9d coverage.partial true while D1 is incomplete",
     body.coverage && body.coverage.partial === true, JSON.stringify(body.coverage));
@@ -353,7 +353,7 @@ const D1 = mockD1(db);
 }
 
 // 10. coverage cache (P0-2 D1 read-budget fix): the coverage COUNT(*)
-// is a full-table scan (~150k rows), so it is cached in KV for 1 h
+// is a full-table scan (~150k rows), so it is cached in KV for 6 h
 // (key `tg-search:coverage`) and the live COUNT(*) runs only on a
 // cache miss. The response shape is identical either way.
 {
@@ -372,7 +372,7 @@ const D1 = mockD1(db);
     bodyHit.total >= 1 && (bodyHit.results || []).length >= 1, `total=${bodyHit.total}`);
   check("10d cache-hit coverage shape is unchanged",
     bodyHit.coverage && Object.keys(bodyHit.coverage).sort().join(",") === "indexed,partial,target"
-    && bodyHit.coverage.target === 323325 && bodyHit.coverage.partial === true,
+    && bodyHit.coverage.target === 323318 && bodyHit.coverage.partial === true,
     JSON.stringify(bodyHit.coverage));
 
   // 10e: cache miss — the live COUNT(*) runs exactly once and the
@@ -390,8 +390,8 @@ const D1 = mockD1(db);
   check("10g cache miss populates KV with the live count",
     !!written && JSON.parse(written.value).indexed === TOTAL_ROWS,
     JSON.stringify(written && written.value));
-  check("10h cache write carries a 1 h TTL",
-    !!written && written.opts && written.opts.expirationTtl === 3600,
+  check("10h cache write carries a 6 h TTL",
+    !!written && written.opts && written.opts.expirationTtl === 21600,
     JSON.stringify(written && written.opts));
 
   // 10i: malformed cached value -> fall back to the live COUNT(*).
@@ -417,10 +417,10 @@ const D1 = mockD1(db);
 
   // 10l: a cached value at/above the target reports partial: false —
   // the /book partial note self-removes from the cached value too.
-  const kvDone = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 323325, at: Date.now() }) });
+  const kvDone = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 323318, at: Date.now() }) });
   const { body: bodyDone } = await call({ TG_D1: D1, RLIBOOK_KV: kvDone }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("10l cached indexed == target -> partial false",
-    bodyDone.coverage && bodyDone.coverage.indexed === 323325 && bodyDone.coverage.partial === false,
+    bodyDone.coverage && bodyDone.coverage.indexed === 323318 && bodyDone.coverage.partial === false,
     JSON.stringify(bodyDone.coverage));
 }
 
