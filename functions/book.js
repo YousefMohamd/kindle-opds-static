@@ -209,6 +209,36 @@ export function ereaderDownloadLabel(family) {
   return "";
 }
 
+// "Other ways" note (2026-11-20): clarifies the get/download button
+// is NOT the email button — no email is sent. Kindle (and the
+// Telegram Mini App, which uses the Kindle-flow label) goes
+// phone/computer → download → Amazon Send to Kindle for Web;
+// Kobo/PocketBook/generic download straight onto the device.
+export function otherWaysNote(family) {
+  if (family === "kobo" || family === "pocketbook" || family === "generic") {
+    return "بدون إيميل: ده مش زر «أرسل لميل قارئي» — الكتاب بينزّل على جهازك مباشرة، من غير ما يتبعت بالإيميل.";
+  }
+  return "بدون إيميل: ده مش زر «أرسل لميل قارئي» — الإيميل بيوصّل الكتاب لمكتبتك تلقائياً، أما هنا فإنت اللي بتنزّل الكتاب على موبايلك أو كمبيوترك وبعدين بترفعه بنفسك في amazon.com/sendtokindle.";
+}
+
+// Renders the "Other ways" section (2026-11-20): the get/download
+// button moved OUT of the main .actions row, into a visible section
+// directly below it — a real button, not collapsed, not behind a
+// click — with a short note clarifying this is NOT the email path.
+// `buttonHtml` is the button's <p>...</p>; `tgOnly` puts the class
+// on the whole section so a Mini App-only button stays hidden
+// outside Telegram (the label + note must not show without their
+// button). Returns "" when there is no button. Exported for tests.
+export function otherWaysSection(buttonHtml, family, tgOnly) {
+  if (!buttonHtml) return "";
+  const cls = tgOnly ? "other-ways tg-only" : "other-ways";
+  return "<div class=\"" + cls + "\">\n"
+    + "<p class=\"other-ways-label\">طرق أخرى:</p>\n"
+    + buttonHtml
+    + "<p class=\"note\">" + otherWaysNote(family) + "</p>\n"
+    + "</div>\n";
+}
+
 const TG_LIMIT = 10; // Telegram cards per page (OPDS stays capped at 100)
 const MAX_Q_LEN = 200; // A title/author query longer than this is a 400 page, not a search
 
@@ -492,6 +522,9 @@ export async function onRequest(context) {
     + "animation:rlb-rise .25s ease-out both}"
     + ".actions p{margin:0}.actions .btn{margin:0}"
     + ".actions p:first-child .btn{background:#0b5cad}"
+    + ".other-ways{margin:.6rem 0}"
+    + ".other-ways p{margin:.2rem 0}.other-ways .btn{margin:0}"
+    + ".other-ways-label{font-weight:600}"
     + "@supports not (gap:.5rem){.actions p{margin:.2rem 0 .2rem .5rem}.actions p:last-child{margin-left:0}}"
     + "@keyframes rlb-rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}"
     + "@media (prefers-reduced-motion:reduce){.actions{animation:none}}"
@@ -779,9 +812,16 @@ export async function onRequest(context) {
     if (sendUrl) {
       actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
     }
+    // "Other ways" (2026-11-20): the get/download button moved OUT
+    // of the main .actions row, into a visible section directly
+    // below it (otherWaysSection) — a real button, not collapsed —
+    // with a note clarifying it is NOT the email path. The button's
+    // href and fingerprint are unchanged; only its placement moved.
+    let otherWaysBtn = "";
+    let otherWaysTgOnly = false;
     if (getUrl && downloadLabel) {
       anyDownload = true;
-      actions += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+      otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
     }
     // WS3b (Mini App hub): the SAME /kindle/get button, shown ONLY
     // inside Telegram (class tg-only, revealed by telegram-webapp.js
@@ -797,11 +837,16 @@ export async function onRequest(context) {
     // and this button is CSS-hidden outside Telegram. Inside
     // Telegram the button itself is the affordance; the note stays
     // hidden there (it is server-rendered once and cannot be both).
+    // The tg-only class goes on the whole "Other ways" section now
+    // (otherWaysSection), so the label + note never show without
+    // their button outside Telegram.
     if (getUrl && !downloadLabel) {
-      actions += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+      otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+      otherWaysTgOnly = true;
     }
     if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
     if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
+    if (otherWaysBtn) body += otherWaysSection(otherWaysBtn, family, otherWaysTgOnly);
     if (!sendUrl) {
       body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
         + "اطلبه من البوت "
@@ -955,21 +1000,29 @@ export async function onRequest(context) {
         // WS1b: same gate as the OPDS cards — a download button
         // only for an e-reader family UA. A flagged book has no
         // get link at all, so it never gets one here either.
+        // "Other ways" (2026-11-20): the get/download button moved
+        // OUT of the main .actions row, into a visible section
+        // directly below it — same rule as the OPDS cards.
         const getUrl = r.get ? esc(r.get) + fpQ : null;
+        let otherWaysBtn = "";
+        let otherWaysTgOnly = false;
         if (getUrl && downloadLabel) {
           anyDownload = true;
           tgDownload = true;
-          actions += "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+          otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
         }
         // WS3b (Mini App hub): same rule as the OPDS cards — the
         // tg-only button appears only when the UA gate hid the
-        // download button, so the two never duplicate.
+        // download button, so the two never duplicate. The tg-only
+        // class goes on the whole "Other ways" section now.
         if (getUrl && !downloadLabel) {
-          actions += "<p class=\"tg-only\"><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+          otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+          otherWaysTgOnly = true;
         }
         const readerUrl = r.read ? esc(r.read) : null;
         if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
         if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
+        if (otherWaysBtn) body += otherWaysSection(otherWaysBtn, family, otherWaysTgOnly);
         if (!sendUrl) {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "

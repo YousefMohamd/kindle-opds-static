@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, otherWaysSection } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -229,7 +229,7 @@ tgMode = "throw";
     && r.body.includes("أرسل لميل قارئي"));
   check("A1 OPDS title: NO VISIBLE download button without an e-reader UA (WS1b: desktop/no-UA get email + reader only; WS3b: the /kindle/get link is tg-only, hidden outside Telegram)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
-    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
+    && !stripTgOnly(r.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
     && !r.body.includes("نزّل الكتاب على جهاز")
     && !r.body.includes("جرّب تنزيل الكتاب"));
   check("A1 OPDS title: footer promises email only (no 10-minute download mention)",
@@ -315,11 +315,11 @@ tgMode = "ok";
     && r.body.includes("أرسل لميل قارئي"));
   check("B1 TG-only title: NO VISIBLE Get-on-Kindle button without an e-reader UA (WS1b; WS3b: the link is tg-only, hidden outside Telegram)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
-    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=tg")
+    && !stripTgOnly(r.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=tg")
     && !r.body.includes("نزّل الكتاب على جهاز")
     && !r.body.includes("جرّب تنزيل الكتاب"));
-  check("B1 TG-only title: no VISIBLE 📥 without an e-reader UA (F2: old Kindle shows tofu) — only the 📖 reader button (the 📥 lives only inside tg-only paragraphs)",
-    !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("📥") && r.body.includes("📖"));
+  check("B1 TG-only title: no VISIBLE 📥 without an e-reader UA (F2: old Kindle shows tofu) — only the 📖 reader button (the 📥 lives only inside tg-only sections)",
+    !stripTgOnly(r.body).includes("📥") && r.body.includes("📖"));
   check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
     r.body.includes("/site/reader/?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
@@ -327,7 +327,7 @@ tgMode = "ok";
   check("B1 TG-only title: email button comes first, then Read online (the Get in between is tg-only, hidden outside Telegram)",
     r.body.indexOf("أرسل لميل قارئي") !== -1
     && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("اقرأ أونلاين")
-    && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
+    && !stripTgOnly(r.body).includes("احصل على الكتاب على جهازك"));
   check("B1 TG-only title: NO delivery footer note without an e-reader UA (no download button rendered)",
     !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("B1 TG-only title: NO telegram download note without an e-reader UA",
@@ -414,7 +414,7 @@ tgMode = "ok";
     && !r.body.includes("hindawi.org/books/"));
   check("B2 combined query: NO VISIBLE /kindle/get link without an e-reader UA (WS1b; WS3b: tg-only)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
-    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="));
+    && !stripTgOnly(r.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib="));
   check("B2 combined query: NO delivery footer note without an e-reader UA (WS1b)",
     !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("B2 combined query: OPDS EPUB cards have a Read online button",
@@ -422,7 +422,7 @@ tgMode = "ok";
   check("B2 combined query: email button comes first on the OPDS card, then Read online (the Get in between is tg-only)",
     r.body.indexOf("أرسل لميل قارئي") !== -1
     && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("اقرأ أونلاين")
-    && !r.body.replace(/<p class="tg-only">.*?<\/p>/g, "").includes("احصل على الكتاب على جهازك"));
+    && !stripTgOnly(r.body).includes("احصل على الكتاب على جهازك"));
 }
 {
   const r = await getBook("Everyone in This Bank Is a Thief");
@@ -464,7 +464,7 @@ for (const mode of ["503", "500", "malformed"]) {
   check("C2 tg-search 503 + OPDS hit: OPDS card intact, 200",
     r.status === 200 && r.body.includes("لؤلؤة الحب")
     && tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
-    && !r.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
+    && !stripTgOnly(r.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=hindawi")
     && r.body.includes("/api/send-to-kindle?lib=hindawi"));
 }
 {
@@ -862,12 +862,15 @@ tgMode = "throw";
 }
 {
   // No-UA page: the same footer promises email only — no download
-  // sentence, no sendtokindle mention (WS1b).
+  // sentence, no sendtokindle mention (WS1b). The tg-only "Other
+  // ways" note (hidden outside Telegram) does mention sendtokindle
+  // for Mini App users, so the check strips tg-only sections and
+  // asserts on the VISIBLE page.
   const r = await getBook("لؤلؤة الحب");
   check("J1b hit page (no UA): footer is email-only",
     r.body.includes("بلا حد يومي")
-    && !r.body.includes("رابط تنزيل يعمل 10 دقائق")
-    && !r.body.includes("amazon.com/sendtokindle"));
+    && !stripTgOnly(r.body).includes("رابط تنزيل يعمل 10 دقائق")
+    && !stripTgOnly(r.body).includes("amazon.com/sendtokindle"));
 }
 {
   const r = await getBook("");
@@ -1004,13 +1007,13 @@ console.log("L. E-reader family banner:");
     desktop.status === 200 && !desktop.body.includes("أنت على جهاز Kobo")
     && !desktop.body.includes("يبدو أنك على قارئ إلكتروني")
     && tgOnlyGetLinks(desktop.body).all === tgOnlyGetLinks(desktop.body).tgOnly
-    && !desktop.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
+    && !stripTgOnly(desktop.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
     && desktop.body.includes("/api/send-to-kindle?lib="), "status " + desktop.status);
   const noUa = await getBook("لؤلؤة الحب");
   check("L6 no UA: NO banner, NO VISIBLE download button (existing behaviour unchanged; WS3b: tg-only)",
     noUa.status === 200 && !noUa.body.includes("أنت على جهاز Kobo")
     && tgOnlyGetLinks(noUa.body).all === tgOnlyGetLinks(noUa.body).tgOnly
-    && !noUa.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + noUa.status);
+    && !stripTgOnly(noUa.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + noUa.status);
 }
 
 // ============ M. E-reader download button gate (Workstream 1b) ====
@@ -1019,7 +1022,7 @@ console.log("L. E-reader family banner:");
 // email button; Kindle keeps the existing button (its path is
 // phone → Send to Kindle, never a direct download); desktop,
 // mobile, and no-UA visitors get NO VISIBLE download button on
-// the page (every /kindle/get link is inside a tg-only paragraph,
+// the page (every /kindle/get link is inside a tg-only "Other ways" section,
 // hidden outside Telegram — WS3b; no download wording in the
 // footer). A spoofed UA sees the button on purpose (M6) — the
 // gate deters ordinary users; the 10-minute token + 5/day cap +
@@ -1027,12 +1030,25 @@ console.log("L. E-reader family banner:");
 // covered by functions/api/dl-token.test.mjs + get.test.mjs,
 // run unchanged — see the WS1b doc).
 // WS3b helper: count /kindle/get links on a page and how many sit
-// inside a tg-only paragraph. A desktop/mobile page must have every
-// get link tg-only (all === tgOnly) and NO plain visible button.
+// inside a tg-only "Other ways" section. A desktop/mobile page must
+// have every get link tg-only (all === tgOnly) and NO plain visible
+// button. The tg-only class moved from the button's <p> to the whole
+// .other-ways <div> (2026-11-20), so the count matches get links
+// inside <div class="other-ways tg-only">...</div>.
 function tgOnlyGetLinks(body) {
   const all = (body.match(/\/kindle\/get\?lib=/g) || []).length;
-  const tgOnly = (body.match(/class="tg-only"><a class="btn" href="\/kindle\/get\?lib=/g) || []).length;
-  return { all, tgOnly };
+  const visible = stripTgOnly(body);
+  const visibleCount = (visible.match(/\/kindle\/get\?lib=/g) || []).length;
+  return { all, tgOnly: all - visibleCount };
+}
+
+// Strips tg-only "Other ways" sections (hidden outside Telegram) so
+// a check can assert about VISIBLE buttons only. The old
+// <p class="tg-only"> pattern is kept for robustness.
+function stripTgOnly(body) {
+  return body
+    .replace(/<div class="other-ways tg-only">[\s\S]*?<\/div>/g, "")
+    .replace(/<p class="tg-only">.*?<\/p>/g, "");
 }
 
 console.log("M. E-reader download button gate (WS1b):");
@@ -1047,14 +1063,16 @@ console.log("M. E-reader download button gate (WS1b):");
   const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
 
   const kobo = await getBook("Everyone in This Bank Is a Thief", "", KOBO_UA);
-  check("M1 Kobo UA: Kobo button on the Telegram card, under the email button (banner quotes the label too, hence >= 2)",
+  check("M1 Kobo UA: Kobo button on the Telegram card, in 'Other ways' below the row (banner quotes the label too, hence >= 2)",
     kobo.status === 200
     && kobo.body.includes("نزّل الكتاب على جهاز Kobo")
     && (kobo.body.match(/نزّل الكتاب على جهاز Kobo/g) || []).length >= 2
     // lastIndexOf: the banner quotes the same label, so the button
-    // is the LAST occurrence; it must sit after email, before Read.
+    // is the LAST occurrence; it sits in the "Other ways" section
+    // below the .actions row (2026-11-20) — after email AND after
+    // Read online, not between them.
     && kobo.body.indexOf("أرسل لميل قارئي") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo")
-    && kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < kobo.body.indexOf("اقرأ أونلاين"),
+    && kobo.body.indexOf("اقرأ أونلاين") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"),
     "status " + kobo.status);
   check("M1 Kobo UA: Telegram download note + footer download note present, no sendtokindle",
     kobo.body.includes("يجلب الملف من تيليجرام")
@@ -1078,9 +1096,9 @@ console.log("M. E-reader download button gate (WS1b):");
     && !kindle.body.includes("نزّل الكتاب على جهاز"), "status " + kindle.status);
   const desktop = await getBook("Everyone in This Bank Is a Thief", "", DESKTOP_UA);
   const dLinks = tgOnlyGetLinks(desktop.body);
-  check("M5 desktop UA: NO VISIBLE download button — every /kindle/get link is inside a tg-only paragraph (hidden outside Telegram)",
+  check("M5 desktop UA: NO VISIBLE download button — every /kindle/get link is inside a tg-only section (hidden outside Telegram)",
     desktop.status === 200 && dLinks.all > 0 && dLinks.all === dLinks.tgOnly
-    && !desktop.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
+    && !stripTgOnly(desktop.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=")
     && !desktop.body.includes("نزّل الكتاب على جهاز")
     && !desktop.body.includes("جرّب تنزيل الكتاب")
     && !desktop.body.includes("رابط تنزيل يعمل 10 دقائق")
@@ -1091,12 +1109,12 @@ console.log("M. E-reader download button gate (WS1b):");
   const iLinks = tgOnlyGetLinks(iphone.body);
   check("M5b iPhone UA: NO visible download button (every /kindle/get link is tg-only)",
     iphone.status === 200 && iLinks.all === iLinks.tgOnly
-    && !iphone.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + iphone.status + " links=" + JSON.stringify(iLinks));
+    && !stripTgOnly(iphone.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + iphone.status + " links=" + JSON.stringify(iLinks));
   const android = await getBook("لؤلؤة الحب", "", ANDROID_UA);
   const aLinks = tgOnlyGetLinks(android.body);
   check("M5c Android UA: NO visible download button (every /kindle/get link is tg-only)",
     android.status === 200 && aLinks.all === aLinks.tgOnly
-    && !android.body.includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + android.status + " links=" + JSON.stringify(aLinks));
+    && !stripTgOnly(android.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib="), "status " + android.status + " links=" + JSON.stringify(aLinks));
   const spoofed = await getBook("لؤلؤة الحب", "", DESKTOP_UA + " Kobo");
   check("M6 HONEST LIMIT: a desktop UA with 'Kobo' appended DOES see the Kobo button (UA is spoofable — the gate deters, it does not prove)",
     spoofed.status === 200 && spoofed.body.includes("نزّل الكتاب على جهاز Kobo")
@@ -1116,6 +1134,19 @@ console.log("M. E-reader download button gate (WS1b):");
     && ereaderDownloadLabel("kindle") === "📥 احصل على الكتاب على جهازك"
     && ereaderDownloadLabel(null) === ""
     && ereaderDownloadLabel("desktop") === "");
+  check("M8b otherWaysNote unit: Kindle explains the manual Amazon upload, Kobo/PocketBook explain the direct download — both say it is NOT the email button",
+    otherWaysNote("kindle").includes("بدون إيميل")
+    && otherWaysNote("kindle").includes("amazon.com/sendtokindle")
+    && otherWaysNote("kindle").includes("بترفعه بنفسك")
+    && otherWaysNote("kobo").includes("بدون إيميل")
+    && otherWaysNote("kobo").includes("بينزّل على جهازك مباشرة")
+    && !otherWaysNote("kobo").includes("sendtokindle"));
+  check("M8c otherWaysSection unit: visible 'طرق أخرى' section with the button + note; tg-only puts the class on the whole section; empty button renders nothing",
+    otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("طرق أخرى:")
+    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("بدون إيميل")
+    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("class=\"other-ways\"")
+    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", true).includes("class=\"other-ways tg-only\"")
+    && otherWaysSection("", "kindle", false) === "");
 }
 {
   // Kobo UA + OPDS MOBI book (mocked index): still NO download
@@ -1162,8 +1193,8 @@ console.log("N. Mini App hub tg-only button (WS3b):");
     desktop.status === 200 && dLinks.all > 0 && dLinks.all === dLinks.tgOnly,
     "status " + desktop.status + " links=" + JSON.stringify(dLinks));
   check("N1 desktop UA: tg-only button uses the generic Kindle-flow label",
-    desktop.body.includes("class=\"tg-only\"><a class=\"btn\" href=\"/kindle/get?lib=")
-    && desktop.body.includes("احصل على الكتاب على جهازك"));
+    desktop.body.includes("احصل على الكتاب على جهازك")
+    && !stripTgOnly(desktop.body).includes("احصل على الكتاب على جهازك"));
   check("N1 desktop UA: Mini App loader scripts + tg-only CSS in the head",
     desktop.body.includes("https://telegram.org/js/telegram-web-app.js")
     && desktop.body.includes("/site/assets/telegram-webapp.js")
@@ -1179,7 +1210,7 @@ console.log("N. Mini App hub tg-only button (WS3b):");
     && !kindle.body.includes("class=\"tg-only\""));
   check("N4 flagged card: no tg-only button for the flagged book",
     kobo.body.includes("كتاب مُعلَّم تجريبي")
-    && !kobo.body.includes("class=\"tg-only\"><a class=\"btn\" href=\"/kindle/get?lib=tg&amp;h=darkromancenovels"));
+    && !(/<div class="other-ways tg-only">[\s\S]*?darkromancenovels[\s\S]*?<\/div>/.test(kobo.body)));
 }
 
 // Workstream 3: file size (from the index) + page count (no source
@@ -1304,23 +1335,31 @@ console.log("Q. Horizontal action row (2026-11-18):");
     r.body.includes("@media (prefers-reduced-motion:reduce){.actions{animation:none}}"));
   check("Q4 row CSS: hover/tap feedback on .btn",
     r.body.includes(".btn:hover") && r.body.includes(".btn:active{transform:scale(.98)}"));
-  // The TG PDF card's buttons all sit inside ONE .actions row,
-  // email first, Convert next, then the Mini App "get" button.
-  // (Anchor on the Convert button — only this card has one — so
-  // the row found is exactly this card's row, not another card's.
-  // Note the mock has read: null, so this card has no reader
-  // button; the download slot is the tg-only button because the
-  // request carries no e-reader UA.)
+  // The TG PDF card's buttons sit in ONE .actions row — email
+  // first, Convert next — and the get button moved OUT of the row
+  // into a visible "Other ways" section directly below it
+  // (2026-11-20). (Anchor on the Convert button — only this card
+  // has one — so the row found is exactly this card's row, not
+  // another card's. Note the mock has read: null, so this card has
+  // no reader button; the download slot is the tg-only button
+  // because the request carries no e-reader UA.)
   const convPos = r.body.indexOf("🔄 حوّل إلى EPUB");
   const rowStart = r.body.lastIndexOf('<div class="actions">', convPos);
   const rowEnd = r.body.indexOf("</div>", convPos);
   const row = rowStart !== -1 && rowEnd !== -1 ? r.body.slice(rowStart, rowEnd) : "";
-  check("Q5 PDF card: email + Convert + get in ONE .actions row",
+  check("Q5 PDF card: email + Convert in ONE .actions row, get button NOT in the row",
     row.includes("أرسل لميل قارئي") && row.includes("🔄 حوّل إلى EPUB")
-    && row.includes("احصل على الكتاب على جهازك"));
+    && !row.includes("احصل على الكتاب على جهازك"));
   check("Q6 PDF card: email is the first button in the row",
-    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB")
-    && row.indexOf("🔄 حوّل إلى EPUB") < row.indexOf("احصل على الكتاب على جهازك"));
+    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB"));
+  // The "Other ways" section directly below the row holds the get
+  // button (tg-only here — no e-reader UA) with its label + note.
+  const owStart = r.body.indexOf('<div class="other-ways', rowEnd);
+  const owEnd = owStart !== -1 ? r.body.indexOf("</div>", owStart) : -1;
+  const ow = owStart !== -1 && owEnd !== -1 ? r.body.slice(owStart, owEnd) : "";
+  check("Q6b PDF card: get button is in a visible 'Other ways' section directly below the row, with the clarifying note",
+    ow.includes("طرق أخرى:") && ow.includes("احصل على الكتاب على جهازك")
+    && ow.includes("/kindle/get?lib=tg") && ow.includes("بدون إيميل"));
   // Flagged card: the single "View in bot" button is in a row too,
   // and still the ONLY button on the card. (Anchor on the flag note.)
   tgMode = "ok";
@@ -1333,20 +1372,27 @@ console.log("Q. Horizontal action row (2026-11-18):");
     fRow.includes("View in bot") && !fRow.includes("أرسل لميل قارئي")
     && !fRow.includes("اقرأ أونلاين"));
   // OPDS card (Kobo UA, so a download button renders): email +
-  // download + reader in ONE row, email first. (Anchor on the
-  // download button's href — the label text also appears in the
-  // Kobo family note above the cards, so it cannot anchor this.)
+  // reader in ONE row, email first; the download button moved OUT
+  // of the row into a visible "Other ways" section directly below
+  // it (2026-11-20). (Anchor on the download button's href — the
+  // label text also appears in the Kobo family note above the
+  // cards, so it cannot anchor this.)
   tgMode = "throw";
   const KOBO_UA = "Kobo Touch 0390/4.45.23684";
   const r3 = await getBook("لؤلؤة الحب", "", KOBO_UA);
   const dlPos = r3.body.indexOf('href="/kindle/get?lib=hindawi');
-  const oStart = r3.body.lastIndexOf('<div class="actions">', dlPos);
-  const oEnd = r3.body.indexOf("</div>", dlPos);
+  const ow2Start = r3.body.lastIndexOf('<div class="other-ways">', dlPos);
+  const ow2End = ow2Start !== -1 ? r3.body.indexOf("</div>", dlPos) : -1;
+  const ow2 = ow2Start !== -1 && ow2End !== -1 ? r3.body.slice(ow2Start, ow2End) : "";
+  const oStart = ow2Start !== -1 ? r3.body.lastIndexOf('<div class="actions">', ow2Start) : -1;
+  const oEnd = oStart !== -1 ? r3.body.indexOf("</div>", oStart) : -1;
   const oRow = oStart !== -1 && oEnd !== -1 ? r3.body.slice(oStart, oEnd) : "";
-  check("Q8 OPDS card: email + download + reader in ONE .actions row, email first",
-    oRow.includes("أرسل لميل قارئي") && oRow.includes("نزّل الكتاب على جهاز Kobo")
-    && oRow.includes("📖 اقرأ أونلاين")
-    && oRow.indexOf("أرسل لميل قارئي") < oRow.indexOf("نزّل الكتاب على جهاز Kobo"));
+  check("Q8 OPDS card: email + reader in ONE .actions row, email first; download button NOT in the row",
+    oRow.includes("أرسل لميل قارئي") && oRow.includes("📖 اقرأ أونلاين")
+    && !oRow.includes("نزّل الكتاب على جهاز Kobo"));
+  check("Q8b OPDS card: download button is in a visible 'Other ways' section directly below the row, with the clarifying note",
+    ow2.includes("طرق أخرى:") && ow2.includes("نزّل الكتاب على جهاز Kobo")
+    && ow2.includes("/kindle/get?lib=hindawi") && ow2.includes("بدون إيميل"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
