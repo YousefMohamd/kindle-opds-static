@@ -184,6 +184,7 @@
 // Kindle). The button itself never changes — the delivery page
 // carries the per-family behaviour.
 import { detectEReaderFamily } from "./kindle/[[path]].js";
+import { parseCookies, COOKIE_NAME } from "./api/identify.js";
 
 // Device-specific download button label (Workstream 1b —
 // docs/ereader-download-button.md). The download button on a book
@@ -444,7 +445,12 @@ export async function onRequest(context) {
   // book page was opened from a catalog that carries it. The dictionary
   // files already sent link WITHOUT fp — then the page shows the email
   // form instead (see functions/api/send-to-kindle.js).
-  const fp = (url.searchParams.get("fp") || "").trim();
+  // Auto-recognition (2026-11-20): ?fp= wins; otherwise the rlb_fp
+  // cookie set by /api/identify on the first catalog visit — so a
+  // reader who searched from the homepage (no fp in the link) still
+  // gets working Send/Get links.
+  const fp = (url.searchParams.get("fp") || "").trim()
+    || (parseCookies(context.request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
   const fpQ = fp ? "&amp;fp=" + encodeURIComponent(fp) : "";
   // E-reader family banner (see the import above): one line, only
   // for Kobo / PocketBook / generic UAs, inserted after head() on

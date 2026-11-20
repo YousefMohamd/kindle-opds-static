@@ -489,6 +489,20 @@ console.log("12. Personal books (own reader link + own download):");
   const noFpTok = rtokIn(noFpLink);
   check("12b2 readerLinkFor without fp -> library token (not own)",
     noFpTok !== null && (await readerTokenOwn(KEY, noFpTok)) === false);
+  // Auto-recognition (2026-11-20): the rlb_fp cookie set by
+  // /api/identify on the first catalog visit works exactly like ?fp=
+  // on the delivery page — the email link carries the fingerprint
+  // even when the page was opened without ?fp= in the URL.
+  const envCookie = { RLIBOOK_KV: makeKv({}), PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const resCookie = await onRequest({
+    request: new Request(
+      "https://rlibook.tech/kindle/get?lib=tg&h=kotobkhana&p=7559&f=epub&t=" + encodeURIComponent("My Book"),
+      { method: "GET", headers: { "cf-connecting-ip": "1.2.3.4", Cookie: "rlb_fp=cookie-fp-123" } }),
+    env: envCookie,
+  });
+  const bodyCookie = await resCookie.text();
+  check("12c delivery page: email link carries the fingerprint from the rlb_fp cookie (no ?fp=)",
+    resCookie.status === 200 && bodyCookie.includes("fp=cookie-fp-123"));
 }
 {
   // Full page: a flagged TG book renders 200 when fp+t prove it

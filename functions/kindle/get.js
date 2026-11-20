@@ -90,6 +90,7 @@ import {
   READER_TOKEN_TTL_SECONDS,
 } from "../api/dl-token.js";
 import { detectEReaderFamily, EREADER_FAMILIES } from "./[[path]].js";
+import { parseCookies, COOKIE_NAME } from "../api/identify.js";
 
 // Formats Send to Kindle for Web accepts for upload. A book in any
 // other format (MOBI/AZW3/KFX) cannot be uploaded there — its step 3
@@ -200,7 +201,10 @@ export async function onRequest(context) {
   }
   const url = new URL(request.url);
   const title = (url.searchParams.get("t") || "").trim().slice(0, 200);
-  const fp = (url.searchParams.get("fp") || "").trim().slice(0, 128);
+  // Auto-recognition (2026-11-20): ?fp= wins; otherwise the rlb_fp
+  // cookie set by /api/identify on the first catalog visit.
+  const fp = ((url.searchParams.get("fp") || "").trim()
+    || (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim()).slice(0, 128);
   const book = parseBookParams(url.searchParams, { defaultFormat: "epub" });
   if (!book.ok) {
     return page("رابط غير صحيح",

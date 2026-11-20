@@ -363,6 +363,20 @@ tgMode = "ok";
   const rNoFp = await getBook("Everyone in This Bank Is a Thief");
   check("B6 tg-send button: absent without a fingerprint (anonymous visitor)",
     !rNoFp.body.includes("/api/tg-send?"));
+  // Auto-recognition (2026-11-20): the rlb_fp cookie set by
+  // /api/identify on the first catalog visit works exactly like ?fp=
+  // — a reader who searched from the homepage (no fp in the link)
+  // still gets the tg-send button with the fingerprint.
+  const rCookie = await onRequest({
+    request: new Request("https://rlibook.tech/book?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"),
+      { headers: { Cookie: "rlb_fp=cookie-fingerprint" } }),
+    env: {},
+  });
+  const rCookieBody = await rCookie.text();
+  check("B6 tg-send button: present from the rlb_fp cookie (no ?fp= in the URL)",
+    rCookieBody.includes("/api/tg-send?lib=tg")
+    && rCookieBody.includes("fp=cookie-fingerprint")
+    && rCookieBody.includes("أرسله لي في تيليجرام"));
   tgMode = "ok";
 }
 {
