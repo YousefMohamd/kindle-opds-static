@@ -50,6 +50,15 @@
 <h1 style="text-align:center">RliBook</h1>
 <p class="slogan">Reply. Read. Fly. — رد. اقرأ. حلّق.</p>
 
+<!-- IDENTITY-BOX: auto-recognition (2026-11-20). Filled by JS: linked
+     (masked Kindle email), linked-but-no-email, or the "link your
+     account" box (open the catalog first, or a /link code from the
+     bot). Hidden until the /api/identify check answers. -->
+<div id="identity" class="card" hidden>
+  <h2>حسابك</h2>
+  <div id="identity-body"></div>
+</div>
+
 <!-- COVERAGE-WARNING-START (P1-14, 2026-11-17): the catalog coverage is not yet complete. REMOVE this whole block — from this comment to COVERAGE-WARNING-END — when the catalog import completes. -->
 <p id="coverage-warning" class="note" style="text-align:center">⚠️ تنبيه: فهرس الكتب ما زال يُستكمَل — قد لا تجد كل الكتب بعد.</p>
 <!-- COVERAGE-WARNING-END -->
@@ -152,6 +161,65 @@ function esc(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// Identity (auto-recognition, 2026-11-20): the personal catalog file
+// carries ?fp= in its website links. The first visit from the catalog
+// auto-links this browser (the endpoint sets the rlb_fp cookie); later
+// visits are recognised by the cookie. A direct visit without either
+// shows the "link your account" box: open the catalog and tap the
+// website link, or get a code from the bot (/link) and type it here.
+var idBox = document.getElementById("identity");
+var idBody = document.getElementById("identity-body");
+
+function renderIdentity(state) {
+  if (!idBox || !idBody) return;
+  if (state && state.linked && state.email_masked) {
+    idBody.innerHTML = "<p>✅ حسابك مربوط — ميل قارئك: <b>" + esc(state.email_masked) + "</b></p>"
+      + "<p class=\"note\">الموقع هيفتكرك من غير ما تسأل تاني — الكتب هتتبعت لميلك على طول.</p>";
+    idBox.hidden = false;
+  } else if (state && state.linked) {
+    idBody.innerHTML = "<p>✅ حسابك معروف، بس مفيش ميل قارئ مربوط.</p>"
+      + "<p class=\"note\">افتح البوت <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> واربط ميل قارئك (@kindle.com) — وبعدها الموقع هيعرفك.</p>";
+    idBox.hidden = false;
+  } else {
+    idBody.innerHTML = "<p><b>اربط حسابك:</b> شغّل الكتالوج وادخل الموقع أول مرة من جواه — وهيتعرّف عليك وعلى ميل قارئك لوحده.</p>"
+      + "<p class=\"note\">أو خذ كود من البوت (<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> — اكتب <b>/link</b>) واكتبه هنا:</p>"
+      + "<form id=\"linkform\"><input type=\"text\" id=\"linkcode\" inputmode=\"numeric\" maxlength=\"6\" placeholder=\"الكود (6 أرقام)\" aria-label=\"كود الربط\" style=\"font:inherit;padding:.5rem .6rem;border:1px solid #99B6B3;border-radius:6px;width:12rem;max-width:100%;box-sizing:border-box\"> <button class=\"btn\" type=\"submit\">اربط</button></form>"
+      + "<p id=\"linkmsg\" class=\"note\" role=\"status\"></p>";
+    idBox.hidden = false;
+    var form = document.getElementById("linkform");
+    if (form) form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var code = (document.getElementById("linkcode").value || "").trim();
+      var msg = document.getElementById("linkmsg");
+      if (!/^\d{6}$/.test(code)) { if (msg) msg.textContent = "الكود 6 أرقام — اكتبه زي ما البوت بعته."; return; }
+      if (msg) msg.textContent = "جارٍ الربط…";
+      fetch("/api/identify?code=" + encodeURIComponent(code)).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.ok && d.linked) { renderIdentity(d); }
+        else if (msg) { msg.textContent = "الكود غلط أو انتهى (صالح 10 دقايق) — خذ كود جديد من البوت بـ /link."; }
+      }).catch(function () { if (msg) msg.textContent = "تعذّر الربط — جرّب لاحقاً."; });
+    });
+  }
+}
+
+(function identify() {
+  if (!idBox) return;
+  var params = new URLSearchParams(location.search);
+  var fp = (params.get("fp") || "").trim();
+  var url = fp ? "/api/identify?fp=" + encodeURIComponent(fp) : "/api/identify";
+  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    if (fp && d && d.ok && d.linked) {
+      // The fingerprint did its job — strip it from the address bar so
+      // it does not linger in history or get shared by copy-paste.
+      try {
+        params.delete("fp");
+        var qs = params.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+      } catch (e) { /* old browser — harmless */ }
+    }
+    renderIdentity(d);
+  }).catch(function () { /* endpoint down — leave the box hidden */ });
+})();
 
 // OPDS Atom feed -> [{title, author, library, href, format}].
 // getElementsByTagNameNS("*", ...) because entries live in the Atom

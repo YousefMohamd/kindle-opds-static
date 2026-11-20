@@ -42,6 +42,7 @@
 // the file_id cache; this endpoint only pre-checks the shape.
 
 import { isFlaggedBook, isHiddenBook } from "./dl-token.js";
+import { parseCookies, COOKIE_NAME } from "./identify.js";
 
 // The bot worker — the same base [[path]].js uses for the /kindle/
 // delivery page. The website has no env var for it; the URL is
@@ -119,7 +120,11 @@ export async function onRequest(context) {
   const fmt = (url.searchParams.get("f") || "").trim().toLowerCase();
   const title = (url.searchParams.get("t") || "").trim().slice(0, 200);
   const size = (url.searchParams.get("s") || "").trim().slice(0, 32);
-  const fp = (url.searchParams.get("fp") || "").trim();
+  const fp = (url.searchParams.get("fp") || "").trim()
+    // Auto-recognition (2026-11-20): ?fp= wins; otherwise the rlb_fp
+    // cookie set by /api/identify — so a reader recognised on the
+    // homepage does not have to re-open the book from the catalog.
+    || (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
 
   // Telegram books only: OPDS books have no stable Telegram identity
   // for the bot to send to (same rule as the Convert button).
@@ -140,7 +145,7 @@ export async function onRequest(context) {
   if (!fp) {
     return page("نحتاج بصمتك أولاً",
       "<p>لإرسال هذا الكتاب إلى تيليجرام نحتاج أن نعرف من أنت — "
-      + "افتح الكتاب من ملف الكتالوج الخاص بك (أو من البوت) ثم اضغط زر الإرسال مرة أخرى.</p>\n"
+      + "افتح الكتاب من ملف الكتالوج الخاص بك، أو اربط حسابك من الصفحة الرئيسية (أو من البوت) ثم اضغط زر الإرسال مرة أخرى.</p>\n"
       + "<p><a class=\"btn\" href=\"" + BOT_LINK + "\">فتح البوت</a></p>\n"
       + homeLink(), 200);
   }

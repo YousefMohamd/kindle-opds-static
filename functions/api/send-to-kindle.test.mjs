@@ -162,7 +162,7 @@ function makeFetch({ bookBytes = FAKE_EPUB, bookType, bookLength = null, resendS
   return { fetchImpl, calls };
 }
 
-function makeCtx({ kv, apiKey = "re_test_key", brevoKey, smtp2goKey, fetchImpl, params, proxyBase, proxyKey }) {
+function makeCtx({ kv, apiKey = "re_test_key", brevoKey, smtp2goKey, fetchImpl, params, proxyBase, proxyKey, headers = {} }) {
   const url = "https://rlibook.tech/api/send-to-kindle?" + new URLSearchParams(params).toString();
   const env = { RLIBOOK_KV: kv, RESEND_API_KEY: apiKey };
   if (brevoKey !== undefined) env.BREVO_API_KEY = brevoKey;
@@ -170,7 +170,7 @@ function makeCtx({ kv, apiKey = "re_test_key", brevoKey, smtp2goKey, fetchImpl, 
   if (proxyBase !== undefined) env.PROXY_BASE_URL = proxyBase;
   if (proxyKey !== undefined) env.PROXY_SIGNING_KEY = proxyKey;
   return {
-    request: new Request(url, { method: "GET", headers: { "cf-connecting-ip": "1.2.3.4" } }),
+    request: new Request(url, { method: "GET", headers: { "cf-connecting-ip": "1.2.3.4", ...headers } }),
     env,
     _fetchImpl: fetchImpl,
   };
@@ -298,6 +298,52 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
   check("5 unknown fp: 400 + bot hint", res.status === 400 && body.includes("RliBook_bot"));
   check("5 unknown fp: form offered", body.includes("<form"));
   check("5 unknown fp: nothing sent", calls.resend.length === 0);
+}
+
+// --- 5b. rlb_fp cookie resolves the email (auto-recognition) ---------
+{
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID, created_at: "2026-11-12T00:00:00Z" }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "لؤلؤة الحب" }, headers: { Cookie: "rlb_fp=" + FP } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("5b cookie fp: 200 + confirmation (no ?fp= needed)", res.status === 200 && body.includes("تم الإرسال"), `status=${res.status}`);
+  check("5b cookie fp: sent to the cookie owner's Kindle email", calls.resend.length === 1 && calls.resend[0].body.to[0] === KINDLE_EMAIL);
+}
+
+{
+  const kv = makeKv({});
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x" }, headers: { Cookie: "rlb_fp=fp_unknown" } }),
+    fetchImpl,
+  );
+  const body = await res.text();
+  check("5c revoked cookie fp: 400 + bot hint", res.status === 400 && body.includes("RliBook_bot"), `status=${res.status}`);
+  check("5c revoked cookie fp: nothing sent", calls.resend.length === 0);
+}
+
+{
+  // Query ?fp= wins over the cookie (the cookie is only a fallback).
+  const OTHER_FP = "fp_other_token_zzz";
+  const OTHER_EMAIL = "other@kindle.com";
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+    ["fp:" + OTHER_FP]: JSON.stringify({ tg_id: 222 }),
+    ["kindle_email:222"]: OTHER_EMAIL,
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "hindawi", id: "13028368", f: "epub", t: "x", fp: FP }, headers: { Cookie: "rlb_fp=" + OTHER_FP } }),
+    fetchImpl,
+  );
+  check("5d query fp wins over cookie fp", calls.resend.length === 1 && calls.resend[0].body.to[0] === KINDLE_EMAIL, `to=${calls.resend[0] && calls.resend[0].body.to}`);
 }
 
 // --- 6. fp without stored kindle email -> 400 ------------------------------

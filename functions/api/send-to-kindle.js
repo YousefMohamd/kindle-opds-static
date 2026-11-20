@@ -26,11 +26,16 @@
 // successfully for the catalog file (v4.7.3, tested end-to-end
 // 2026-11-12). No new host, no card, no payment, no conversion.
 //
-// Identity (who the Kindle email belongs to) — two ways, first wins:
+// Identity (who the Kindle email belongs to) — three ways, first wins:
 //   1. fp=<fingerprint>: the fingerprint from the user's personal
 //      catalog file. KV fp:<token> -> {"tg_id": N}, then
 //      kindle_email:<tg_id> -> the @kindle.com address the user gave
 //      the bot. No typing, no spoofing another user's address.
+//   1b. rlb_fp cookie (auto-recognition, 2026-11-20): the same
+//      fingerprint, set as a cookie by /api/identify when the reader
+//      first opened the site from the catalog (or linked with a /link
+//      code). Used when ?fp= is absent — so a recognised reader does
+//      not have to re-open the book from the catalog.
 //   2. to=<name@kindle.com>: typed into the form on the /book page.
 //      Only used when no fingerprint is present (the dictionary files
 //      already sent to users link to /book WITHOUT a fingerprint).
@@ -105,6 +110,7 @@
 // honest "not configured" page (503), never silently.
 import { makeToken } from "./dl-token.js";
 import { sendEmailWithFallback } from "./email-send.js";
+import { parseCookies, COOKIE_NAME } from "./identify.js";
 
 export const RESEND_API_URL = "https://api.resend.com/emails";
 export const KINDLE_SENDER = "send@rlibook.tech";
@@ -373,7 +379,11 @@ export async function onRequest(context) {
   const id = (url.searchParams.get("id") || "").trim();
   const fmt = (url.searchParams.get("f") || "").trim().toLowerCase();
   const title = (url.searchParams.get("t") || "").trim().slice(0, 200);
-  const fp = (url.searchParams.get("fp") || "").trim();
+  const fp = (url.searchParams.get("fp") || "").trim()
+    // Auto-recognition (2026-11-20): ?fp= wins; otherwise the rlb_fp
+    // cookie set by /api/identify — so a reader recognised on the
+    // homepage does not have to re-open the book from the catalog.
+    || (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
   const to = (url.searchParams.get("to") || "").trim().toLowerCase();
   // Telegram books (W6): lib=tg&h=<handle>&p=<post_id> instead of id.
   const isTg = lib === "tg";

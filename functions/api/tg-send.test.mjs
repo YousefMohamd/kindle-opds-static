@@ -106,12 +106,12 @@ function makeFetch({ botResult = { ok: true, via: "url" }, botThrows = false } =
   return { fetchImpl, calls };
 }
 
-async function callEndpoint(env, url, fetchImpl, method = "GET") {
+async function callEndpoint(env, url, fetchImpl, method = "GET", headers = {}) {
   const prevFetch = globalThis.fetch;
   globalThis.fetch = fetchImpl;
   try {
     const res = await onRequest({
-      request: new Request(url, { method }),
+      request: new Request(url, { method, headers }),
       env,
     });
     return { status: res.status, text: await res.text() };
@@ -142,6 +142,17 @@ console.log("tg-send endpoint tests:");
   const { status, text } = await callEndpoint(makeEnv(kv), tgSendUrl({ fp: "" }), fetchImpl);
   check("2. no fp -> 200 identity page, no bot call", status === 200 && text.includes("نحتاج بصمتك أولاً") && calls.bot.length === 0, `status=${status}`);
   check("2b. the identity page links the bot", text.includes(BOT_LINK));
+  check("2c. the identity page mentions linking from the homepage", text.includes("الصفحة الرئيسية"));
+}
+
+{
+  // Auto-recognition (2026-11-20): the rlb_fp cookie carries the
+  // fingerprint when ?fp= is absent.
+  const kv = makeKv();
+  const { fetchImpl, calls } = makeFetch();
+  const { status, text } = await callEndpoint(makeEnv(kv), tgSendUrl({ fp: "" }), fetchImpl, "GET", { Cookie: "rlb_fp=" + FP });
+  check("2d. cookie fp -> 200 success page (no ?fp= needed)", status === 200 && text.includes("تم الإرسال إلى تيليجرام"), `status=${status}`);
+  check("2e. the bot call carries the cookie fingerprint", calls.bot.length === 1 && calls.bot[0].body.fp === FP, `bot=${calls.bot.length}`);
 }
 
 {
