@@ -12,8 +12,10 @@
 //        "احصل على الكتاب على جهازك" — which is NOT a direct
 //        download: it opens /kindle/get, whose Kindle steps are
 //        phone → download → Send to Kindle for Web); (2) "أرسل لميل
-//        قارئي" — the Send-to-Kindle email, UNLIMITED, no per-user
-//        cap (the primary path on a Kindle, whose browser cannot
+//        قارئي" — the reader email (Telegram books hand off to the
+//        bot via the send_<handle>_<post> deep link, under the bot's
+//        limits; OPDS books send direct via /api/send-to-kindle —
+//        the primary path on a Kindle, whose browser cannot
 //        download files at all); (3) Convert (Telegram PDF books
 //        only); (4) Report LAST, with the copyright criteria text
 //        next to it, wired to the bot's main-menu Report flow.
@@ -56,7 +58,8 @@
 // Telegram cards are NORMAL cards (title, author, format)
 // with the SAME "أرسل لميل قارئي" primary button as
 // OPDS cards — the button sends the book to the Kindle by email
-// (unlimited, no per-user cap). Under it, the SAME device download
+// (Telegram books via the bot deep link, OPDS books direct).
+// Under it, the SAME device download
 // button as OPDS cards (Workstream 1b: shown only for an e-reader
 // User-Agent — Kobo/PocketBook/generic get a device label, Kindle
 // keeps "احصل على الكتاب على جهازك"; desktop/mobile get none),
@@ -119,7 +122,8 @@
 // download for these books on a Kindle, and the page renders NO direct-download
 // link at all (removed 2026-11-13: device test showed tapping it
 // failed with a white page + error codes 175/101). The PRIMARY path is
-// the Send-to-Kindle email (unlimited, no per-user cap): Amazon
+// the reader email: for OPDS books a direct /api/send-to-kindle
+// send, for Telegram books the bot deep link (botSendLink). Amazon
 // converts EPUB to AZW3/KFX on delivery, straight into the library.
 // The secondary path is the delivery page /kindle/get: a 10-minute
 // short link (max 5 downloads/day). On a Kobo/PocketBook the short
@@ -264,10 +268,27 @@ export function downloadSection(buttonHtml, family, tgOnly) {
 // cards never get this row (already flagged — their only button is
 // "View in bot"). Exported for tests.
 export const BOT_LINK = "https://t.me/RliBook_bot";
+// Bot handoff for the website email button (2026-11-21): a Telegram
+// book's send link (/api/send-to-kindle?lib=tg&h=<handle>&p=<post>)
+// becomes the bot deep link send_<handle>_<post>, so the send falls
+// under the bot's limits (heavy-action bucket 3/hour, fingerprint)
+// instead of calling the endpoint directly. Returns null when the
+// link is not a Telegram send link (OPDS books have no handle/post —
+// no bot deep link exists for them, so they keep the direct link) or
+// when handle/post fail validation — the caller then falls back to
+// the direct link and never renders a broken bot link. Exported for
+// tests.
+export function botSendLink(send) {
+  if (typeof send !== "string" || !send.startsWith("/api/send-to-kindle?")) return null;
+  const q = new URLSearchParams(send.slice("/api/send-to-kindle?".length));
+  const h = q.get("h") || "", p = q.get("p") || "";
+  if (!/^[A-Za-z0-9_]{1,64}$/.test(h) || !/^\d+$/.test(p)) return null;
+  return `https://t.me/RliBook_bot?start=send_${h}_${p}`;
+}
 export const REPORT_CRITERIA = "يُبلَّغ عن الكتاب فقط إذا كان إصداراً حديثاً ما زال يُباع وله طبعة حديثة من دار نشر — أما الكلاسيكيات القديمة والكتب المتاحة مجاناً في المكتبات العامة فلا يُبلَّغ عنها أبداً.";
 export function reportSection() {
   return "<div class=\"report\">\n"
-    + "<p><a class=\"btn\" href=\"" + BOT_LINK + "\">الإبلاغ عن الكتاب</a></p>\n"
+    + "<p><a class=\"btn\" href=\"" + BOT_LINK + "\">🚩 الإبلاغ عن الكتاب</a></p>\n"
     + "<p class=\"note\">" + REPORT_CRITERIA
     + " في البوت اضغط «Report» من القائمة الرئيسية واكتب اسم الكتاب.</p>\n"
     + "</div>\n";
@@ -827,7 +848,8 @@ export async function onRequest(context) {
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
     // Button order (2026-11-21): Download FIRST (the download
     // section, rendered before the row), then email (primary,
-    // unlimited), then Read online, then Report LAST (report
+    // direct /api/send-to-kindle — OPDS books have no handle/post
+    // for the bot deep link), then Read online, then Report LAST (report
     // section, after the row). OPDS cards have no Convert button
     // (/api/convert-book accepts lib=tg only).
     // Metadata (Workstream 3): file size + page count UNDER the format
@@ -894,11 +916,10 @@ export async function onRequest(context) {
   }
 
   // ---- Telegram results: same card layout, same SEND button --------
-  // The button is the send action (via the proxy fetch in
-  // functions/api/send-to-kindle.js, lib=tg); the source is never
-  // rendered (source-hiding, 2026-11-21) — the handle survives only
-  // inside the delivery URLs (h=<handle>) as the delivery identity.
-  // Flagged books get NO send
+  // The button hands off to the bot (botSendLink: the send_
+  // deep link); the source is never rendered (source-hiding,
+  // 2026-11-21) — the handle survives only inside the delivery URLs
+  // (h=<handle>) as the delivery identity. Flagged books get NO send
   // button and NO reading on the website, per the website rule
   // (flagged = shown with a 🚩 flag, reachable via the bot, which
   // enforces the 3/day cap); a book that cannot be sent (private
@@ -989,7 +1010,7 @@ export async function onRequest(context) {
       } else {
         // Button order (2026-11-21): Download FIRST (the download
         // section, rendered before the row), then email (primary
-        // button, unlimited), then the Telegram direct-send
+        // button — bot deep link, see botSendLink), then the Telegram direct-send
         // (same send family), then Convert, then "Read online"
         // (Block 11b reader, EPUB only, never flagged), then
         // Report LAST (report section, after the row). The links
@@ -999,6 +1020,13 @@ export async function onRequest(context) {
         // Get and Send links (fpQ), so a catalog user never
         // re-types their reader email.
         const sendUrl = r.send ? esc(r.send) + fpQ : null;
+        // Email (2026-11-21): Telegram books hand off to the bot
+        // (botSendLink above) — the button opens the send_ deep link
+        // and the send falls under the bot's limits; the direct
+        // /api/send-to-kindle link survives only as the fallback when
+        // the handle/post cannot be parsed. tg-send / Convert below
+        // still derive their identity from r.send itself.
+        const emailUrl = sendUrl ? (botSendLink(r.send) || sendUrl) : null;
         // Action row (2026-11-18): same horizontal .actions row as
         // the OPDS cards — email first (primary), Telegram
         // direct-send next, Convert next, then Read online. The
@@ -1007,8 +1035,8 @@ export async function onRequest(context) {
         // last). Each button's own markup is unchanged; only the
         // wrapper is new.
         let actions = "";
-        if (sendUrl) {
-          actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
+        if (emailUrl) {
+          actions += "<p><a class=\"btn\" href=\"" + emailUrl + "\">أرسل لميل قارئي</a></p>\n";
         }
         // Telegram direct-send (v4.8.49 — design B.5): SECOND after
         // the email button (email stays primary — the only zero-step
@@ -1090,9 +1118,10 @@ export async function onRequest(context) {
   // or a sendable non-flagged Telegram card) — a page with no send
   // button must not promise one. It explains both delivery paths in
   // one place instead of repeating them on every card: email first
-  // (primary, unlimited) and the download link second (5/day).
-  // WS1b: the download sentence appears ONLY when a download button
-  // was actually rendered (anyDownload), and its wording follows the
+  // (primary) and the download link second (5/day). No "unlimited"
+  // claim: Telegram sends now go through the bot (capped), only
+  // OPDS sends are still direct. WS1b: the download sentence appears
+  // ONLY when a download button was actually rendered (anyDownload), and its wording follows the
   // family — Kindle keeps the phone → sendtokindle steps, Kobo /
   // PocketBook / generic get the on-device wording (no sendtokindle:
   // the file lands in the library straight from the device browser).
@@ -1100,8 +1129,7 @@ export async function onRequest(context) {
   const anySend = hits.some(({b}) => TG_SENDABLE_FORMATS.has(fmtCode(b)))
     || tg.results.some((r) => r.send !== null || r.get !== null);
   if (anySend) {
-    body += "<p class=\"note\">الإرسال بالإيميل هو الطريقة الأساسية — بلا حد يومي: أرسل أي عدد "
-      + "من الكتب إلى جهازك، وسيظهر كل كتاب في مكتبتك خلال دقائق. "
+    body += "<p class=\"note\">الإرسال بالإيميل هو الطريقة الأساسية: أرسل الكتاب إلى جهازك، وسيظهر في مكتبتك خلال دقائق. "
       + (anyDownload
         ? family === "kindle"
           ? "أما زر «احصل على الكتاب على جهازك» فيعطيك رابط تنزيل يعمل 10 دقائق "

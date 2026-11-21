@@ -90,21 +90,23 @@
        (4) Report LAST. Each button opens the horizontal pick list
        below it with the books found in this search; picking one
        runs that action through the existing delivery path (download
-       = the /kindle/get delivery page, email = /api/send-to-kindle,
-       convert = /api/convert-book). Flagged books never appear in
+       = the /kindle/get delivery page, email = the bot deep link
+       send_<handle>_<post> for Telegram books, /api/send-to-kindle
+       for OPDS books only — see botSendUrl below, convert =
+       /api/convert-book). Flagged books never appear in
        the list — they keep only their "View in bot" button. -->
   <div id="bookactions" class="bookactions" hidden>
     <div class="actions-bar">
       <button class="btn" type="button" id="act-download">تنزيل الكتاب</button>
       <button class="btn" type="button" id="act-email">أرسل لميل قارئي</button>
       <button class="btn" type="button" id="act-convert">حوّل إلى EPUB</button>
-      <button class="btn" type="button" id="act-report">الإبلاغ عن الكتاب</button>
+      <button class="btn" type="button" id="act-report">🚩 الإبلاغ عن الكتاب</button>
     </div>
     <p class="note report-note" id="report-note" hidden>يُبلَّغ عن الكتاب فقط إذا كان إصداراً حديثاً ما زال يُباع وله طبعة حديثة من دار نشر — أما الكلاسيكيات القديمة والكتب المتاحة مجاناً في المكتبات العامة فلا يُبلَّغ عنها أبداً. اختر الكتاب، ثم في البوت اضغط «Report» من القائمة الرئيسية واكتب اسم الكتاب كما يظهر هنا.</p>
     <div id="picklist" class="picklist" hidden></div>
     <p class="note" id="pickhint" hidden></p>
   </div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «اقرأ أونلاين» لنسخ EPUB.</p>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب إلى مكتبتك، أو «احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «اقرأ أونلاين» لنسخ EPUB.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -171,7 +173,7 @@
 </div>
 
 <p class="note">RliBook — فهرس مجاني للكتب العامة (Public Domain) والمشاع الإبداعي
-(Creative Commons) والكتب القديمة غير التجارية. لا ننشر كتباً تجارية حديثة.</p>
+(Creative Commons) والكتب القديمة المتاحة مجاناً. لا ننشر إصدارات حديثة محمية بحقوق النشر.</p>
 
 <script>
 "use strict";
@@ -377,9 +379,14 @@ function renderGroup(heading, items, tg) {
 //   download: the book's /kindle/get delivery page (TG: the get
 //     link from /api/tg-search; OPDS: /kindle/get?lib=&id=&f=&t=,
 //     built exactly like functions/book.js builds it);
-//   email: /api/send-to-kindle (TG: the send link; OPDS: same
-//     lib/id/f/t shape; the reader email rides the rlb_fp cookie,
-//     as on /book — fp is appended when the catalog gave one);
+//   email: the BOT deep link send_<handle>_<post> for Telegram
+//     books (botSendUrl below parses h/p out of the /api/send-to-kindle
+//     send link — the send then falls under the bot's limits, the
+//     heavy-action bucket + fingerprint — instead of calling the
+//     endpoint directly); OPDS books have no handle/post, so they
+//     keep the direct /api/send-to-kindle link (same lib/id/f/t
+//     shape; the reader email rides the rlb_fp cookie, as on /book
+//     — fp is appended when the catalog gave one);
 //   convert: /api/convert-book, TG PDF books only (the endpoint
 //     accepts lib=tg + pdf + fp only — OPDS books never list);
 //   report: the EXISTING bot report entry — the bot home, where
@@ -399,6 +406,22 @@ var hintEl = document.getElementById("pickhint");
 var reportNoteEl = document.getElementById("report-note");
 var lastBooks = []; // normalized {title, author, flagged, get, send, convert}
 var pickMode = null; // "download" | "email" | "convert" | "report" | null
+
+function botSendUrl(send) {
+  // Bot handoff for the email pick (2026-11-21): a Telegram book's
+  // send link carries lib=tg&h=<handle>&p=<post> — turn it into the
+  // bot deep link https://t.me/RliBook_bot?start=send_<handle>_<post>
+  // so the send falls under the bot's limits instead of calling
+  // /api/send-to-kindle directly. An OPDS send link has no h/p (and
+  // no bot deep link exists for it), so this returns "" and the
+  // caller keeps the direct link. A malformed handle/post also
+  // returns "" — the pick never renders a broken bot link.
+  if (!send || send.indexOf("/api/send-to-kindle?") !== 0) return "";
+  var q = new URLSearchParams(send.slice("/api/send-to-kindle?".length));
+  var h = q.get("h") || "", p = q.get("p") || "";
+  if (!/^[A-Za-z0-9_]{1,64}$/.test(h) || !/^\d+$/.test(p)) return "";
+  return "https://t.me/RliBook_bot?start=send_" + h + "_" + p;
+}
 
 function bookActionUrls(b, tg) {
   // One normalized book -> its existing-path URLs ("" when the
@@ -443,7 +466,9 @@ function setPickMode(mode) {
   var html = "";
   for (var i = 0; i < eligible.length; i++) {
     var b = eligible[i];
-    var href = pickMode === "report" ? "https://t.me/RliBook_bot" : b.urls[urlKey];
+    var href = pickMode === "report" ? "https://t.me/RliBook_bot"
+      : pickMode === "email" ? (botSendUrl(b.urls.send) || b.urls.send)
+      : b.urls[urlKey];
     html += "<a class=\"btn pick\" href=\"" + esc(href) + "\">" + esc(b.title) + "</a>";
   }
   pickEl.innerHTML = html;
@@ -460,7 +485,7 @@ function setPickMode(mode) {
   } else if (pickMode === "download") {
     hintEl.textContent = "اختر الكتاب — سيُفتح رابط التنزيل الخاص به (يعمل 10 دقائق، 5 كتب في اليوم كحد أقصى).";
   } else if (pickMode === "email") {
-    hintEl.textContent = "اختر الكتاب — سيُرسل إلى ميل قارئك (بلا حد يومي).";
+    hintEl.textContent = "اختر الكتاب — سيُرسل إلى ميل قارئك.";
   } else {
     hintEl.textContent = "اختر الكتاب — سيُحوَّل إلى EPUB ويُرسل إلى ميل قارئك.";
   }

@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, downloadSection, reportSection, BOT_LINK, REPORT_CRITERIA } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, downloadSection, reportSection, botSendLink, BOT_LINK, REPORT_CRITERIA } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -233,7 +233,7 @@ tgMode = "throw";
     && !r.body.includes("نزّل الكتاب على جهاز")
     && !r.body.includes("جرّب تنزيل الكتاب"));
   check("A1 OPDS title: footer promises email only (no 10-minute download mention)",
-    r.body.includes("بلا حد يومي") && !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
+    r.body.includes("الإرسال بالإيميل هو الطريقة الأساسية") && !r.body.includes("رابط تنزيل يعمل 10 دقائق"));
   check("A1 OPDS title: NO direct-download link (removed 2026-11-13)",
     !r.body.includes("تنزيل مباشر")
     && !r.body.includes("https://www.hindawi.org/books/13028368.epub")
@@ -309,9 +309,8 @@ tgMode = "ok";
     r.body.includes("من تيليجرام (2 من 42)"));
   check("B1 TG-only title: no source line, no t.me post link anywhere (source-hiding 2026-11-21)",
     !r.body.includes("المصدر:") && !r.body.includes("https://t.me/kotobkhana/7559"));
-  check("B1 TG-only title: email is the PRIMARY button (class btn, lib=tg, handle+post)",
-    r.body.includes('class="btn" href="/api/send-to-kindle?lib=tg')
-    && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
+  check("B1 TG-only title: email is the PRIMARY button (class btn, bot send_ deep link)",
+    r.body.includes('class="btn" href="https://t.me/RliBook_bot?start=send_kotobkhana_7559"')
     && r.body.includes("أرسل لميل قارئي"));
   check("B1 TG-only title: NO VISIBLE Get-on-Kindle button without an e-reader UA (WS1b; WS3b: the link is tg-only, hidden outside Telegram)",
     tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
@@ -718,8 +717,9 @@ console.log("F. Telegram gated-link validation:");
   check("F2 fp passthrough on the Telegram Get link (Kobo UA)",
     r.body.includes("/kindle/get?lib=tg") && r.body.includes("fp=FP1"),
     r.body.slice(r.body.indexOf("/kindle/get?lib=tg"), r.body.indexOf("/kindle/get?lib=tg") + 120));
-  check("F2 fp passthrough on the Telegram Send link",
-    r.body.includes("/api/send-to-kindle?lib=tg") && r.body.includes("fp=FP1"));
+  check("F2 Telegram email button is the bot deep link (no direct /api/send-to-kindle on a TG card)",
+    r.body.includes("https://t.me/RliBook_bot?start=send_kotobkhana_7559")
+    && !r.body.includes("/api/send-to-kindle?lib=tg"));
 }
 
 // ============ H. Reader-link validation (Block 11b reader) =========
@@ -857,8 +857,9 @@ tgMode = "throw";
     r.body.includes("رابط تنزيل يعمل 10 دقائق")
     && r.body.includes("فينزّل الكتاب مباشرة في مكتبتك")
     && !r.body.includes("amazon.com/sendtokindle"));
-  check("J1 hit page: footer states email is unlimited + download is 5/day",
-    r.body.includes("بلا حد يومي")
+  check("J1 hit page: footer states email is the primary path (no unlimited claim — TG sends go via the bot) + download is 5/day",
+    r.body.includes("الإرسال بالإيميل هو الطريقة الأساسية")
+    && !r.body.includes("بلا حد يومي")
     && r.body.includes("5 كتب في اليوم"));
 }
 {
@@ -869,7 +870,8 @@ tgMode = "throw";
   // asserts on the VISIBLE page.
   const r = await getBook("لؤلؤة الحب");
   check("J1b hit page (no UA): footer is email-only",
-    r.body.includes("بلا حد يومي")
+    r.body.includes("الإرسال بالإيميل هو الطريقة الأساسية")
+    && !r.body.includes("بلا حد يومي")
     && !stripTgOnly(r.body).includes("رابط تنزيل يعمل 10 دقائق")
     && !stripTgOnly(r.body).includes("amazon.com/sendtokindle"));
 }
@@ -1104,7 +1106,7 @@ console.log("M. E-reader download button gate (WS1b):");
     && !desktop.body.includes("جرّب تنزيل الكتاب")
     && !desktop.body.includes("رابط تنزيل يعمل 10 دقائق")
     && !desktop.body.includes("يجلب الملف من تيليجرام")
-    && desktop.body.includes("/api/send-to-kindle?lib=")
+    && desktop.body.includes("https://t.me/RliBook_bot?start=send_kotobkhana_7559")
     && desktop.body.includes("اقرأ أونلاين"), "status " + desktop.status + " links=" + JSON.stringify(dLinks));
   const iphone = await getBook("لؤلؤة الحب", "", IPHONE_UA);
   const iLinks = tgOnlyGetLinks(iphone.body);
@@ -1404,7 +1406,7 @@ console.log("R. Report button LAST (2026-11-21) — wired to the existing bot re
   // "تجاري" / "commercial" anywhere in it (standing rule).
   check("R1 reportSection unit: bot link + criteria, no banned word",
     reportSection().includes('href="' + BOT_LINK + '"')
-    && reportSection().includes("الإبلاغ عن الكتاب")
+    && reportSection().includes("🚩 الإبلاغ عن الكتاب")
     && reportSection().includes(REPORT_CRITERIA)
     && BOT_LINK === "https://t.me/RliBook_bot"
     && !REPORT_CRITERIA.includes("تجاري")
@@ -1447,6 +1449,48 @@ console.log("R. Report button LAST (2026-11-21) — wired to the existing bot re
     flagNote !== -1 && !r2.body.slice(flagNote).includes("الإبلاغ عن الكتاب"));
   check("R8 whole page: no 'تجاري' word in any report row",
     !r.body.includes("تجاري") && !r3.body.includes("تجاري"));
+}
+
+// ============ S. Website email -> bot handoff (2026-11-21) =======
+// Telegram books hand off to the bot (send_<handle>_<post>) instead
+// of calling /api/send-to-kindle directly; OPDS books keep the
+// direct link (no handle/post, no bot deep link exists for them).
+// /api/send-to-kindle itself stays: the catalog (/kindle/get) flow,
+// tg-send / convert identity derivation, and the helper imports in
+// convert-book.js / read.js all still use it.
+console.log("S. Bot email handoff:");
+{
+  check("S1 botSendLink unit: TG send link -> bot deep link",
+    botSendLink("/api/send-to-kindle?lib=tg&h=kotobkhana&p=7559&f=epub&t=X")
+      === "https://t.me/RliBook_bot?start=send_kotobkhana_7559");
+  check("S2 botSendLink unit: OPDS send link (no h/p) -> null",
+    botSendLink("/api/send-to-kindle?lib=hindawi&id=13028368&f=epub&t=X") === null);
+  check("S3 botSendLink unit: tampered handle / post -> null",
+    botSendLink("/api/send-to-kindle?lib=tg&h=evil.example&p=1&f=epub&t=X") === null
+    && botSendLink("/api/send-to-kindle?lib=tg&h=s&p=abc&f=epub&t=X") === null
+    && botSendLink("/api/send-to-kindle?lib=tg&h=s&p=1") !== null);
+  check("S4 botSendLink unit: non-send input -> null",
+    botSendLink(null) === null && botSendLink("") === null
+    && botSendLink("/api/tg-send?lib=tg&h=s&p=1&f=epub") === null);
+}
+{
+  // E2E: OPDS card keeps the direct email link; TG card uses the bot.
+  tgMode = "throw";
+  const opds = await getBook("لؤلؤة الحب");
+  check("S5 OPDS card: email button still direct /api/send-to-kindle",
+    opds.body.includes('class="btn" href="/api/send-to-kindle?lib=hindawi')
+    && opds.body.includes("أرسل لميل قارئي"));
+  tgMode = "ok";
+  const tg = await getBook("Everyone in This Bank Is a Thief", "&fp=FP1");
+  check("S6 TG card: email button is the bot link, direct TG send gone",
+    tg.body.includes('class="btn" href="https://t.me/RliBook_bot?start=send_kotobkhana_7559"')
+    && !tg.body.includes("/api/send-to-kindle?lib=tg"));
+  check("S7 TG card: tg-send still derives from the endpoint send link (identity carrier)",
+    tg.body.includes("/api/tg-send?lib=tg"));
+  tgMode = "okPdf";
+  const pdf = await getBook("كتاب PDF تجريبي");
+  check("S8 TG PDF card: convert still derives from the endpoint send link (identity carrier)",
+    pdf.body.includes("/api/convert-book?lib=tg"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

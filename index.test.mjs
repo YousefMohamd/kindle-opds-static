@@ -77,7 +77,7 @@ check("5a action bar exists with the four buttons in exact order",
   bar.includes('id="act-download">تنزيل الكتاب<')
   && bar.includes('id="act-email">أرسل لميل قارئي<')
   && bar.includes('id="act-convert">حوّل إلى EPUB<')
-  && bar.includes('id="act-report">الإبلاغ عن الكتاب<')
+  && bar.includes('id="act-report">🚩 الإبلاغ عن الكتاب<')
   && bar.indexOf("act-download") < bar.indexOf("act-email")
   && bar.indexOf("act-email") < bar.indexOf("act-convert")
   && bar.indexOf("act-convert") < bar.indexOf("act-report"));
@@ -102,6 +102,11 @@ check("5g convert pick is TG PDF only via /api/convert-book",
   && html.includes('return String(f).trim().toLowerCase() === "pdf";'));
 check("5h flagged books are excluded from every pick list",
   html.includes("if (b.flagged) return false;"));
+check("5i email pick hands Telegram books to the bot (send_ deep link); OPDS keeps the direct link",
+  html.includes("function botSendUrl(send)")
+  && html.includes('pickMode === "email" ? (botSendUrl(b.urls.send) || b.urls.send)')
+  && html.includes('"https://t.me/RliBook_bot?start=send_" + h + "_" + p')
+  && !html.includes("سيُرسل إلى ميل قارئك (بلا حد يومي)"));
 
 // 6: Report LAST — copyright criteria next to it, wired to the
 // existing bot report entry (main-menu Report flow, no new backend).
@@ -113,12 +118,13 @@ check("6a criteria text sits next to the Report button",
   && reportNote.includes("المكتبات العامة"));
 check("6b criteria never writes 'تجاري' / 'commercial' (standing rule)",
   !reportNote.includes("تجاري") && !reportNote.toLowerCase().includes("commercial"));
-  // NOTE: the page footer still carries the pre-existing line "لا ننشر
-  // كتباً تجارية حديثة" — policy copy about the catalog, not a book
-  // label, and out of this change's scope; it is not asserted here.
 check("6c report pick opens the bot (existing main-menu Report entry)",
   html.includes('href = pickMode === "report" ? "https://t.me/RliBook_bot"')
   && reportNote.includes("اضغط «Report» من القائمة الرئيسية"));
+check("6d footer policy line rephrased (2026-11-21): no 'تجاري' in the footer, new wording present",
+  html.includes("لا ننشر إصدارات حديثة محمية بحقوق النشر")
+  && html.includes("والكتب القديمة المتاحة مجاناً")
+  && !html.slice(html.indexOf("فهرس مجاني"), html.indexOf("</p>", html.indexOf("فهرس مجاني"))).includes("تجاري"));
 
 // 7: emojis (2026-11-21) — no decorative emoji in hand-written
 // user-facing copy; only 🚩 (the flagged-book marker) survives.
