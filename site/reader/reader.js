@@ -142,7 +142,7 @@
     }).then(function (res) {
       if (res.ok) {
         store.set("rlibook-sync-queue", []);
-        setSyncLine("Synced ✓ — your highlights and progress are on your account.");
+        setSyncLine("Synced — your highlights and progress are on your account.");
       } else if (res.status === 404) {
         // The endpoint is not built yet: keep the queue, say so.
         setSyncLine("Saved on this device. Account sync is not live yet — your highlights are safe here.");
@@ -511,7 +511,7 @@
     var u = user();
     var btn = $("login-btn");
     if (u) {
-      btn.textContent = "👤 " + u.name;
+      btn.textContent = u.name;
       $("login-state").textContent = "Logged in as " + u.name + " (" + u.provider + ").";
       $("logout-btn").style.display = "inline-block";
       setSyncLine(u.provider === "telegram" && u.verified === false
@@ -695,7 +695,7 @@
               })
               .catch(function () {
                 setStatus("Could not open the plain reader — try «احصل على الكتاب على جهازك» on the book page instead.", true);
-                plainLink.textContent = "📖 Read it in the plain reader (PDF / TXT)";
+                plainLink.textContent = "Read it in the plain reader (PDF / TXT)";
               });
           };
         }

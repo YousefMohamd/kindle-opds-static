@@ -7,7 +7,7 @@
 //        the linked Kindle email in a few minutes.
 //
 // WHY THIS EXISTS (the Kindle-direct Convert button): a reader tapping
-// "🔄 Convert" under "📧 أرسل لميل قارئي" on a book card is often ON
+// "Convert" under "أرسل لميل قارئي" on a book card is often ON
 // THE KINDLE ITSELF — and a Kindle browser cannot run the Telegram
 // Mini App, so the web_app button is useless there. This endpoint
 // does the whole tap server-side: it fetches the PDF from the proxy
@@ -121,7 +121,7 @@ function page(title, bodyHtml, status = 200) {
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
     + "<style>" + CSS + "</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
+    + "<h1>RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });

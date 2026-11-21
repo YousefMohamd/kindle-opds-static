@@ -216,7 +216,7 @@ export function kindleEntryPage(request) {
     + ".note{color:#555;font-size:.9rem}"
     + "input[type=search]{font-size:1rem;padding:.4rem;width:70%}"
     + "input[type=submit]{font-size:1rem;padding:.4rem .8rem}</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n"
+    + "<h1>RliBook</h1>\n"
     + banner
     + "<form method=\"get\" action=\"/book\">"
     + "<input type=\"search\" name=\"q\" placeholder=\"ابحث بالعنوان أو المؤلف…\" aria-label=\"بحث\"> "

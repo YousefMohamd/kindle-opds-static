@@ -314,7 +314,7 @@ async function sendToKindle() {
       data = null;
     }
     if (data && data.ok === true) {
-      sendStatus("✅ تم الإرسال إلى إيميل الكيندل — سيصل كتابك إلى مكتبة الكيندل خلال دقائق.", "ok");
+      sendStatus("تم الإرسال إلى إيميل الكيندل — سيصل كتابك إلى مكتبة الكيندل خلال دقائق.", "ok");
     } else if (data && data.ok === false && data.code) {
       sendStatus(miniappSendErrorMessage(data.code, data.waitMinutes), "err");
     } else {
@@ -428,7 +428,7 @@ function pageRow(n, text, script, route, quality) {
   const routeLabel = route.also
     ? `${route.engine} + ${route.also} (mixed page)`
     : route.engine;
-  const qualityLabel = quality === "enhanced" ? `<span class="page-quality">✦ محسّنة</span>` : "";
+  const qualityLabel = quality === "enhanced" ? `<span class="page-quality">محسّنة</span>` : "";
   return (
     `<div class="page-row"><span class="page-n">صفحة ${n}</span>` +
     `<span class="page-script">${script === "arabic" ? "عربية" : script === "latin" ? "إنجليزية" : script === "mixed" ? "مختلطة" : "؟"}</span>` +
@@ -463,7 +463,7 @@ function renderProgress() {
       accLabel +
       `جودة قياسية (على جهازك)، ${total} صفحة، ` +
       (enhancedCount > 0
-        ? `${enhancedCount} صفحة حُسّنت على الخادم (✦).`
+        ? `${enhancedCount} صفحة حُسّنت على الخادم.`
         : current.quality === "enhanced"
           ? "نُسخة محسّنة جاهزة أيضاً."
           : "بلا خادم وبلا بطاقة.");
@@ -505,7 +505,7 @@ async function finishJob() {
       "ok",
     );
   } else {
-    note("اكتمل التحويل — نسخة EPUB جاهزة. استخدم زر «📧 أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.", "ok");
+    note("اكتمل التحويل — نسخة EPUB جاهزة. استخدم زر «أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.", "ok");
   }
   show($("enhanceBox"), true);
   updateEnhanceBox();
@@ -919,7 +919,7 @@ async function autoEnhance() {
     if (fromOcr > 0) parts.push(`${fromOcr} عبر OCR.space`);
     if (fromGpu > 0) parts.push(`${fromGpu} عبر GPU`);
     if (summary.enhanced > 0 && summary.skipped === 0) {
-      setStatus(`✅ حُسّنت ${summary.enhanced} صفحة (${parts.join("، ")}) — نسخة EPUB الحالية تتضمنها.`);
+      setStatus(`حُسّنت ${summary.enhanced} صفحة (${parts.join("، ")}) — نسخة EPUB الحالية تتضمنها.`);
     } else if (summary.enhanced > 0) {
       setStatus(
         `حُسّنت ${summary.enhanced} صفحة (${parts.join("، ")})؛ ${summary.skipped} صفحة بقيت بالجودة القياسية` +
@@ -1024,7 +1024,7 @@ async function requestEnhanced() {
   renderProgress();
   // The enhanced build is now what the send button carries (no
   // direct download on this page — website rule, 2026-11-18).
-  $("enhanceStatus").textContent = "وصلت النسخة المحسّنة (جودة محسّنة) — استخدم زر «📧 أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.";
+  $("enhanceStatus").textContent = "وصلت النسخة المحسّنة (جودة محسّنة) — استخدم زر «أرسل لميل قارئي» لإرسالها إلى إيميل قارئك.";
   updateSendKindleButton();
   btn.disabled = false;
 }

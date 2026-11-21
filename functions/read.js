@@ -122,7 +122,7 @@ function page(title, bodyHtml, status = 200) {
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
     + "<style>" + CSS + "</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
+    + "<h1>RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
     status,
     headers: { "content-type": "text/html; charset=utf-8", ...SECURITY_HEADERS },
   });
@@ -1411,7 +1411,7 @@ export const CLIENT_SCRIPT = "(function(){\n"
   + "span.className='hl-text';span.style.background=colorHex(h.color);\n"
   + "span.textContent=h.text;\n"
   + "li.appendChild(span);\n"
-  + "if(h.note){var n=document.createElement('div');n.textContent='📝 '+h.note;li.appendChild(n);}\n"
+  + "if(h.note){var n=document.createElement('div');n.textContent=h.note;li.appendChild(n);}\n"
   + "var meta=document.createElement('div');meta.className='note';\n"
   + "meta.textContent='الفصل/الصفحة '+h.unit+' · '+(h.createdAt||'').slice(0,10);\n"
   + "li.appendChild(meta);\n"
@@ -1449,7 +1449,7 @@ export const CLIENT_SCRIPT = "(function(){\n"
   + "window.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{\n"
   + "method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'multipart/related; boundary='+boundary},body:body})\n"
   + ".then(function(res){if(!res.ok)throw new Error('http-'+res.status);return res.json();})\n"
-  + ".then(function(){status('تمت المزامنة مع Google Drive ✓ — الملف '+exp.jsonFilename);})\n"
+  + ".then(function(){status('تمت المزامنة مع Google Drive — الملف '+exp.jsonFilename);})\n"
   + ".catch(function(){status('تعذّرت المزامنة مع Google Drive — الملاحظات محفوظة على هذا الجهاز.');});\n"
   + "}\n"
   + "function driveSync(){\n"
@@ -1478,7 +1478,7 @@ export const CLIENT_SCRIPT = "(function(){\n"
   + "if(fhBtn)fhBtn.onclick=function(){\n"
   + "freehand=!freehand;\n"
   + "fhBtn.setAttribute('aria-pressed',freehand?'true':'false');\n"
-  + "fhBtn.textContent=freehand?'✏️ تحديد حر: مفعّل — اسحب بإصبعك على النص':'✏️ تحديد حر';\n"
+  + "fhBtn.textContent=freehand?'تحديد حر: مفعّل — اسحب بإصبعك على النص':'تحديد حر';\n"
   + "try{chapter.style.touchAction=freehand?'none':'';}catch(e){}\n"
   + "status(freehand?'وضع التحديد الحر مفعّل — اسحب بإصبعك على النص لتحديده.':'وضع التحديد الحر متوقف — التحديد العادي يعمل.');\n"
   + "};\n"
@@ -1606,8 +1606,8 @@ export async function onRequest(context) {
   // read-token.js already refuses to mint for it. Applies even to
   // own tokens (see above).
   if (book.kind === "tg" && (await isHiddenBook(env, book.handle, book.postId))) {
-    return page("🚫 كتاب غير متاح",
-      "<p>🚫 هذا الكتاب أزاله المالك، فلم يعد متاحاً.</p>\n"
+    return page("كتاب غير متاح",
+      "<p>هذا الكتاب أزاله المالك، فلم يعد متاحاً.</p>\n"
       + "<p><a href=\"/book\">← رجوع إلى البحث</a></p>\n", 403);
   }
 
@@ -1620,7 +1620,7 @@ export async function onRequest(context) {
   if (!(await verifyReaderToken(signingKey, rtok, book))) {
     return page("رابط القراءة منتهٍ",
       "<p>رابط القراءة هذا منتهٍ أو غير صالح — روابط القراءة تعمل لمدة ساعة واحدة ولكتاب واحد فقط.</p>\n"
-      + "<p>عُد إلى <a href=\"" + deliveryLink + "\">صفحة «احصل على الكتاب على جهازك»</a> واضغط «📖 اقرأ الآن في المتصفح» مجدداً.</p>\n"
+      + "<p>عُد إلى <a href=\"" + deliveryLink + "\">صفحة «احصل على الكتاب على جهازك»</a> واضغط «اقرأ الآن في المتصفح» مجدداً.</p>\n"
       + "<p><a href=\"" + esc(backToBook) + "\">← رجوع</a></p>\n", 403);
   }
 
@@ -1790,17 +1790,17 @@ export async function onRequest(context) {
     .replace("__RENEW_BASE__", JSON.stringify(renewBase))
     .replace("__RTOK__", JSON.stringify(navRtok));
   const toolbar = "<div class=\"toolbar\" id=\"rlb-tools\">\n"
-    + "<button id=\"rlb-freehand\" aria-pressed=\"false\">✏️ تحديد حر</button>\n"
-    + "<button data-color=\"yellow\" aria-pressed=\"true\" style=\"background:#FFE066\" aria-label=\"أصفر\">🟡</button>\n"
-    + "<button data-color=\"green\" aria-pressed=\"false\" style=\"background:#B7E4C7\" aria-label=\"أخضر\">🟢</button>\n"
-    + "<button data-color=\"blue\" aria-pressed=\"false\" style=\"background:#A8D8EA\" aria-label=\"أزرق\">🔵</button>\n"
-    + "<button data-color=\"pink\" aria-pressed=\"false\" style=\"background:#FFC8DD\" aria-label=\"وردي\">🌸</button>\n"
-    + "<button id=\"rlb-highlight\">⭐ تمييز</button>\n"
-    + "<button id=\"rlb-note\">📝 ملاحظة</button>\n"
-    + "<button id=\"rlb-export-json\">📥 تنزيل ملاحظاتي (JSON)</button>\n"
-    + "<button id=\"rlb-export-md\">📥 تنزيل ملاحظاتي (Markdown)</button>\n"
-    + "<button id=\"rlb-drive\">☁️ مزامنة Google Drive</button>\n"
-    + "<button id=\"rlb-clear\">🗑️ مسح الكل</button>\n"
+    + "<button id=\"rlb-freehand\" aria-pressed=\"false\">تحديد حر</button>\n"
+    + "<button data-color=\"yellow\" aria-pressed=\"true\" style=\"background:#FFE066\" aria-label=\"أصفر\">أصفر</button>\n"
+    + "<button data-color=\"green\" aria-pressed=\"false\" style=\"background:#B7E4C7\" aria-label=\"أخضر\">أخضر</button>\n"
+    + "<button data-color=\"blue\" aria-pressed=\"false\" style=\"background:#A8D8EA\" aria-label=\"أزرق\">أزرق</button>\n"
+    + "<button data-color=\"pink\" aria-pressed=\"false\" style=\"background:#FFC8DD\" aria-label=\"وردي\">وردي</button>\n"
+    + "<button id=\"rlb-highlight\">تمييز</button>\n"
+    + "<button id=\"rlb-note\">ملاحظة</button>\n"
+    + "<button id=\"rlb-export-json\">تنزيل ملاحظاتي (JSON)</button>\n"
+    + "<button id=\"rlb-export-md\">تنزيل ملاحظاتي (Markdown)</button>\n"
+    + "<button id=\"rlb-drive\">مزامنة Google Drive</button>\n"
+    + "<button id=\"rlb-clear\">مسح الكل</button>\n"
     + "<p class=\"status\" id=\"rlb-status\">حدّد نصاً بالفأرة أو بإصبعك (أو فعّل «تحديد حر») ثم اضغط «تمييز» أو «ملاحظة». ملاحظاتك تُحفظ على هذا الجهاز فقط.</p>\n"
     + "</div>\n"
     + "<noscript><p class=\"note\">التمييز والملاحظات تحتاج JavaScript — القراءة نفسها تعمل بدونه.</p></noscript>\n";

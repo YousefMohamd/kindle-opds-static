@@ -136,7 +136,7 @@ function page(title, bodyHtml, status = 200) {
     + "<style>" + CSS + "</style>\n"
     + "<script defer src=\"https://telegram.org/js/telegram-web-app.js\"></script>\n"
     + "<script defer src=\"/site/assets/telegram-webapp.js\"></script>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
+    + "<h1>RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
@@ -177,7 +177,7 @@ export async function readerLinkFor(env, book, opts = {}) {
     READER_TOKEN_TTL_SECONDS, undefined, own);
   return "<p><a class=\"btn\" href=\"/read?" + bookQuery(book)
     + "&amp;rtok=" + encodeURIComponent(rtok)
-    + "\">📖 أو اقرأ الآن في المتصفح</a></p>\n";
+    + "\">أو اقرأ الآن في المتصفح</a></p>\n";
 }
 
 /** The Kindle-branch action row (2026-11-18): the page's action
@@ -239,8 +239,8 @@ export async function onRequest(context) {
       // "flagged" first too — so a book with BOTH keys gets
       // the flagged page. This hidden page only shows for a
       // book that is hidden but NOT flagged.
-      return page("🚫 كتاب غير متاح",
-        "<p>🚫 هذا الكتاب أزاله المالك، فلم يعد متاحاً.</p>\n"
+      return page("كتاب غير متاح",
+        "<p>هذا الكتاب أزاله المالك، فلم يعد متاحاً.</p>\n"
         + "<p><a href=\"/book\">← رجوع إلى البحث</a></p>\n", 403);
     }
     if (result.error === "not_configured" || result.error === "proxy_not_configured") {
@@ -329,7 +329,7 @@ export async function onRequest(context) {
   // generic never reach this (their branches have no email link);
   // OPDS books have no Telegram identity for the bot's convert job.
   const convertLink = book.kind === "tg" && book.fmt === "pdf" && emailLink
-    ? "<p><a class=\"btn\" href=\"/api/convert-book?" + emailParams + "\">🔄 حوّل إلى EPUB وأرسله لميل قارئي</a></p>\n"
+    ? "<p><a class=\"btn\" href=\"/api/convert-book?" + emailParams + "\">حوّل إلى EPUB وأرسله لميل قارئي</a></p>\n"
     : "";
 
   const tenMinuteNote = "<p class=\"note\">الرابط يعمل مرة واحدة فقط، خلال 10 دقائق، ولكتاب واحد (5 كتب في اليوم كحد أقصى) — إن استخدمته أو انتهى، عُد هنا واضغط الزر مجدداً.</p>\n";

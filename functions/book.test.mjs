@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, otherWaysSection } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, downloadSection, reportSection, BOT_LINK, REPORT_CRITERIA } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -318,13 +318,14 @@ tgMode = "ok";
     && !stripTgOnly(r.body).includes("<p><a class=\"btn\" href=\"/kindle/get?lib=tg")
     && !r.body.includes("نزّل الكتاب على جهاز")
     && !r.body.includes("جرّب تنزيل الكتاب"));
-  check("B1 TG-only title: no VISIBLE 📥 without an e-reader UA (F2: old Kindle shows tofu) — only the 📖 reader button (the 📥 lives only inside tg-only sections)",
-    !stripTgOnly(r.body).includes("📥") && r.body.includes("📖"));
+  check("B1 TG-only title: no decorative emoji on the page (2026-11-21 — only 🚩 survives)",
+    !r.body.includes("📥") && !r.body.includes("📖") && !r.body.includes("🔄")
+    && r.body.includes("اقرأ أونلاين"));
   check("B1 TG-only title: Read online button present (EPUB -> /site/reader/?lib=tg)",
     r.body.includes("/site/reader/?lib=tg")
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
-    && r.body.includes("📖 اقرأ أونلاين"));
-  check("B1 TG-only title: email button comes first, then Read online (the Get in between is tg-only, hidden outside Telegram)",
+    && r.body.includes("اقرأ أونلاين"));
+  check("B1 TG-only title: email button comes first among VISIBLE buttons, then Read online (the Download section is tg-only, hidden outside Telegram)",
     r.body.indexOf("أرسل لميل قارئي") !== -1
     && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("اقرأ أونلاين")
     && !stripTgOnly(r.body).includes("احصل على الكتاب على جهازك"));
@@ -343,9 +344,9 @@ tgMode = "ok";
 {
   // Telegram direct-send button (v4.8.49 — design B.5): SECOND after
   // the email button on Telegram cards, only when the reader opened
-  // the page with a fingerprint (fp). No 📥 emoji on the website
-  // button (F2: old Kindles render 📥 as tofu — the B1 "no VISIBLE
-  // 📥" check above still holds).
+  // the page with a fingerprint (fp). No emoji on the website
+  // button (2026-11-21 — the B1 "no decorative emoji" check above
+  // still holds).
   tgMode = "ok";
   const r = await getBook("Everyone in This Bank Is a Thief", "&fp=test-fingerprint");
   check("B6 tg-send button: present on the Telegram card (lib=tg, handle+post+format+fp)",
@@ -827,10 +828,10 @@ console.log("I. Review fixes (Area 2):");
 }
 
 // ============ J. Kindle delivery (Get on Kindle) contract =========
-// The PRIMARY button is the email send (/api/send-to-kindle,
-// unlimited); the download button (5/day) renders only for an
-// e-reader UA (WS1b: Kobo/PocketBook/generic get a device label,
-// Kindle keeps "📥 احصل على الكتاب على جهازك"); every dynamic
+// The email send (/api/send-to-kindle, unlimited) is the primary
+// PATH; the download button (5/day) is button (1) and renders only
+// for an e-reader UA (WS1b: Kobo/PocketBook/generic get a device
+// label, Kindle keeps "احصل على الكتاب على جهازك"); every dynamic
 // response is no-store (design §6.2.5).
 console.log("J. Kindle delivery contract:");
 tgMode = "throw";
@@ -843,13 +844,13 @@ tgMode = "throw";
     r.body.includes("/kindle/get?lib=hindawi")
     && r.body.includes("f=epub") && r.body.includes("t="),
     r.body.slice(r.body.indexOf("/kindle/get"), r.body.indexOf("/kindle/get") + 120));
-  check("J1 OPDS card: email button is a .btn and comes first; Kobo download button is a .btn below it",
+  check("J1 OPDS card: Kobo download button is a .btn and comes FIRST (2026-11-21 order); email button is a .btn after it",
     r.body.includes('class="btn" href="/api/send-to-kindle')
     && r.body.includes('class="btn" href="/kindle/get')
     // lastIndexOf: the banner at the top of the page quotes the
     // same label, so the FIRST occurrence is the banner, not the
     // button — the button is the LAST occurrence.
-    && r.body.indexOf("أرسل لميل قارئي") < r.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"));
+    && r.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < r.body.indexOf("أرسل لميل قارئي"));
   check("J1 hit page: cache-control: no-store",
     r.cache === "no-store", r.cache);
   check("J1 hit page (Kobo): footer explains the 10-minute link + on-device download, NO sendtokindle",
@@ -1063,16 +1064,16 @@ console.log("M. E-reader download button gate (WS1b):");
   const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
 
   const kobo = await getBook("Everyone in This Bank Is a Thief", "", KOBO_UA);
-  check("M1 Kobo UA: Kobo button on the Telegram card, in 'Other ways' below the row (banner quotes the label too, hence >= 2)",
+  check("M1 Kobo UA: Kobo button on the Telegram card, in the Download section ABOVE the row (banner quotes the label too, hence >= 2)",
     kobo.status === 200
     && kobo.body.includes("نزّل الكتاب على جهاز Kobo")
     && (kobo.body.match(/نزّل الكتاب على جهاز Kobo/g) || []).length >= 2
     // lastIndexOf: the banner quotes the same label, so the button
-    // is the LAST occurrence; it sits in the "Other ways" section
-    // below the .actions row (2026-11-20) — after email AND after
-    // Read online, not between them.
-    && kobo.body.indexOf("أرسل لميل قارئي") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo")
-    && kobo.body.indexOf("اقرأ أونلاين") < kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo"),
+    // is the LAST occurrence; it sits in the Download section
+    // BEFORE the .actions row (2026-11-21 order) — before email
+    // AND before Read online.
+    && kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < kobo.body.indexOf("أرسل لميل قارئي")
+    && kobo.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < kobo.body.indexOf("اقرأ أونلاين"),
     "status " + kobo.status);
   check("M1 Kobo UA: Telegram download note + footer download note present, no sendtokindle",
     kobo.body.includes("يجلب الملف من تيليجرام")
@@ -1128,10 +1129,10 @@ console.log("M. E-reader download button gate (WS1b):");
     && !kobo.body.includes("/kindle/get?lib=tg&amp;h=darkromancenovels")
     && !kobo.body.includes("/kindle/get?lib=tg&h=darkromancenovels"));
   check("M8 ereaderDownloadLabel unit: kobo/pocketbook/generic/kindle/desktop",
-    ereaderDownloadLabel("kobo") === "📥 نزّل الكتاب على جهاز Kobo"
-    && ereaderDownloadLabel("pocketbook") === "📥 نزّل الكتاب على جهاز PocketBook"
-    && ereaderDownloadLabel("generic") === "📥 جرّب تنزيل الكتاب على جهازك"
-    && ereaderDownloadLabel("kindle") === "📥 احصل على الكتاب على جهازك"
+    ereaderDownloadLabel("kobo") === "نزّل الكتاب على جهاز Kobo"
+    && ereaderDownloadLabel("pocketbook") === "نزّل الكتاب على جهاز PocketBook"
+    && ereaderDownloadLabel("generic") === "جرّب تنزيل الكتاب على جهازك"
+    && ereaderDownloadLabel("kindle") === "احصل على الكتاب على جهازك"
     && ereaderDownloadLabel(null) === ""
     && ereaderDownloadLabel("desktop") === "");
   check("M8b otherWaysNote unit: Kindle explains the manual Amazon upload, Kobo/PocketBook explain the direct download — both say it is NOT the email button",
@@ -1141,12 +1142,12 @@ console.log("M. E-reader download button gate (WS1b):");
     && otherWaysNote("kobo").includes("بدون إيميل")
     && otherWaysNote("kobo").includes("بينزّل على جهازك مباشرة")
     && !otherWaysNote("kobo").includes("sendtokindle"));
-  check("M8c otherWaysSection unit: visible 'طرق أخرى' section with the button + note; tg-only puts the class on the whole section; empty button renders nothing",
-    otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("طرق أخرى:")
-    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("بدون إيميل")
-    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("class=\"other-ways\"")
-    && otherWaysSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", true).includes("class=\"other-ways tg-only\"")
-    && otherWaysSection("", "kindle", false) === "");
+  check("M8c downloadSection unit: visible 'تنزيل الكتاب' section with the button + note; tg-only puts the class on the whole section; empty button renders nothing",
+    downloadSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("تنزيل الكتاب:")
+    && downloadSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("بدون إيميل")
+    && downloadSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", false).includes("class=\"other-ways\"")
+    && downloadSection("<p><a class=\"btn\" href=\"/kindle/get?x=1\">B</a></p>", "kindle", true).includes("class=\"other-ways tg-only\"")
+    && downloadSection("", "kindle", false) === "");
 }
 {
   // Kobo UA + OPDS MOBI book (mocked index): still NO download
@@ -1303,13 +1304,13 @@ console.log("P. Convert button under the email button (2026-11-18 rework):");
   const r = await getBook("كتاب PDF تجريبي");
   check("P1 PDF card: 200 + Convert button present",
     r.status === 200 && r.body.includes("/api/convert-book?lib=tg")
-    && r.body.includes("🔄 حوّل إلى EPUB"), "status " + r.status);
+    && r.body.includes("حوّل إلى EPUB"), "status " + r.status);
   check("P2 PDF card: Convert link carries the book identity (h + p + f=pdf)",
     r.body.includes("h=kotobkhana") && r.body.includes("p=9001")
     && r.body.includes("f=pdf"));
   check("P3 PDF card: Convert sits UNDER the email button (email first)",
     r.body.indexOf("أرسل لميل قارئي") !== -1
-    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("🔄 حوّل إلى EPUB"));
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("حوّل إلى EPUB"));
   check("P4 PDF card: Convert is a plain GET link (no web_app, Kindle-safe)",
     r.body.includes('class="btn" href="/api/convert-book?lib=tg'));
   // The default TG page (EPUB card + flagged PDF card): NO Convert
@@ -1318,7 +1319,7 @@ console.log("P. Convert button under the email button (2026-11-18 rework):");
   const r2 = await getBook("Everyone in This Bank Is a Thief");
   check("P5 EPUB + flagged cards: no Convert button anywhere",
     r2.status === 200 && !r2.body.includes("/api/convert-book")
-    && !r2.body.includes("🔄 حوّل إلى EPUB"));
+    && !r2.body.includes("حوّل إلى EPUB"));
 }
 
 console.log("Q. Horizontal action row (2026-11-18):");
@@ -1336,30 +1337,31 @@ console.log("Q. Horizontal action row (2026-11-18):");
   check("Q4 row CSS: hover/tap feedback on .btn",
     r.body.includes(".btn:hover") && r.body.includes(".btn:active{transform:scale(.98)}"));
   // The TG PDF card's buttons sit in ONE .actions row — email
-  // first, Convert next — and the get button moved OUT of the row
-  // into a visible "Other ways" section directly below it
-  // (2026-11-20). (Anchor on the Convert button — only this card
+  // first, Convert next — and the get button sits in a visible
+  // Download section directly ABOVE the row (2026-11-21 order).
+  // (Anchor on the Convert button — only this card
   // has one — so the row found is exactly this card's row, not
   // another card's. Note the mock has read: null, so this card has
   // no reader button; the download slot is the tg-only button
   // because the request carries no e-reader UA.)
-  const convPos = r.body.indexOf("🔄 حوّل إلى EPUB");
+  const convPos = r.body.indexOf("حوّل إلى EPUB");
   const rowStart = r.body.lastIndexOf('<div class="actions">', convPos);
   const rowEnd = r.body.indexOf("</div>", convPos);
   const row = rowStart !== -1 && rowEnd !== -1 ? r.body.slice(rowStart, rowEnd) : "";
   check("Q5 PDF card: email + Convert in ONE .actions row, get button NOT in the row",
-    row.includes("أرسل لميل قارئي") && row.includes("🔄 حوّل إلى EPUB")
+    row.includes("أرسل لميل قارئي") && row.includes("حوّل إلى EPUB")
     && !row.includes("احصل على الكتاب على جهازك"));
   check("Q6 PDF card: email is the first button in the row",
-    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB"));
-  // The "Other ways" section directly below the row holds the get
+    row.indexOf("أرسل لميل قارئي") < row.indexOf("حوّل إلى EPUB"));
+  // The Download section directly ABOVE the row holds the get
   // button (tg-only here — no e-reader UA) with its label + note.
-  const owStart = r.body.indexOf('<div class="other-ways', rowEnd);
+  const owStart = r.body.indexOf('<div class="other-ways', 0);
   const owEnd = owStart !== -1 ? r.body.indexOf("</div>", owStart) : -1;
   const ow = owStart !== -1 && owEnd !== -1 ? r.body.slice(owStart, owEnd) : "";
-  check("Q6b PDF card: get button is in a visible 'Other ways' section directly below the row, with the clarifying note",
-    ow.includes("طرق أخرى:") && ow.includes("احصل على الكتاب على جهازك")
-    && ow.includes("/kindle/get?lib=tg") && ow.includes("بدون إيميل"));
+  check("Q6b PDF card: get button is in a visible Download section directly ABOVE the row, with the clarifying note",
+    ow.includes("تنزيل الكتاب:") && ow.includes("احصل على الكتاب على جهازك")
+    && ow.includes("/kindle/get?lib=tg") && ow.includes("بدون إيميل")
+    && owEnd < rowStart);
   // Flagged card: the single "View in bot" button is in a row too,
   // and still the ONLY button on the card. (Anchor on the flag note.)
   tgMode = "ok";
@@ -1372,11 +1374,11 @@ console.log("Q. Horizontal action row (2026-11-18):");
     fRow.includes("View in bot") && !fRow.includes("أرسل لميل قارئي")
     && !fRow.includes("اقرأ أونلاين"));
   // OPDS card (Kobo UA, so a download button renders): email +
-  // reader in ONE row, email first; the download button moved OUT
-  // of the row into a visible "Other ways" section directly below
-  // it (2026-11-20). (Anchor on the download button's href — the
-  // label text also appears in the Kobo family note above the
-  // cards, so it cannot anchor this.)
+  // reader in ONE row, email first; the download button sits in a
+  // visible Download section directly ABOVE the row (2026-11-21
+  // order). (Anchor on the download button's href — the label text
+  // also appears in the Kobo family note above the cards, so it
+  // cannot anchor this.)
   tgMode = "throw";
   const KOBO_UA = "Kobo Touch 0390/4.45.23684";
   const r3 = await getBook("لؤلؤة الحب", "", KOBO_UA);
@@ -1384,15 +1386,67 @@ console.log("Q. Horizontal action row (2026-11-18):");
   const ow2Start = r3.body.lastIndexOf('<div class="other-ways">', dlPos);
   const ow2End = ow2Start !== -1 ? r3.body.indexOf("</div>", dlPos) : -1;
   const ow2 = ow2Start !== -1 && ow2End !== -1 ? r3.body.slice(ow2Start, ow2End) : "";
-  const oStart = ow2Start !== -1 ? r3.body.lastIndexOf('<div class="actions">', ow2Start) : -1;
+  const oStart = ow2End !== -1 ? r3.body.indexOf('<div class="actions">', ow2End) : -1;
   const oEnd = oStart !== -1 ? r3.body.indexOf("</div>", oStart) : -1;
   const oRow = oStart !== -1 && oEnd !== -1 ? r3.body.slice(oStart, oEnd) : "";
   check("Q8 OPDS card: email + reader in ONE .actions row, email first; download button NOT in the row",
-    oRow.includes("أرسل لميل قارئي") && oRow.includes("📖 اقرأ أونلاين")
+    oRow.includes("أرسل لميل قارئي") && oRow.includes("اقرأ أونلاين")
     && !oRow.includes("نزّل الكتاب على جهاز Kobo"));
-  check("Q8b OPDS card: download button is in a visible 'Other ways' section directly below the row, with the clarifying note",
-    ow2.includes("طرق أخرى:") && ow2.includes("نزّل الكتاب على جهاز Kobo")
-    && ow2.includes("/kindle/get?lib=hindawi") && ow2.includes("بدون إيميل"));
+  check("Q8b OPDS card: download button is in a visible Download section directly ABOVE the row, with the clarifying note",
+    ow2.includes("تنزيل الكتاب:") && ow2.includes("نزّل الكتاب على جهاز Kobo")
+    && ow2.includes("/kindle/get?lib=hindawi") && ow2.includes("بدون إيميل")
+    && ow2End < oStart);
+}
+
+console.log("R. Report button LAST (2026-11-21) — wired to the existing bot report entry:");
+{
+  // Unit: the report row is a bot link + the criteria text, with no
+  // "تجاري" / "commercial" anywhere in it (standing rule).
+  check("R1 reportSection unit: bot link + criteria, no banned word",
+    reportSection().includes('href="' + BOT_LINK + '"')
+    && reportSection().includes("الإبلاغ عن الكتاب")
+    && reportSection().includes(REPORT_CRITERIA)
+    && BOT_LINK === "https://t.me/RliBook_bot"
+    && !REPORT_CRITERIA.includes("تجاري")
+    && !REPORT_CRITERIA.toLowerCase().includes("commercial"));
+  check("R2 criteria text: recent + still sold + recent edition + publisher; PD classics never reportable",
+    REPORT_CRITERIA.includes("إصداراً حديثاً ما زال يُباع")
+    && REPORT_CRITERIA.includes("طبعة حديثة من دار نشر")
+    && REPORT_CRITERIA.includes("الكلاسيكيات القديمة")
+    && REPORT_CRITERIA.includes("المكتبات العامة"));
+  // E2E, TG PDF card (no e-reader UA — download section is tg-only
+  // but still in the HTML, so order is checkable): Download <
+  // email < Convert < Report, Report last.
+  tgMode = "okPdf";
+  const r = await getBook("كتاب PDF تجريبي");
+  check("R3 TG PDF card: Report button present, after Convert",
+    r.status === 200 && r.body.includes("الإبلاغ عن الكتاب")
+    && r.body.indexOf("حوّل إلى EPUB") < r.body.indexOf("الإبلاغ عن الكتاب"));
+  check("R4 TG PDF card: full button order — Download < email < Convert < Report (last)",
+    r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("أرسل لميل قارئي")
+    && r.body.indexOf("أرسل لميل قارئي") < r.body.indexOf("حوّل إلى EPUB")
+    && r.body.indexOf("حوّل إلى EPUB") < r.body.indexOf("الإبلاغ عن الكتاب")
+    && r.body.lastIndexOf("الإبلاغ عن الكتاب") > r.body.lastIndexOf("حوّل إلى EPUB"));
+  check("R5 TG PDF card: criteria text next to the Report button",
+    r.body.includes(REPORT_CRITERIA)
+    && r.body.indexOf(REPORT_CRITERIA) > r.body.indexOf("الإبلاغ عن الكتاب"));
+  // E2E, OPDS card (Kobo UA): Download < email < Read online < Report.
+  tgMode = "throw";
+  const r3 = await getBook("لؤلؤة الحب", "", "Kobo Touch 0390/4.45.23684");
+  check("R6 OPDS card: Report button present, last after Read online",
+    r3.status === 200 && r3.body.includes("الإبلاغ عن الكتاب")
+    && r3.body.lastIndexOf("نزّل الكتاب على جهاز Kobo") < r3.body.indexOf("أرسل لميل قارئي")
+    && r3.body.indexOf("أرسل لميل قارئي") < r3.body.indexOf("اقرأ أونلاين")
+    && r3.body.indexOf("اقرأ أونلاين") < r3.body.indexOf("الإبلاغ عن الكتاب"));
+  // Flagged card: NO Report button — already flagged, its only
+  // button stays "View in bot" (slice from the flag note onward).
+  tgMode = "ok";
+  const r2 = await getBook("Everyone in This Bank Is a Thief");
+  const flagNote = r2.body.indexOf("🚩 هذا الكتاب عليه علامة");
+  check("R7 flagged card: no Report button (🚩 + View in bot only)",
+    flagNote !== -1 && !r2.body.slice(flagNote).includes("الإبلاغ عن الكتاب"));
+  check("R8 whole page: no 'تجاري' word in any report row",
+    !r.body.includes("تجاري") && !r3.body.includes("تجاري"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

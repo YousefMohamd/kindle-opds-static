@@ -39,6 +39,21 @@
   .flag { color: #8a3b00; font-weight: 700; }
   .notfound { background: #f6f0dc; border: 1px solid #d8cfae;
               border-radius: 6px; padding: 0.8rem 1rem; margin-top: 0.8rem; }
+  /* Search-result actions (2026-11-21): the four buttons in exact
+     order — Download, Send to email, Convert, Report last — plus
+     the horizontal pick list a button opens. The list scrolls
+     sideways so every found book is one tap away on a narrow
+     e-reader screen; it never wraps into a tall stack. */
+  .bookactions { margin: 1rem 0 0.2rem; }
+  .bookactions .actions-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .bookactions .actions-bar .btn { margin: 0; }
+  .picklist { display: flex; gap: 0.5rem; overflow-x: auto;
+              padding: 0.6rem 0.1rem; margin: 0.4rem 0; }
+  .picklist .btn { flex: 0 0 auto; margin: 0; white-space: nowrap;
+                   max-width: 16rem; overflow: hidden;
+                   text-overflow: ellipsis; }
+  .report-note { background: #f6f0dc; border: 1px solid #d8cfae;
+                 border-radius: 6px; padding: 0.6rem 0.8rem; }
 </style>
 <!-- Telegram Mini App (v4.8.44): the official Telegram WebApp script + RliBook's init
      (theme, Back button, viewport). No-ops outside Telegram. -->
@@ -70,7 +85,26 @@
   </form>
   <p id="status" class="note" role="status"></p>
   <div id="results"></div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «📥 احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «📖 اقرأ أونلاين» لنسخ EPUB.</p>
+  <!-- SEARCH ACTIONS (2026-11-21): the four search-result buttons in
+       exact order — (1) Download, (2) Send to email, (3) Convert,
+       (4) Report LAST. Each button opens the horizontal pick list
+       below it with the books found in this search; picking one
+       runs that action through the existing delivery path (download
+       = the /kindle/get delivery page, email = /api/send-to-kindle,
+       convert = /api/convert-book). Flagged books never appear in
+       the list — they keep only their "View in bot" button. -->
+  <div id="bookactions" class="bookactions" hidden>
+    <div class="actions-bar">
+      <button class="btn" type="button" id="act-download">تنزيل الكتاب</button>
+      <button class="btn" type="button" id="act-email">أرسل لميل قارئي</button>
+      <button class="btn" type="button" id="act-convert">حوّل إلى EPUB</button>
+      <button class="btn" type="button" id="act-report">الإبلاغ عن الكتاب</button>
+    </div>
+    <p class="note report-note" id="report-note" hidden>يُبلَّغ عن الكتاب فقط إذا كان إصداراً حديثاً ما زال يُباع وله طبعة حديثة من دار نشر — أما الكلاسيكيات القديمة والكتب المتاحة مجاناً في المكتبات العامة فلا يُبلَّغ عنها أبداً. اختر الكتاب، ثم في البوت اضغط «Report» من القائمة الرئيسية واكتب اسم الكتاب كما يظهر هنا.</p>
+    <div id="picklist" class="picklist" hidden></div>
+    <p class="note" id="pickhint" hidden></p>
+  </div>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب مباشرة إلى مكتبتك (الإرسال بالإيميل بلا حد يومي)، أو «احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «اقرأ أونلاين» لنسخ EPUB.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -113,7 +147,7 @@
 </div>
 
 <div class="card" id="qurans">
-  <h2>📖 المصاحف الإلكترونية</h2>
+  <h2>المصاحف الإلكترونية</h2>
   <p>اختر المصحف والرواية والتفسير الذي تحبه — حفص أو ورش، عربي أو ثنائي اللغة أو تفاعلي.</p>
   <p><a class="btn" href="/qurans/">تصفّح المصاحف ←</a></p>
 </div>
@@ -145,6 +179,10 @@
 // (OPDS libraries: khazendar, sahwa, electronic, hindawi, doab).
 // Plain fetch + DOMParser, no framework — must work in the Kindle browser.
 // Wikisource is browse-only (no search index) and is not queried here.
+// Catalog fingerprint (?fp=), captured BEFORE the identify step below
+// strips it from the address bar — the Convert pick needs it in the
+// query string (/api/convert-book takes fp from the query only).
+var catalogFp = (new URLSearchParams(location.search).get("fp") || "").trim();
 var qEl = document.getElementById("q");
 var statusEl = document.getElementById("status");
 var resEl = document.getElementById("results");
@@ -168,11 +206,11 @@ var idBody = document.getElementById("identity-body");
 function renderIdentity(state) {
   if (!idBox || !idBody) return;
   if (state && state.linked && state.email_masked) {
-    idBody.innerHTML = "<p>✅ حسابك مربوط — ميل قارئك: <b>" + esc(state.email_masked) + "</b></p>"
+    idBody.innerHTML = "<p>حسابك مربوط — ميل قارئك: <b>" + esc(state.email_masked) + "</b></p>"
       + "<p class=\"note\">الموقع هيفتكرك من غير ما تسأل تاني — الكتب هتتبعت لميلك على طول.</p>";
     idBox.hidden = false;
   } else if (state && state.linked) {
-    idBody.innerHTML = "<p>✅ حسابك معروف، بس مفيش ميل قارئ مربوط.</p>"
+    idBody.innerHTML = "<p>حسابك معروف، بس مفيش ميل قارئ مربوط.</p>"
       + "<p class=\"note\">افتح البوت <a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> واربط ميل قارئك (@kindle.com) — وبعدها الموقع هيعرفك.</p>";
     idBox.hidden = false;
   } else {
@@ -243,11 +281,26 @@ function parseOpds(xmlText) {
     }
     var cat = e.getElementsByTagNameNS("*", "category")[0] ||
             e.getElementsByTagName("category")[0];
+    // Entry id is urn:drive:<id> / urn:hindawi:<id> / urn:doab:<url>
+    // (see functions/opds/search.js) — the raw id is what the
+    // delivery endpoints take (lib + id), never the urn itself.
+    var rawId = text("id").replace(/^urn:(drive|hindawi|doab):/, "");
+    var libLabel = cat ? (cat.getAttribute("term") || "") : "";
     out.push({ title: text("title"), author: text("author"),
-               library: cat ? (cat.getAttribute("term") || "") : "",
+               library: libLabel, slug: opdsSlug(libLabel),
+               id: rawId,
                href: href, format: mimeToFormat(mime) });
   }
   return out;
+}
+
+// OPDS library label (the feed's <category term>) -> URL slug used
+// by /kindle/get and /api/send-to-kindle. Unknown labels yield ""
+// and the book gets no download/email pick (never a guessed slug).
+function opdsSlug(label) {
+  var map = { "خازندار": "khazendar", "مكتبة صحوه": "sahwa",
+    "المكتبة الإلكترونية": "electronic", "هنداوي": "hindawi", "DOAB": "doab" };
+  return map[label] || "";
 }
 
 function mimeToFormat(mime) {
@@ -315,6 +368,111 @@ function renderGroup(heading, items, tg) {
   return html + "</ul>";
 }
 
+// ---- Search actions (2026-11-21) ------------------------------------
+// The four search-result buttons in exact order — Download, Send to
+// email, Convert, Report LAST — above one horizontal pick list.
+// Tapping a button arms the list for that action; picking a book
+// runs the action through the EXISTING website delivery path —
+// nothing here mints tokens or downloads files itself:
+//   download: the book's /kindle/get delivery page (TG: the get
+//     link from /api/tg-search; OPDS: /kindle/get?lib=&id=&f=&t=,
+//     built exactly like functions/book.js builds it);
+//   email: /api/send-to-kindle (TG: the send link; OPDS: same
+//     lib/id/f/t shape; the reader email rides the rlb_fp cookie,
+//     as on /book — fp is appended when the catalog gave one);
+//   convert: /api/convert-book, TG PDF books only (the endpoint
+//     accepts lib=tg + pdf + fp only — OPDS books never list);
+//   report: the EXISTING bot report entry — the bot home, where
+//     the user taps Report in the main menu and types the book
+//     name (the bot has no report deep link; its entry is the
+//     in-Telegram cb_report_menu flow). The copyright criteria
+//     text sits next to the Report button (see #report-note).
+// Flagged books never appear in any list: they have no delivery
+// links at all, and a flagged book is already flagged — their
+// only button stays "View in bot" in the results above.
+// Formats Send-to-Kindle accepts (same set as book.js): only
+// these get a download/email pick; anything else lists nothing.
+var SENDABLE = { "EPUB": "epub", "PDF": "pdf", "DOC": "doc", "TXT": "txt" };
+var actionBar = document.getElementById("bookactions");
+var pickEl = document.getElementById("picklist");
+var hintEl = document.getElementById("pickhint");
+var reportNoteEl = document.getElementById("report-note");
+var lastBooks = []; // normalized {title, author, flagged, get, send, convert}
+var pickMode = null; // "download" | "email" | "convert" | "report" | null
+
+function bookActionUrls(b, tg) {
+  // One normalized book -> its existing-path URLs ("" when the
+  // action does not apply). TG links come pre-built from the
+  // endpoint; OPDS links are built from lib/id/format like /book.
+  var u = { get: "", send: "", convert: "" };
+  if (tg) {
+    u.get = b.get || "";
+    u.send = b.send || "";
+    var isPdf = (b.formats || []).some(function (f) {
+      return String(f).trim().toLowerCase() === "pdf";
+    });
+    if (u.send && isPdf) {
+      u.convert = u.send.replace("/api/send-to-kindle?", "/api/convert-book?")
+        + (catalogFp ? "&fp=" + encodeURIComponent(catalogFp) : "");
+    }
+  } else {
+    var fmt = SENDABLE[b.format] || "";
+    if (fmt && b.slug && b.id) {
+      var q = "lib=" + encodeURIComponent(b.slug)
+        + "&id=" + encodeURIComponent(b.id)
+        + "&f=" + fmt
+        + "&t=" + encodeURIComponent(b.title || "");
+      u.get = "/kindle/get?" + q;
+      u.send = "/api/send-to-kindle?" + q
+        + (catalogFp ? "&fp=" + encodeURIComponent(catalogFp) : "");
+    }
+  }
+  return u;
+}
+
+function setPickMode(mode) {
+  pickMode = (pickMode === mode) ? null : mode;
+  if (!pickMode) { pickEl.hidden = true; hintEl.hidden = true; reportNoteEl.hidden = true; return; }
+  reportNoteEl.hidden = (pickMode !== "report");
+  var urlKey = pickMode === "download" ? "get" : pickMode === "email" ? "send" : "convert";
+  var eligible = lastBooks.filter(function (b) {
+    if (b.flagged) return false;
+    if (pickMode === "report") return true;
+    return !!b.urls[urlKey];
+  });
+  var html = "";
+  for (var i = 0; i < eligible.length; i++) {
+    var b = eligible[i];
+    var href = pickMode === "report" ? "https://t.me/RliBook_bot" : b.urls[urlKey];
+    html += "<a class=\"btn pick\" href=\"" + esc(href) + "\">" + esc(b.title) + "</a>";
+  }
+  pickEl.innerHTML = html;
+  pickEl.hidden = false;
+  hintEl.hidden = false;
+  if (!eligible.length) {
+    hintEl.textContent = pickMode === "convert"
+      ? "لا يوجد كتاب PDF قابل للتحويل في هذه النتائج."
+      : pickMode === "report"
+        ? "لا يوجد كتاب يمكن الإبلاغ عنه في هذه النتائج."
+        : "لا يوجد كتاب متاح لهذا الإجراء في هذه النتائج.";
+  } else if (pickMode === "report") {
+    hintEl.textContent = "اختر الكتاب — سيُفتح البوت؛ اضغط «Report» من القائمة الرئيسية واكتب اسم الكتاب كما يظهر هنا.";
+  } else if (pickMode === "download") {
+    hintEl.textContent = "اختر الكتاب — سيُفتح رابط التنزيل الخاص به (يعمل 10 دقائق، 5 كتب في اليوم كحد أقصى).";
+  } else if (pickMode === "email") {
+    hintEl.textContent = "اختر الكتاب — سيُرسل إلى ميل قارئك (بلا حد يومي).";
+  } else {
+    hintEl.textContent = "اختر الكتاب — سيُحوَّل إلى EPUB ويُرسل إلى ميل قارئك.";
+  }
+}
+
+["act-download", "act-email", "act-convert", "act-report"].forEach(function (id, i) {
+  var btn = document.getElementById(id);
+  if (!btn) return;
+  var mode = ["download", "email", "convert", "report"][i];
+  btn.addEventListener("click", function () { setPickMode(mode); });
+});
+
 function runSearch(q) {
   q = (q || "").trim();
   if (!q) return;
@@ -353,6 +511,22 @@ function runSearch(q) {
     resEl.innerHTML =
       renderGroup("من تيليجرام", tg, true) +
       renderGroup("من المكتبات", opds, false);
+    // Search actions: normalize this search's books (TG links come
+    // from the endpoint, OPDS links are built from lib/id/format)
+    // and show the four-button bar when at least one non-flagged
+    // book exists. A fresh search closes any open pick list.
+    lastBooks = [];
+    for (var bi = 0; bi < tg.length; bi++) {
+      lastBooks.push({ title: tg[bi].title, author: tg[bi].author || "",
+        flagged: !!tg[bi].flagged, urls: bookActionUrls(tg[bi], true) });
+    }
+    for (var oi = 0; oi < opds.length; oi++) {
+      lastBooks.push({ title: opds[oi].title, author: opds[oi].author || "",
+        flagged: false, urls: bookActionUrls(opds[oi], false) });
+    }
+    pickMode = null;
+    pickEl.hidden = true; hintEl.hidden = true; reportNoteEl.hidden = true;
+    actionBar.hidden = !lastBooks.some(function (b) { return !b.flagged; });
     if (total === 0) {
       notfoundEl.hidden = false;
       // No "priority search" here: /priority was removed from the bot

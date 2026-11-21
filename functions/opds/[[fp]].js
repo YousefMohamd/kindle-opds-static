@@ -194,7 +194,7 @@ function privateEntry(book, tgId, now) {
   return (
     "<entry><title>" + esc(title) + "</title><id>" + esc(id) + "</id><updated>" + esc(updated) + "</updated>" +
     (author ? "<author><name>" + esc(author) + "</name></author>" : "") +
-    '<category term="🔒 My Private Books"/>' +
+    '<category term="My Private Books"/>' +
     (acq
       ? '<link rel="http://opds-spec.org/acquisition" href="' + esc(acq.href) + '" type="' + esc(acq.type) + '"/>'
       : "") +
@@ -213,7 +213,7 @@ function rootFeed(fp, verified, privCount, now) {
     '<link rel="search" type="application/opensearchdescription+xml" href="/opds/' + esc(fp) + '/opensearch"/>';
   if (!verified) {
     out +=
-      "<entry><title>⚠️ This catalog link is not valid / الرابط ده مش صحيح</title>" +
+      "<entry><title>This catalog link is not valid / الرابط ده مش صحيح</title>" +
       "<id>urn:rlibook:opds:" + esc(fp) + ":invalid</id>" +
       "<updated>" + now + "</updated>" +
       "<content type=\"text\">Request a new catalog file from the bot (@RliBook_bot → /kindle). This link was revoked, or it is not a catalog link. / اطلب ملف كتالوج جديد من البوت (@RliBook_bot ← /kindle). الرابط ده اتلغى أو مش رابط كتالوج.</content></entry>";
@@ -226,7 +226,7 @@ function rootFeed(fp, verified, privCount, now) {
   }
   if (verified) {
     out +=
-      "<entry><title>🔒 My Private Books / كتبي الخاصة</title>" +
+      "<entry><title>My Private Books / كتبي الخاصة</title>" +
       "<id>urn:rlibook:opds:" + esc(fp) + ":private</id>" +
       "<updated>" + now + "</updated>" +
       '<link rel="subsection" href="/opds/' + esc(fp) + '/private" type="' + ACQ_CT + '"/>' +
@@ -246,7 +246,7 @@ function privateFeed(fp, verified, tgId, books, now) {
   let out =
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">' +
-    "<title>🔒 My Private Books / كتبي الخاصة</title>" +
+    "<title>My Private Books / كتبي الخاصة</title>" +
     "<id>urn:rlibook:opds:" + esc(fp) + ":private</id>" +
     "<updated>" + now + "</updated>" +
     '<link rel="self" href="/opds/' + esc(fp) + '/private" type="' + ACQ_CT + '"/>' +

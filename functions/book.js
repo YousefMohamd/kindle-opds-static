@@ -3,24 +3,29 @@
 //
 //   GET /book?q=الصلح
 //     -> 200 text/html — the matching books as a plain readable page:
-//        title, author, library, format, an "أرسل لميل قارئي"
-//        PRIMARY button (the Send-to-Kindle email —
-//        UNLIMITED, no per-user cap), a device download button
-//        below it ONLY for an e-reader User-Agent (Workstream 1b:
-//        Kobo "📥 نزّل الكتاب على جهاز Kobo", PocketBook likewise,
-//        generic "📥 جرّب تنزيل الكتاب على جهازك", Kindle keeps the
-//        existing "📥 احصل على الكتاب على جهازك" — which is NOT a
-//        direct download: it opens /kindle/get, whose Kindle steps
-//        are phone → download → Send to Kindle for Web), and a
-//        "📖 اقرأ أونلاين" reader button (EPUB only). Desktop and
-//        mobile browsers see NO download button at all (email +
-//        reader only). The download button always points at the
-//        delivery page /kindle/get — a 10-minute short link, max 5
+//        title, author, library, format, and the four action
+//        buttons in exact order (2026-11-21): (1) Download — a
+//        device download button in its own section above the row,
+//        ONLY for an e-reader User-Agent (Workstream 1b: Kobo
+//        "نزّل الكتاب على جهاز Kobo", PocketBook likewise, generic
+//        "جرّب تنزيل الكتاب على جهازك", Kindle keeps the existing
+//        "احصل على الكتاب على جهازك" — which is NOT a direct
+//        download: it opens /kindle/get, whose Kindle steps are
+//        phone → download → Send to Kindle for Web); (2) "أرسل لميل
+//        قارئي" — the Send-to-Kindle email, UNLIMITED, no per-user
+//        cap (the primary path on a Kindle, whose browser cannot
+//        download files at all); (3) Convert (Telegram PDF books
+//        only); (4) Report LAST, with the copyright criteria text
+//        next to it, wired to the bot's main-menu Report flow.
+//        Plus an "اقرأ أونلاين" reader button (EPUB only) between
+//        Convert and Report. Desktop and mobile browsers see NO
+//        download button at all (email + reader + convert + report
+//        only). The download button always points at the delivery
+//        page /kindle/get — a 10-minute short link, max 5
 //        downloads/day — never at a file. No JavaScript, minimal
 //        CSS, tiny page — built for the Kindle experimental browser.
-//        (Button order 2026-11-16: email first — the Kindle
-//        browser cannot download files at all, so email, which
-//        delivers straight to the library, is primary.)
+//        (Button order 2026-11-16 was email first; 2026-11-21 puts
+//        Download first to match the bot's restructured results.)
 //
 // Why this exists: the catalog dictionary links to a book page. The old
 // link pointed at /opds/search, which returns an Atom XML feed — the
@@ -54,7 +59,7 @@
 // (unlimited, no per-user cap). Under it, the SAME device download
 // button as OPDS cards (Workstream 1b: shown only for an e-reader
 // User-Agent — Kobo/PocketBook/generic get a device label, Kindle
-// keeps "📥 احصل على الكتاب على جهازك"; desktop/mobile get none),
+// keeps "احصل على الكتاب على جهازك"; desktop/mobile get none),
 // which opens the delivery page /kindle/get (a 10-minute short
 // link; the proxy fetches the file from Telegram for the short
 // link's target; max 5 downloads/day). The card links come
@@ -193,7 +198,7 @@ import { parseCookies, COOKIE_NAME } from "./api/identify.js";
 //   kobo / pocketbook — a direct download on the device itself;
 //   generic — a labelled try (the device is unverified, so the
 //     label promises an attempt, not a device);
-//   kindle — the EXISTING "📥 احصل على الكتاب على جهازك" button,
+//   kindle — the EXISTING "احصل على الكتاب على جهازك" button,
 //     which is NOT a direct download: the Kindle browser cannot
 //     download EPUBs, so the button opens /kindle/get, whose
 //     Kindle steps are phone → download → Send to Kindle for Web.
@@ -203,10 +208,10 @@ import { parseCookies, COOKIE_NAME } from "./api/identify.js";
 // open item in the doc), so they are treated like desktop until
 // a family is assigned. Exported for tests.
 export function ereaderDownloadLabel(family) {
-  if (family === "kobo") return "📥 نزّل الكتاب على جهاز Kobo";
-  if (family === "pocketbook") return "📥 نزّل الكتاب على جهاز PocketBook";
-  if (family === "generic") return "📥 جرّب تنزيل الكتاب على جهازك";
-  if (family === "kindle") return "📥 احصل على الكتاب على جهازك";
+  if (family === "kobo") return "نزّل الكتاب على جهاز Kobo";
+  if (family === "pocketbook") return "نزّل الكتاب على جهاز PocketBook";
+  if (family === "generic") return "جرّب تنزيل الكتاب على جهازك";
+  if (family === "kindle") return "احصل على الكتاب على جهازك";
   return "";
 }
 
@@ -222,21 +227,49 @@ export function otherWaysNote(family) {
   return "بدون إيميل: ده مش زر «أرسل لميل قارئي» — الإيميل بيوصّل الكتاب لمكتبتك تلقائياً، أما هنا فإنت اللي بتنزّل الكتاب على موبايلك أو كمبيوترك وبعدين بترفعه بنفسك في amazon.com/sendtokindle.";
 }
 
-// Renders the "Other ways" section (2026-11-20): the get/download
-// button moved OUT of the main .actions row, into a visible section
-// directly below it — a real button, not collapsed, not behind a
-// click — with a short note clarifying this is NOT the email path.
-// `buttonHtml` is the button's <p>...</p>; `tgOnly` puts the class
-// on the whole section so a Mini App-only button stays hidden
-// outside Telegram (the label + note must not show without their
-// button). Returns "" when there is no button. Exported for tests.
-export function otherWaysSection(buttonHtml, family, tgOnly) {
+// Renders the Download section (2026-11-21): the get/download
+// button sits in its own visible section, rendered BEFORE the main
+// .actions row so Download is button (1) on every card — email (2),
+// Convert (3), Report (4, last). The button is real, not collapsed,
+// not behind a click, with a short note clarifying this is NOT the
+// email path. `buttonHtml` is the button's <p>...</p>; `tgOnly` puts
+// the class on the whole section so a Mini App-only button stays
+// hidden outside Telegram (the label + note must not show without
+// their button). Returns "" when there is no button. Exported for
+// tests. (Was otherWaysSection until 2026-11-21: the section moved
+// from below the row to above it and became the primary slot.)
+export function downloadSection(buttonHtml, family, tgOnly) {
   if (!buttonHtml) return "";
   const cls = tgOnly ? "other-ways tg-only" : "other-ways";
   return "<div class=\"" + cls + "\">\n"
-    + "<p class=\"other-ways-label\">طرق أخرى:</p>\n"
+    + "<p class=\"other-ways-label\">تنزيل الكتاب:</p>\n"
     + buttonHtml
     + "<p class=\"note\">" + otherWaysNote(family) + "</p>\n"
+    + "</div>\n";
+}
+
+// The Report row (2026-11-21): button (4) — LAST on every
+// non-flagged card — plus the copyright criteria text next to it.
+// The button wires to the EXISTING bot report entry: the bot home,
+// where the user taps Report in the main menu and types the book
+// name (the bot's entry is the in-Telegram cb_report_menu flow —
+// there is no report deep link, and no website report backend is
+// invented here). Criteria (design doc §4.5 reasons + §3.3
+// two-signal rule + §5.1/§5.2/§5.4): reportable = a recent
+// publication still under copyright — still sold, recent edition,
+// commercial publisher; public-domain classics (Project Gutenberg
+// / Open Library public) are NEVER reportable. The word
+// "commercial" / "تجاري" never appears in user-facing text (standing
+// rule) — "ما زال يُباع" carries that signal instead. Flagged
+// cards never get this row (already flagged — their only button is
+// "View in bot"). Exported for tests.
+export const BOT_LINK = "https://t.me/RliBook_bot";
+export const REPORT_CRITERIA = "يُبلَّغ عن الكتاب فقط إذا كان إصداراً حديثاً ما زال يُباع وله طبعة حديثة من دار نشر — أما الكلاسيكيات القديمة والكتب المتاحة مجاناً في المكتبات العامة فلا يُبلَّغ عنها أبداً.";
+export function reportSection() {
+  return "<div class=\"report\">\n"
+    + "<p><a class=\"btn\" href=\"" + BOT_LINK + "\">الإبلاغ عن الكتاب</a></p>\n"
+    + "<p class=\"note\">" + REPORT_CRITERIA
+    + " في البوت اضغط «Report» من القائمة الرئيسية واكتب اسم الكتاب.</p>\n"
     + "</div>\n";
 }
 
@@ -526,6 +559,7 @@ export async function onRequest(context) {
     + ".other-ways{margin:.6rem 0}"
     + ".other-ways p{margin:.2rem 0}.other-ways .btn{margin:0}"
     + ".other-ways-label{font-weight:600}"
+    + ".report{margin:.6rem 0}.report p{margin:.2rem 0}"
     + "@supports not (gap:.5rem){.actions p{margin:.2rem 0 .2rem .5rem}.actions p:last-child{margin-left:0}}"
     + "@keyframes rlb-rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}"
     + "@media (prefers-reduced-motion:reduce){.actions{animation:none}}"
@@ -791,11 +825,11 @@ export async function onRequest(context) {
     body += "<div class=\"card\"><h2>" + esc(b.t) + "</h2>\n";
     if (b.a) body += "<p>المؤلف: " + esc(b.a) + "</p>\n";
     body += "<p>" + esc(lib.label) + " · " + esc(fmt(b)) + "</p>\n";
-    // Button order (2026-11-16): email FIRST (primary, unlimited),
-    // then the download button (secondary, 5 downloads/day), then
-    // Read online. The Kindle browser cannot download files, so
-    // email — which lands straight in the library — is the path
-    // a Kindle user taps first.
+    // Button order (2026-11-21): Download FIRST (the download
+    // section, rendered before the row), then email (primary,
+    // unlimited), then Read online, then Report LAST (report
+    // section, after the row). OPDS cards have no Convert button
+    // (/api/convert-book accepts lib=tg only).
     // Metadata (Workstream 3): file size + page count UNDER the format
     // line — only when known (OPDS indexes carry neither today, so no
     // line renders; a future index rebuild flows through unchanged).
@@ -816,11 +850,10 @@ export async function onRequest(context) {
     if (sendUrl) {
       actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
     }
-    // "Other ways" (2026-11-20): the get/download button moved OUT
-    // of the main .actions row, into a visible section directly
-    // below it (otherWaysSection) — a real button, not collapsed —
-    // with a note clarifying it is NOT the email path. The button's
-    // href and fingerprint are unchanged; only its placement moved.
+    // Download (2026-11-21): the get/download button lives in its
+    // own visible section (downloadSection), rendered BEFORE the
+    // actions row so it is button (1). The button's href and
+    // fingerprint are unchanged; only its placement moved.
     let otherWaysBtn = "";
     let otherWaysTgOnly = false;
     if (getUrl && downloadLabel) {
@@ -841,16 +874,17 @@ export async function onRequest(context) {
     // and this button is CSS-hidden outside Telegram. Inside
     // Telegram the button itself is the affordance; the note stays
     // hidden there (it is server-rendered once and cannot be both).
-    // The tg-only class goes on the whole "Other ways" section now
-    // (otherWaysSection), so the label + note never show without
+    // The tg-only class goes on the whole download section now
+    // (downloadSection), so the label + note never show without
     // their button outside Telegram.
     if (getUrl && !downloadLabel) {
-      otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+      otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
       otherWaysTgOnly = true;
     }
-    if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+    if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">اقرأ أونلاين</a></p>\n";
+    if (otherWaysBtn) body += downloadSection(otherWaysBtn, family, otherWaysTgOnly);
     if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
-    if (otherWaysBtn) body += otherWaysSection(otherWaysBtn, family, otherWaysTgOnly);
+    body += reportSection();
     if (!sendUrl) {
       body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
         + "اطلبه من البوت "
@@ -912,7 +946,7 @@ export async function onRequest(context) {
       // book. No rating -> NOTHING here (never a fake "0/10": a missing
       // rating must not look like a bad rating).
       if (enr.rating) {
-        body += "<p class=\"rating\">⭐ " + esc(String(enr.rating.value)) + "/10"
+        body += "<p class=\"rating\">" + esc(String(enr.rating.value)) + "/10"
           + (enr.rating.count
             ? " · " + esc(String(enr.rating.count)) + " تقييمًا" : "")
           + " <span class=\"src\">— التقييم من " + esc(enr.rating.source)
@@ -953,19 +987,25 @@ export async function onRequest(context) {
           + "<p><a class=\"btn\" href=\"" + esc(r.bot || "https://t.me/RliBook_bot") + "\">View in bot</a></p>\n"
           + "</div>\n";
       } else {
-        // Button order (2026-11-16): email FIRST (primary button,
-        // unlimited), then the delivery page (secondary button,
-        // 5 downloads/day), then "Read online" (Block 11b reader):
-        // EPUB only, never flagged. The links come pre-built from
-        // /api/tg-search (gated: the page mints the 10-minute short
-        // link; the raw post URL never reaches this page). The
-        // fingerprint rides along on the Get and Send links (fpQ), so
-        // a catalog user never re-types their reader email.
+        // Button order (2026-11-21): Download FIRST (the download
+        // section, rendered before the row), then email (primary
+        // button, unlimited), then the Telegram direct-send
+        // (same send family), then Convert, then "Read online"
+        // (Block 11b reader, EPUB only, never flagged), then
+        // Report LAST (report section, after the row). The links
+        // come pre-built from /api/tg-search (gated: the page
+        // mints the 10-minute short link; the raw post URL never
+        // reaches this page). The fingerprint rides along on the
+        // Get and Send links (fpQ), so a catalog user never
+        // re-types their reader email.
         const sendUrl = r.send ? esc(r.send) + fpQ : null;
         // Action row (2026-11-18): same horizontal .actions row as
-        // the OPDS cards — email first (primary), Convert next,
-        // then download, then Read online. Each button's own markup
-        // is unchanged; only the wrapper is new.
+        // the OPDS cards — email first (primary), Telegram
+        // direct-send next, Convert next, then Read online. The
+        // Download button sits in the download section ABOVE the
+        // row (button 1), Report in its section BELOW (button 4,
+        // last). Each button's own markup is unchanged; only the
+        // wrapper is new.
         let actions = "";
         if (sendUrl) {
           actions += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
@@ -1000,14 +1040,14 @@ export async function onRequest(context) {
           && r.formats.some((f) => String(f).trim().toLowerCase() === "pdf");
         if (sendUrl && hasPdf && r.send.indexOf("/api/send-to-kindle?") === 0) {
           const convertUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/convert-book?")) + fpQ;
-          actions += "<p><a class=\"btn\" href=\"" + convertUrl + "\">🔄 حوّل إلى EPUB</a></p>\n";
+          actions += "<p><a class=\"btn\" href=\"" + convertUrl + "\">حوّل إلى EPUB</a></p>\n";
         }
         // WS1b: same gate as the OPDS cards — a download button
         // only for an e-reader family UA. A flagged book has no
         // get link at all, so it never gets one here either.
-        // "Other ways" (2026-11-20): the get/download button moved
-        // OUT of the main .actions row, into a visible section
-        // directly below it — same rule as the OPDS cards.
+        // Download (2026-11-21): the get/download button lives in
+        // its own visible section (downloadSection), rendered
+        // BEFORE the actions row — same rule as the OPDS cards.
         const getUrl = r.get ? esc(r.get) + fpQ : null;
         let otherWaysBtn = "";
         let otherWaysTgOnly = false;
@@ -1019,15 +1059,16 @@ export async function onRequest(context) {
         // WS3b (Mini App hub): same rule as the OPDS cards — the
         // tg-only button appears only when the UA gate hid the
         // download button, so the two never duplicate. The tg-only
-        // class goes on the whole "Other ways" section now.
+        // class goes on the whole download section now.
         if (getUrl && !downloadLabel) {
-          otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">📥 احصل على الكتاب على جهازك</a></p>\n";
+          otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
           otherWaysTgOnly = true;
         }
         const readerUrl = r.read ? esc(r.read) : null;
-        if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">📖 اقرأ أونلاين</a></p>\n";
+        if (readerUrl) actions += "<p><a class=\"btn\" href=\"" + readerUrl + "\">اقرأ أونلاين</a></p>\n";
+        if (otherWaysBtn) body += downloadSection(otherWaysBtn, family, otherWaysTgOnly);
         if (actions) body += "<div class=\"actions\">\n" + actions + "</div>\n";
-        if (otherWaysBtn) body += otherWaysSection(otherWaysBtn, family, otherWaysTgOnly);
+        body += reportSection();
         if (!sendUrl) {
           body += "<p class=\"note\">لا يمكن إرسال هذا الكتاب من الموقع — "
             + "اطلبه من البوت "

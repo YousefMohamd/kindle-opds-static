@@ -543,13 +543,13 @@ console.log("13. Convert button under the email link (2026-11-18 rework):");
   const tgPdf = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.6.0.1", KINDLE_UA);
   check("13a TG PDF + Kindle: Convert button present",
     tgPdf.status === 200 && tgPdf.body.includes("/api/convert-book?lib=tg")
-    && tgPdf.body.includes("🔄 حوّل إلى EPUB"), "status " + tgPdf.status);
+    && tgPdf.body.includes("حوّل إلى EPUB"), "status " + tgPdf.status);
   check("13b TG PDF + Kindle: Convert carries the book identity (h + p + f=pdf)",
     tgPdf.body.includes("h=kotobkhana") && tgPdf.body.includes("p=9001")
     && tgPdf.body.includes("f=pdf"));
   check("13c TG PDF + Kindle: Convert sits UNDER the email link (email first)",
     tgPdf.body.indexOf("أرسل لميل قارئي") !== -1
-    && tgPdf.body.indexOf("أرسل لميل قارئي") < tgPdf.body.indexOf("🔄 حوّل إلى EPUB"));
+    && tgPdf.body.indexOf("أرسل لميل قارئي") < tgPdf.body.indexOf("حوّل إلى EPUB"));
 
   const tgPdfNoUa = await call({ lib: "tg", h: "kotobkhana", p: "9001", f: "pdf", t: "TG PDF" }, env, "10.6.0.2");
   check("13d TG PDF + no UA (default Kindle): Convert button present",
@@ -587,16 +587,16 @@ console.log("14. Horizontal action row (2026-11-18):");
   // The Kindle PDF page's actions (email + Convert + reader) sit in
   // ONE row, email first, Convert next, reader last. (Anchor on the
   // Convert button — only the Kindle PDF branch has one.)
-  const convPos = tgPdf.body.indexOf("🔄 حوّل إلى EPUB");
+  const convPos = tgPdf.body.indexOf("حوّل إلى EPUB");
   const rowStart = tgPdf.body.lastIndexOf('<div class="actions">', convPos);
   const rowEnd = tgPdf.body.indexOf("</div>", convPos);
   const row = rowStart !== -1 && rowEnd !== -1 ? tgPdf.body.slice(rowStart, rowEnd) : "";
   check("14c TG PDF + Kindle: email + Convert + reader in ONE .actions row",
-    row.includes("أرسل لميل قارئي") && row.includes("🔄 حوّل إلى EPUB")
+    row.includes("أرسل لميل قارئي") && row.includes("حوّل إلى EPUB")
     && row.includes("اقرأ الآن في المتصفح"));
   check("14d TG PDF + Kindle: row order is email, Convert, reader",
-    row.indexOf("أرسل لميل قارئي") < row.indexOf("🔄 حوّل إلى EPUB")
-    && row.indexOf("🔄 حوّل إلى EPUB") < row.indexOf("اقرأ الآن في المتصفح"));
+    row.indexOf("أرسل لميل قارئي") < row.indexOf("حوّل إلى EPUB")
+    && row.indexOf("حوّل إلى EPUB") < row.indexOf("اقرأ الآن في المتصفح"));
   check("14e reader link is a .btn now (same button style as email/Convert)",
     tgPdf.body.includes('class="btn" href="/read?lib=tg'));
   check("14f actionsRow unit: empty -> '', links keep order, wrapped in one div",

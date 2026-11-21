@@ -145,9 +145,9 @@
 // read, the reply carries `flagStatus: "degraded"`, every result
 // carries `flagCheck: "degraded"` and NO delivery links (get/send/
 // read/bot all null — and the raw post URL is withheld even from an
-// authenticated bot caller). The website renders a ⚠️ badge from
-// flagStatus; search itself keeps working (metadata only) until KV
-// recovers.
+// authenticated bot caller). The website withholds the delivery
+// links and shows the 🚩 flag instead; search itself keeps working
+// (metadata only) until KV recovers.
 //
 // Hidden (owner-removed) books: a `hidden:<handle>:<post_id>` entry
 // in the `flags:all` blob means the book is REMOVED from search

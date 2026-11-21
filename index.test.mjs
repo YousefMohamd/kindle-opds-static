@@ -69,5 +69,68 @@ check("4a runSearch reads the endpoint `match` field",
 check("4b non-exact TG tier appends 'أقرب النتائج' to the status",
   runSearch.includes('if (tg.length && tgMatch && tgMatch !== "exact") statusEl.textContent += " — أقرب النتائج.";'));
 
+// 5: search actions (2026-11-21) — four buttons in exact order:
+// Download, Send to email, Convert, Report LAST, over one
+// horizontal pick list of the books found in the search.
+const bar = html.slice(html.indexOf('id="bookactions"'));
+check("5a action bar exists with the four buttons in exact order",
+  bar.includes('id="act-download">تنزيل الكتاب<')
+  && bar.includes('id="act-email">أرسل لميل قارئي<')
+  && bar.includes('id="act-convert">حوّل إلى EPUB<')
+  && bar.includes('id="act-report">الإبلاغ عن الكتاب<')
+  && bar.indexOf("act-download") < bar.indexOf("act-email")
+  && bar.indexOf("act-email") < bar.indexOf("act-convert")
+  && bar.indexOf("act-convert") < bar.indexOf("act-report"));
+check("5b horizontal pick list element exists (class picklist)",
+  html.includes('id="picklist" class="picklist"'));
+check("5c pick list CSS scrolls horizontally (overflow-x: auto)",
+  html.includes(".picklist { display: flex;") && html.includes("overflow-x: auto;"));
+check("5d runSearch populates lastBooks and shows the bar when a non-flagged book exists",
+  runSearch.includes("lastBooks = [];")
+  && runSearch.includes("bookActionUrls(tg[bi], true)")
+  && runSearch.includes("bookActionUrls(opds[oi], false)")
+  && runSearch.includes("actionBar.hidden = !lastBooks.some(function (b) { return !b.flagged; });"));
+check("5e parseOpds captures entry id + library slug for delivery URLs",
+  html.includes('rawId = text("id").replace(/^urn:(drive|hindawi|doab):/, "")')
+  && html.includes("function opdsSlug(label)")
+  && html.includes('"خازندار": "khazendar"'));
+check("5f download/email pick URLs use the existing paths (/kindle/get, /api/send-to-kindle)",
+  html.includes('u.get = "/kindle/get?" + q;')
+  && html.includes('u.send = "/api/send-to-kindle?" + q'));
+check("5g convert pick is TG PDF only via /api/convert-book",
+  html.includes('u.convert = u.send.replace("/api/send-to-kindle?", "/api/convert-book?")')
+  && html.includes('return String(f).trim().toLowerCase() === "pdf";'));
+check("5h flagged books are excluded from every pick list",
+  html.includes("if (b.flagged) return false;"));
+
+// 6: Report LAST — copyright criteria next to it, wired to the
+// existing bot report entry (main-menu Report flow, no new backend).
+const reportNote = html.slice(html.indexOf('id="report-note"'), html.indexOf('id="picklist"'));
+check("6a criteria text sits next to the Report button",
+  reportNote.includes("إصداراً حديثاً ما زال يُباع")
+  && reportNote.includes("طبعة حديثة من دار نشر")
+  && reportNote.includes("الكلاسيكيات القديمة")
+  && reportNote.includes("المكتبات العامة"));
+check("6b criteria never writes 'تجاري' / 'commercial' (standing rule)",
+  !reportNote.includes("تجاري") && !reportNote.toLowerCase().includes("commercial"));
+  // NOTE: the page footer still carries the pre-existing line "لا ننشر
+  // كتباً تجارية حديثة" — policy copy about the catalog, not a book
+  // label, and out of this change's scope; it is not asserted here.
+check("6c report pick opens the bot (existing main-menu Report entry)",
+  html.includes('href = pickMode === "report" ? "https://t.me/RliBook_bot"')
+  && reportNote.includes("اضغط «Report» من القائمة الرئيسية"));
+
+// 7: emojis (2026-11-21) — no decorative emoji in hand-written
+// user-facing copy; only 🚩 (the flagged-book marker) survives.
+// The auto-generated newspapers block is excluded: the workflow
+// owns it (it carries a 🇸🇦 country flag) and regenerates it daily.
+const handWritten = html.replace(/<!-- NEWSPAPERS-STATIC-BEGIN -->[\s\S]*?<!-- NEWSPAPERS-STATIC-END -->/, "");
+const decorative = ["📥", "📖", "✅", "🔄", "⭐", "📚", "📧", "✨", "🔑", "🤖", "⚠️", "⬇"];
+check("7a no decorative emoji in hand-written copy (🚩 flag only)",
+  decorative.every((e) => !handWritten.includes(e)),
+  `found: ${JSON.stringify(decorative.filter((e) => handWritten.includes(e)))}`);
+check("7b 🚩 flag marker kept for flagged books",
+  html.includes('🚩 اطلبه من البوت'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

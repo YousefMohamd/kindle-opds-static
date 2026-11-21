@@ -259,7 +259,7 @@ function page(title, bodyHtml, status = 200) {
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
     + "<style>" + CSS + "</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
+    + "<h1>RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
@@ -555,8 +555,8 @@ export async function onRequest(context) {
   };
   try {
     if (await env.RLIBOOK_KV.get(dedupeKey)) {
-      return page("✅ تم الإرسال",
-        "<p>✅ هذا الكتاب أُرسل بالفعل إلى <b>" + esc(maskEmail(kindleEmail)) + "</b> قبل دقائق.</p>\n"
+      return page("تم الإرسال",
+        "<p>هذا الكتاب أُرسل بالفعل إلى <b>" + esc(maskEmail(kindleEmail)) + "</b> قبل دقائق.</p>\n"
         + "<p>لم نرسله مرة أخرى — تحقق من مكتبتك (وتأكد أن الواي فاي يعمل في جهازك).</p>\n"
         + "<p class=\"note\">إن لم يصل بعد عدة دقائق، تأكد أن <b>send@rlibook.tech</b> مضاف إلى المرسلين المعتمدين "
         + "في amazon.com/myk، ثم أعد الإرسال.</p>\n"
@@ -741,8 +741,8 @@ export async function onRequest(context) {
       "<p>خدمة البريد رفضت الإرسال (" + esc(sendResult.message || "خطأ غير معروف") + ") — حاول مجدداً لاحقاً.</p>", 502);
   }
 
-  return page("✅ تم الإرسال",
-    "<p>✅ تم إرسال «" + esc(title || filename) + "» إلى <b>" + esc(maskEmail(kindleEmail)) + "</b>.</p>\n"
+  return page("تم الإرسال",
+    "<p>تم إرسال «" + esc(title || filename) + "» إلى <b>" + esc(maskEmail(kindleEmail)) + "</b>.</p>\n"
     + "<p>تأكد أن الواي فاي يعمل في جهازك — سيظهر الكتاب في مكتبتك خلال دقائق "
     + "(أمازون تحوّل EPUB إلى صيغة مناسبة لجهازك عند الاستلام).</p>\n"
     + "<p class=\"note\">إن لم يصل: تأكد أن <b>send@rlibook.tech</b> مضاف إلى المرسلين المعتمدين "

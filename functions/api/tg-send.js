@@ -98,7 +98,7 @@ function page(title, bodyHtml, status = 200) {
     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
     + "<title>" + esc(title) + " — RliBook</title>\n"
     + "<style>" + CSS + "</style>\n</head>\n<body>\n"
-    + "<h1>📚 RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
+    + "<h1>RliBook</h1>\n" + bodyHtml + "\n</body></html>", {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
@@ -193,8 +193,8 @@ export async function onRequest(context) {
       "<p>خدمة الإرسال ردّت رداً غير مفهوم — جرّب لاحقاً.</p>" + homeLink(), 502);
   }
   if (result.ok) {
-    return page("✅ تم الإرسال إلى تيليجرام",
-      "<h2>✅ تم الإرسال إلى تيليجرام</h2>\n"
+    return page("تم الإرسال إلى تيليجرام",
+      "<h2>تم الإرسال إلى تيليجرام</h2>\n"
       + "<p>«" + esc(title || "الكتاب") + "» وصل إلى محادثتك في تيليجرام — افتح البوت وستجده هناك.</p>\n"
       + "<p>ليظهر على الكيندل: افتح الملف في تيليجرام، اضغط «مشاركة»، اختر تطبيق Kindle ثم «Send to Kindle» — "
       + "وسيظهر في مكتبتك على الكيندل.</p>\n"

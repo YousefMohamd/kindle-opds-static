@@ -7,7 +7,9 @@
      END USER's own device (in their Telegram browser via the Mini
      App) — nothing runs on the site owner's device. The finished
      EPUB is sent to the user's own Kindle email through the bot
-     (POST /miniapp-convert-send), or downloaded as a fallback. -->
+     (POST /miniapp-convert-send). There is NO direct download on
+     this page (website rule, 2026-11-18): the EPUB reaches the
+     reader by email, or as a file in the Telegram chat (USB). -->
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
@@ -64,7 +66,7 @@
 <script type="module" src="/site/convert/convert-app.js"></script>
 </head>
 <body>
-<h1>📖 حوّل كتاباً ممسوحاً إلى EPUB</h1>
+<h1>حوّل كتاباً ممسوحاً إلى EPUB</h1>
 <p class="slogan">التحويل يتم كاملاً على جهازك — بلا خادم، بلا حساب، بلا بطاقة، ولا ينتهي أبداً. ملفك لا يغادر جهازك إلا إذا طلبتَ التحسين بنفسك.</p>
 
 <div class="card">
@@ -107,16 +109,14 @@
 <div class="card hidden" id="result">
   <h2>٣. النتيجة</h2>
   <p id="resultMeta" class="note"></p>
-  <p><button class="btn btn-dark" id="downloadBtn">⬇ تحميل EPUB (جودة قياسية)</button>
-  <button class="btn hidden" id="downloadEnhancedBtn">⬇ تحميل النسخة المحسّنة</button>
-  <button class="btn btn-dark hidden" id="sendKindleBtn">📧 أرسل لميل قارئي</button></p>
+  <p><button class="btn btn-dark hidden" id="sendKindleBtn">أرسل لميل قارئي</button></p>
   <p id="sendKindleStatus" class="note hidden"></p>
   <p class="note">«جودة قياسية» تعني: قراءة على جهازك بمحرّك Tesseract — ممتازة للطباعة الحديثة النظيفة، وأضعف على المطبوعات القديمة والتشكيل. «جودة محسّنة» تعني: أُعيدت قراءتها على خادم مجاني بمحرّك GPU (Baseer للعربي الحديث، Qari للمشكَّل، PP-OCRv6 للإنجليزي).</p>
-  <p class="note">لإرسالها إلى كيندلك: إذا فتحتَ المحوّل من بوت RliBook، استخدم زر «📧 أرسل لميل قارئي» أعلاه — يرسلها البوت مباشرة إلى إيميل الكيندل المرتبط بحسابك (3 تحويلات يومياً). أو حمّل ملف EPUB وأرسله بالبريد إلى عنوان كيندلك <code>@kindle.com</code> (أضِف بريدك أولاً في قائمة المرسلين المعتمدين في أمازون).</p>
+  <p class="note">لإرسالها إلى قارئك: إذا فتحتَ المحوّل من بوت RliBook، استخدم زر «أرسل لميل قارئي» أعلاه — يرسلها البوت مباشرة إلى إيميل القارئ المرتبط بحسابك (3 تحويلات يومياً). لا يوجد تحميل مباشر هنا: النسخة تصل بإيميل قارئك، أو يرسلها لك البوت كملف في الشات (للنقل بالـ USB) عندما تحوّل من داخل الشات نفسه.</p>
 </div>
 
 <div class="card hidden" id="enhanceBox">
-  <h2>✨ التحسين على خادم GPU مجاني <span class="note">(اختياري)</span></h2>
+  <h2>التحسين على خادم GPU مجاني <span class="note">(اختياري)</span></h2>
   <p class="note">إذا كان لديك خادم تحسين (Kaggle / Colab / Hugging Face ZeroGPU — كلها مجانية)، ضع رابطه هنا. الصفحة تتحقق منه أولاً؛ وإذا تعذّر أو بلغ حدّه اليومي، تبقى نسختك القياسية كما هي — لا شيء يُفقَد.</p>
   <p id="cloudStatus" class="note"></p>
   <label for="cloudUrl">رابط خادم التحسين (فارغ = لا يوجد)</label>
@@ -127,7 +127,7 @@
     <button class="btn hidden" id="retryEnhanceBtn">إعادة محاولة تحسين الصفحات الضعيفة</button></p>
     <p id="enhanceStatus" class="note"></p>
   </div>
-  <h2>🔑 مفتاح OCR.space المجاني <span class="note">(اختياري)</span></h2>
+  <h2>مفتاح OCR.space المجاني <span class="note">(اختياري)</span></h2>
   <p class="note">طبقة تحسين رخيصة قبل خادم GPU: خدمة OCR مجانية (25,000 طلب/شهر، 500 صفحة/يوم لكل جهاز، بلا بطاقة) تقرأ الصفحات الضعيفة من متصفحك أنت — كل قارئ له حصته الخاصة، فلا تُقتسم الحصة مع غيرك. بدون مفتاح تُتخطى هذه الطبقة بصمت ويبقى GPU / Tesseract. احصل على مفتاحك المجاني من <a href="https://ocr.space/ocrapi" target="_blank" rel="noopener">ocr.space/ocrapi</a> (تسجيل بالإيميل فقط، بلا بطاقة) والصقه هنا — يُحفظ في متصفحك فقط ولا يغادر جهازك إلا إلى خوادم OCR.space نفسها. تنبيه: هذه الطبقة جيدة للعربي الحديث والإنجليزي، لكنها لا تنافس Qari على العربي التراثي المشكَّل — تلك الصفحات تذهب مباشرة إلى GPU.</p>
   <label for="ocrSpaceKey">مفتاح OCR.space</label>
   <input type="password" id="ocrSpaceKey" placeholder="الصق مفتاحك هنا" dir="ltr" autocomplete="off">
