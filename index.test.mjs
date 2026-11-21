@@ -126,17 +126,53 @@ check("6d footer policy line rephrased (2026-11-21): no 'تجاري' in the foot
   && html.includes("والكتب القديمة المتاحة مجاناً")
   && !html.slice(html.indexOf("فهرس مجاني"), html.indexOf("</p>", html.indexOf("فهرس مجاني"))).includes("تجاري"));
 
-// 7: emojis (2026-11-21) — no decorative emoji in hand-written
-// user-facing copy; only 🚩 (the flagged-book marker) survives.
-// The auto-generated newspapers block is excluded: the workflow
-// owns it (it carries a 🇸🇦 country flag) and regenerates it daily.
+// 7: emojis — the small CURATED set (2026-11-21, supersedes the
+// remove-all rule for these only): 🚩 flag, 🔍 Search, 🌐 Open
+// Website. One per primary action, nothing decorative. The website
+// has no Open Website button (it IS the site — that button lives in
+// the bot), so 🌐 must be absent here; 🔍 belongs on the Search
+// button(s) only. The auto-generated newspapers block is excluded:
+// the workflow owns it (it carries a 🇸🇦 country flag) and
+// regenerates it daily.
 const handWritten = html.replace(/<!-- NEWSPAPERS-STATIC-BEGIN -->[\s\S]*?<!-- NEWSPAPERS-STATIC-END -->/, "");
 const decorative = ["📥", "📖", "✅", "🔄", "⭐", "📚", "📧", "✨", "🔑", "🤖", "⚠️", "⬇"];
-check("7a no decorative emoji in hand-written copy (🚩 flag only)",
+check("7a no decorative emoji in hand-written copy (curated set only: 🚩 🔍)",
   decorative.every((e) => !handWritten.includes(e)),
   `found: ${JSON.stringify(decorative.filter((e) => handWritten.includes(e)))}`);
 check("7b 🚩 flag marker kept for flagged books",
   html.includes('🚩 اطلبه من البوت'));
+check("7c 🔍 on the Search submit button",
+  html.includes('<button class="btn" type="submit">🔍 ابحث</button>'));
+check("7d 🔍 on the Telegram-catalog search link",
+  html.includes('<a class="btn" href="/telegram/">🔍 ابحث في الكتب</a>'));
+check("7e no 🌐 on the website (no Open Website button — the site IS the site; 🌐 lives in the bot)",
+  !handWritten.includes("🌐"));
+
+// 8: 'بلا حد يومي' restored ONLY where true (2026-11-21) — search,
+// browsing, and online reading are genuinely unlimited; the catalog
+// email flow keeps it in /kindle/get.js. Email claims stay OFF the
+// website: Telegram-book email goes through the bot (3/hour heavy
+// bucket + 5/day mint), so the homepage Kindle note and the email
+// pick hint must not promise it (locked by 5i + book.test.mjs J1).
+check("8a search intro: searching is unlimited",
+  html.includes("بحث واحد بلا حد يومي يدوّر في"));
+check("8b Kindle note: unlimited claim on READING, not on email",
+  html.includes("«اقرأ أونلاين» لنسخ EPUB — القراءة أونلاين بلا حد يومي.")
+  && !html.slice(html.indexOf("على Kindle:"), html.indexOf("</p>", html.indexOf("على Kindle:"))).includes("الإرسال بالإيميل بلا حد يومي"));
+check("8c libraries note: browsing is unlimited",
+  html.includes("التصفح بلا حد يومي."));
+
+// 9: client-side search dedup (2026-11-21) — the merged TG+OPDS
+// list collapses same-title reposts before the count/render/pick
+// list (the endpoint dedupes the TG half server-side).
+const runSearchFn = html.slice(html.indexOf("function runSearch"));
+check("9a runSearch dedupes TG then OPDS by title+author before counting",
+  runSearchFn.includes("tg = dedupeBooks(tg, seenKeys);")
+  && runSearchFn.includes("opds = dedupeBooks(opds, seenKeys);")
+  && runSearchFn.indexOf("dedupeBooks(tg, seenKeys)") < runSearchFn.indexOf("var total = tg.length"));
+check("9b dedupe key is normalized title + author (TG wins over OPDS)",
+  html.includes("function dedupeBooks(list, seen)")
+  && html.includes('normSearchKey(b.title) + "\\n" + normSearchKey(b.author || "")'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

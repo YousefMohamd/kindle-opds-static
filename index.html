@@ -77,11 +77,11 @@
 
 <div class="card">
   <h2>ابحث في كل المكتبات</h2>
-  <p>بحث واحد يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (223 مكتبة)
+  <p>بحث واحد بلا حد يومي يدوّر في <b>كل المكتبات</b>: مكتبات تيليجرام (223 مكتبة)
   وخازندار وصحوه والمكتبة الإلكترونية وهنداوي وDOAB — بالعنوان أو المؤلف.</p>
   <form id="searchform" action="/" method="get">
     <input type="search" id="q" name="q" placeholder="ابحث بالعنوان أو المؤلف… مثل: متون، العقيدة، العلم" aria-label="ابحث في كل المكتبات">
-    <button class="btn" type="submit">ابحث</button>
+    <button class="btn" type="submit">🔍 ابحث</button>
   </form>
   <p id="status" class="note" role="status"></p>
   <div id="results"></div>
@@ -106,7 +106,7 @@
     <div id="picklist" class="picklist" hidden></div>
     <p class="note" id="pickhint" hidden></p>
   </div>
-  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب إلى مكتبتك، أو «احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «اقرأ أونلاين» لنسخ EPUB.</p>
+  <p class="note">على Kindle: متصفح جهازك لا ينزّل EPUB أو PDF مباشرة — افتح «صفحة الكتاب» واضغط «أرسل لميل قارئي» ليصلك الكتاب إلى مكتبتك، أو «احصل على الكتاب على جهازك» لرابط تنزيل يعمل 10 دقائق (5 كتب في اليوم كحد أقصى — نزّله على هاتفك ثم ارفعه في amazon.com/sendtokindle)، أو «اقرأ أونلاين» لنسخ EPUB — القراءة أونلاين بلا حد يومي.</p>
   <p id="notfound" class="notfound" hidden></p>
 </div>
 
@@ -115,9 +115,9 @@
   <p id="tgcount">223 مكتبة — 407,714 كتاب مميز، 600,250 ملف — من قنوات
   وجروبات تيليجرام العامة.</p>
   <a class="btn" href="/telegram/libraries.html">تصفّح المكتبات ←</a>
-  <a class="btn" href="/telegram/">ابحث في الكتب</a>
+  <a class="btn" href="/telegram/">🔍 ابحث في الكتب</a>
   <p class="note">كل مكتبة لها صفحة كتبها الخاصة — اضغط اسم المكتبة في
-  القائمة لتصفّح كتبها وحدها، أو افتحها في تيليجرام.</p>
+  القائمة لتصفّح كتبها وحدها، أو افتحها في تيليجرام. التصفح بلا حد يومي.</p>
 </div>
 
 <div class="card">
@@ -498,6 +498,37 @@ function setPickMode(mode) {
   btn.addEventListener("click", function () { setPickMode(mode); });
 });
 
+// Search dedup (2026-11-21): the same book can come back from
+// several Telegram channels AND from several OPDS libraries, so
+// identical titles eat slots. The endpoint already dedupes the
+// Telegram half server-side (see functions/api/tg-search.js); this
+// covers the OPDS half and the cross-source case. Key = normalized
+// title + author (same book reposted collapses to its best-ranked
+// copy; a different book that merely shares a title — different
+// author — stays, and the author/library line already disambiguates
+// it). TG wins over OPDS: the TG copy carries the delivery links +
+// flag state. Plain string code, no framework — Kindle-safe.
+function normSearchKey(s) {
+  return String(s || "").normalize("NFKC")
+    .replace(/[\u064B-\u0652\u0670\u0640]/g, "")
+    .replace(/[أإآٱ]/g, "ا").replace(/ؤ/g, "و").replace(/ئ/g, "ي").replace(/ء/g, "")
+    .replace(/ى/g, "ي").replace(/ة/g, "ه")
+    .replace(/[چ]/g, "ج").replace(/[ک]/g, "ك").replace(/[گ]/g, "ك")
+    .replace(/[پ]/g, "ب").replace(/[ڤ]/g, "ف")
+    .toLowerCase().replace(/\s+/g, " ").trim();
+}
+function dedupeBooks(list, seen) {
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var b = list[i];
+    var k = normSearchKey(b.title) + "\n" + normSearchKey(b.author || "");
+    if (seen[k]) continue;
+    seen[k] = 1;
+    out.push(b);
+  }
+  return out;
+}
+
 function runSearch(q) {
   q = (q || "").trim();
   if (!q) return;
@@ -524,6 +555,12 @@ function runSearch(q) {
     if (out[1].status === "fulfilled") {
       opds = out[1].value || [];
     } else { opdsDown = true; }
+    // Dedupe the merged list (see dedupeBooks): TG first, then OPDS
+    // entries whose title+author is not already shown — before the
+    // count, the render, and the pick list below.
+    var seenKeys = {};
+    tg = dedupeBooks(tg, seenKeys);
+    opds = dedupeBooks(opds, seenKeys);
     var total = tg.length + opds.length;
     statusEl.textContent = total
       ? "النتائج: " + total + " كتاب — " + tg.length + " من تيليجرام، " + opds.length + " من المكتبات."

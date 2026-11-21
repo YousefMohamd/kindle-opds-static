@@ -134,6 +134,11 @@ console.log("tg-send endpoint tests:");
   check("1d. the bot call carries the fingerprint", body.fp === FP);
   check("1e. the bot call carries handle + postId + format", body.handle === "khazendar" && body.postId === "12345" && body.format === "epub");
   check("1f. the bot call carries title + size hint", body.title === "Test Book" && body.size === "2.7 MB");
+  // 2026-11-21: the success page must NOT claim Telegram send is
+  // unlimited — the bot enforces the 5/day budget (see tg-send.js
+  // header). It states the 5/day cap instead.
+  check("1g. success page states the 5/day cap, no 'بلا حد يومي' claim",
+    text.includes("5 كتب في اليوم كحد أقصى") && !text.includes("بلا حد يومي"));
 }
 
 {

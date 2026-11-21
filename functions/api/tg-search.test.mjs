@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -63,6 +63,25 @@ const FIXTURES = [
   ["مغامرات السندباد البحري", "كاتب ما", "ladderchan", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/100", "مغامرات السندباد البحري.pdf"],
   ["طبخ الزعفران", "مؤلف آخر", "ladderchan", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/102", "طبخ الزعفران.epub"],
   ["كتاب آخر", "الزعفران", "ladderchan", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/103", "كتاب آخر.epub"],
+  // Search dedup fixtures (2026-11-21): the same book reposted in
+  // three channels ('ام ميمي' x3 in the live complaint), the same
+  // title with a DIFFERENT author (a different book — must stay),
+  // a flagged-first / clean-second pair (the clean copy must win
+  // the tile), and a 3-repost + 2-singleton set for the over-fetch
+  // fill check. (The live shard holds 4 'ام ميمي' rows, but all sit
+  // beyond the 5000-row test sample, so these fixtures are the only
+  // 'ام ميمي' rows the test DB holds.)
+  ["ام ميمي", "مؤلف مشترك", "dupchanA", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/dupchanA/1", "ام ميمي.epub"],
+  ["ام ميمي", "مؤلف مشترك", "dupchanB", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/dupchanB/2", "ام ميمي.pdf"],
+  ["ام ميمي", "مؤلف مشترك", "dupchanC", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/dupchanC/3", "ام ميمي.epub"],
+  ["ام ميمي", "مؤلف مختلف", "dupchanD", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/dupchanD/4", "ام ميمي.epub"],
+  ["كتاب مكرر", "كاتب مكرر", "flagchan", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/flagchan/50", "كتاب مكرر.epub"],
+  ["كتاب مكرر", "كاتب مكرر", "cleanchan", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/cleanchan/51", "كتاب مكرر.pdf"],
+  ["اختبار التكرار الأول", "كاتب أ", "repchan1", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan1/61", "اختبار التكرار الأول.epub"],
+  ["اختبار التكرار الأول", "كاتب أ", "repchan1", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/repchan1/62", "اختبار التكرار الأول.pdf"],
+  ["اختبار التكرار الأول", "كاتب أ", "repchan1", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan1/63", "اختبار التكرار الأول.epub"],
+  ["اختبار التكرار الثاني", "كاتب ب", "repchan2", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan2/64", "اختبار التكرار الثاني.epub"],
+  ["اختبار التكرار الثالث", "كاتب ج", "repchan3", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan3/65", "اختبار التكرار الثالث.epub"],
 ];
 const shard = JSON.parse(readFileSync(SHARD, "utf-8"));
 const rows = shard.books.slice(0, SAMPLE);
@@ -1040,8 +1059,13 @@ ZEBRA.forEach((f, j) => {
   check("28e typo tier finds the mid-word substitution, match 'typo'",
     typoBody.match === "typo" && (typoBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
     `match=${typoBody.match}`);
-  // 28f: OR finds a multi-word query with one wrong word.
-  const { body: orBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("مغامرات زقزوق"));
+  // 28f: OR finds a multi-word query with one wrong word. limit=20:
+  // the live shard regenerates daily, and the fixture's bm25 rank in
+  // the OR tier drifts with the sample (rank 15 in the 2026-11-21
+  // shard, rank 1 in the older one) — the tier assertion is about
+  // the tier firing + the book being found, not about it ranking in
+  // the top 10, so the page is widened to keep that stable.
+  const { body: orBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("مغامرات زقزوق") + "&limit=20");
   check("28f OR tier finds the book with one wrong word, match 'any'",
     orBody.match === "any" && (orBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
     `match=${orBody.match}`);
@@ -1085,6 +1109,52 @@ ZEBRA.forEach((f, j) => {
   const { body: normLook } = await call({ TG_D1: D1 }, "/api/tg-search?h=kotobkhana&p=7559");
   check("28k2 normal lookup carries source: null",
     normLook.book && normLook.book.source === null, JSON.stringify(normLook.book && normLook.book.source));
+}
+
+// 29. Search dedup (2026-11-21): the same book reposted in several
+// channels must collapse to ONE tile (live complaint: 'ام ميمي' 3
+// times in 5 tiles); a different book that merely shares a title
+// (different author) stays; a clean copy beats a flagged copy of
+// the same book; and the page still fills to `limit` distinct books
+// (over-fetch) instead of `limit` minus the duplicates.
+{
+  check("29a dedupeTitleKey: ال / diacritics do not split a title",
+    dedupeTitleKey("الكتاب الكبير", "مؤلف مشترك") === dedupeTitleKey("كتاب الكبير", "مؤلف مشترك")
+    && dedupeTitleKey("امّ ميمي", "مؤلف مشترك") === dedupeTitleKey("ام ميمي", "مؤلف مشترك")
+    && dedupeTitleKey("ام ميمي", "مؤلف مشترك") !== dedupeTitleKey("ام ميمي", "مؤلف مختلف")
+    && dedupeTitleKey("كتاب", "") !== dedupeTitleKey("كتاب", "كاتب"));
+  const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("ام ميمي") + "&limit=10");
+  const mimi = (body.results || []).filter((r) => r.title === "ام ميمي");
+  check("29b three reposts of 'ام ميمي' collapse to one tile (same author)",
+    mimi.filter((r) => r.author === "مؤلف مشترك").length === 1,
+    JSON.stringify(mimi.map((r) => [r.author, r.source])));
+  check("29c same title, different author stays (a different book)",
+    mimi.filter((r) => r.author === "مؤلف مختلف").length === 1,
+    JSON.stringify(mimi.map((r) => r.author)));
+  check("29d total stays the raw match count (not distinct titles)",
+    body.total >= 4, `total=${body.total}`);
+  // Flagged-first / clean-second: the tile that survives must be the
+  // clean copy (delivery links present), whichever copy ranked first.
+  const kvFlag = mockKV({ "flag:flagchan:50": "1" });
+  const { body: flagBody } = await call({ TG_D1: D1, RLIBOOK_KV: kvFlag }, "/api/tg-search?q=" + encodeURIComponent("كتاب مكرر"));
+  const rep = (flagBody.results || []).filter((r) => r.title === "كتاب مكرر");
+  check("29e flagged copy loses to the clean copy of the same book",
+    rep.length === 1 && rep[0].flagged === false && rep[0].get !== null && rep[0].get.includes("h=cleanchan"),
+    JSON.stringify(rep.map((r) => [r.flagged, r.get])));
+  // Over-fetch fill: limit=2 against 3 reposts + 2 singletons must
+  // still return 2 DISTINCT titles (not 2 rows that dedupe to 1).
+  const { body: fillBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("اختبار التكرار") + "&limit=2");
+  const fillTitles = [...new Set((fillBody.results || []).map((r) => r.title))];
+  check("29f limit=2 still returns 2 distinct titles after dedup",
+    (fillBody.results || []).length === 2 && fillTitles.length === 2,
+    JSON.stringify((fillBody.results || []).map((r) => r.title)));
+  check("29g the 3 reposts of 'الأول' collapse to one tile",
+    (fillBody.results || []).filter((r) => r.title === "اختبار التكرار الأول").length <= 1);
+  // Browse path (empty q + source) dedupes the same way.
+  const { body: browseBody } = await call({ TG_D1: D1 }, "/api/tg-search?source=repchan1");
+  check("29h browse of one library collapses its reposts too",
+    (browseBody.results || []).filter((r) => r.title === "اختبار التكرار الأول").length === 1,
+    JSON.stringify((browseBody.results || []).map((r) => r.title)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

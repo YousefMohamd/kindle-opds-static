@@ -879,6 +879,10 @@ tgMode = "throw";
   const r = await getBook("");
   check("J2 empty-query page: cache-control: no-store",
     r.cache === "no-store", r.cache);
+  // Curated emoji set (2026-11-21): the /book search form carries
+  // the 🔍 Search glyph, like the homepage submit button.
+  check("J2b search form submit carries 🔍",
+    r.body.includes('value="🔍 بحث"'));
 }
 {
   const r = await getBook("x".repeat(201));

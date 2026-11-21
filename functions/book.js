@@ -599,7 +599,7 @@ export async function onRequest(context) {
     + "<input type=\"search\" name=\"q\" value=\"" + esc(qVal) + "\" "
     + "placeholder=\"ابحث بالعنوان أو المؤلف…\" aria-label=\"بحث\"> "
     + fpHidden
-    + "<input type=\"submit\" value=\"بحث\"></form>\n";
+    + "<input type=\"submit\" value=\"🔍 بحث\"></form>\n";
 
   const foot = "<p class=\"note\"><a href=\"/\">الرئيسية</a> · "
     + "<a href=\"/telegram/\">فهرس تيليجرام</a> · "

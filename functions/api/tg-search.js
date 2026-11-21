@@ -120,6 +120,14 @@
 // results are approximate: callers label them 'أقرب النتائج'
 // (website index.html status line, bot runSearch) instead of
 // presenting them as exact matches.
+// Dedup (2026-11-21): the same book is often posted in several
+// channels, so one title can come back 3x and eat 3 of the 10 slots.
+// The endpoint over-fetches (3x the requested limit, capped at 50)
+// and collapses same-title + same-author reposts to the best-ranked
+// copy (a clean copy beats a flagged one); a different book that
+// merely shares a title (different author) stays. `total` is the raw
+// match count, not distinct titles; dedup is per page (offset pages
+// can repeat a title shown on an earlier page).
 // Source-hiding (2026-11-21): a result's `source` is populated ONLY
 // when flagged:true; otherwise it is null. The `h=<handle>` param
 // stays in the gated get/send/read links — it is the delivery
@@ -594,6 +602,56 @@ export function botDeepLink(row) {
   return `https://t.me/${BOT_USERNAME}?start=dl_${parsed.handle}_${parsed.postId}_any`;
 }
 
+// --- search dedup (2026-11-21) ----------------------------------------
+// The same book is often posted in several channels, so one title can
+// come back 3x and eat 3 of the 10 slots (live complaint: 'ام ميمي'
+// 3 times in 5 tiles). Rows collapse by normalized title + author —
+// the same book reposted collapses to its best-ranked copy (the kept
+// row keeps its own post identity + delivery links; nothing is merged
+// into a synthetic entry). A different book that merely shares a title
+// — a different author — stays, and the author line already
+// disambiguates it on the website (like the bot report picklist's
+// pickLabels(), which labels same-title tiles by author / library
+// instead of dropping them — here the drop IS the point for the
+// search list, the label is the fallback for what remains). When the
+// kept copy is flagged and a later copy of the same book is not, the
+// clean copy wins (it has delivery links; the flagged one points at
+// the bot only). Exported for tests.
+export function dedupeTitleKey(title, author) {
+  return queryWords(title || "").join(" ") + "\n" + queryWords(author || "").join(" ");
+}
+
+// Collapse [{ row, flagged }] in rank order by dedupeTitleKey, first
+// copy wins — except a clean copy replaces a flagged kept copy of the
+// same book (see above). Not exported: visibleResults is the entry
+// point and the tests cover it through onRequest().
+function dedupeKept(kept) {
+  const byKey = new Map();
+  const out = [];
+  for (const item of kept || []) {
+    const k = dedupeTitleKey(item.row.title, item.row.author);
+    const prev = byKey.get(k);
+    if (!prev) {
+      byKey.set(k, item);
+      out.push(item);
+      continue;
+    }
+    if (prev.flagged && !item.flagged) {
+      out[out.indexOf(prev)] = item;
+      byKey.set(k, item);
+    }
+  }
+  return out;
+}
+
+// Dedup over-fetch: the endpoint fetches up to 3x the requested limit
+// (capped at MAX_LIMIT) so that after collapsing same-title reposts
+// the page still holds `limit` distinct books instead of `limit`
+// minus the duplicates. The COUNT(*) total is unaffected (it counts
+// all matches, not the fetched page), and `total` keeps its raw
+// meaning: matching rows, not distinct titles.
+const DEDUP_OVERFETCH = 3;
+
 // Flag + hide for one page of rows, from ONE denylist read (the
 // flags:all blob — see flagStateForRows). Hidden rows are dropped
 // (never returned), the rest are mapped with their flagged boolean
@@ -605,11 +663,13 @@ export function botDeepLink(row) {
 // returned with delivery links disabled and flagCheck: "degraded",
 // the raw post URL is withheld even from the bot, and the caller
 // must surface flagStatus. A degraded page never fails open.)
-async function visibleResults(env, rows, includeUrl) {
+async function visibleResults(env, rows, includeUrl, limit) {
   const state = await flagStateForRows(env, rows);
+  const cap = Number.isFinite(limit) && limit > 0 ? limit : (rows || []).length;
   if (state.status === "degraded") {
-    const results = (rows || []).map((r) => {
-      const out = toResult(r, false, false);
+    const kept = dedupeKept((rows || []).map((r) => ({ row: r, flagged: false })));
+    const results = kept.slice(0, cap).map(({ row }) => {
+      const out = toResult(row, false, false);
       out.get = null;
       out.send = null;
       out.read = null;
@@ -619,7 +679,7 @@ async function visibleResults(env, rows, includeUrl) {
     });
     return { results, hiddenCount: 0, flagStatus: "degraded" };
   }
-  const results = [];
+  const kept = [];
   let hiddenCount = 0;
   for (const r of rows || []) {
     const parsed = parsePostUrl(r.url);
@@ -628,8 +688,13 @@ async function visibleResults(env, rows, includeUrl) {
       hiddenCount++;
       continue;
     }
-    results.push(toResult(r, key ? state.flagged.has(key) : false, includeUrl));
+    kept.push({ row: r, flagged: key ? state.flagged.has(key) : false });
   }
+  // Same-title reposts collapse to one tile (see dedupeKept); the
+  // page is then cut to the requested limit of DISTINCT books.
+  const results = dedupeKept(kept)
+    .slice(0, cap)
+    .map(({ row, flagged }) => toResult(row, flagged, includeUrl));
   return { results, hiddenCount, flagStatus: state.status };
 }
 
@@ -826,10 +891,14 @@ async function d1Search(db, match, limit, offset, source) {
 // when the previous one returned 0 rows; the first hit wins.
 // Returns { total, rows, match } — match is the winning tier
 // (exact|prefix|typo|any|word) or null when no tier matched.
-// Exported for tests.
+// Rows are over-fetched (up to 3x `limit`, capped at MAX_LIMIT) so
+// visibleResults can collapse same-title reposts and still return
+// `limit` distinct books; `total` is the full match count, not the
+// fetched page. Exported for tests.
 export async function d1SearchLadder(db, words, limit, offset, source) {
+  const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
   for (const tier of ladderQueries(words)) {
-    const found = await d1Search(db, tier.expr, limit, offset, source);
+    const found = await d1Search(db, tier.expr, fetchLimit, offset, source);
     if (found.total > 0) return { ...found, match: tier.match };
   }
   return { total: 0, rows: [], match: null };
@@ -1058,15 +1127,18 @@ export async function onRequest(context) {
       return json({ ok: true, q: "", total: 0, limit, offset, ...cov, results: [] });
     }
     try {
-      const found = await d1Search(db, null, limit, offset, source);
+      // Browse over-fetches like search (see DEDUP_OVERFETCH): the
+      // same title can be reposted inside one library too.
+      const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source);
       if (found.total === 0) {
         return json({ ok: true, q: "", source, total: 0, limit, offset, ...cov, results: [] });
       }
       // Hidden rows (owner /hide) are dropped before the reply;
       // `total` is adjusted by the hidden rows on this page only.
       // flagStatus ("ok" | "legacy" | "degraded") tells the caller
-      // whether the denylist was trusted for this page.
-      const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl);
+      // whether the denylist was trusted for this page. Same-title
+      // reposts collapse to one tile (see visibleResults).
+      const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit);
       return json({
         ok: true, q: "", source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov,
         flagStatus,
@@ -1103,7 +1175,9 @@ export async function onRequest(context) {
     // the reply, and `total` is adjusted by the hidden rows on this
     // page only. flagStatus ("ok" | "legacy" | "degraded") tells
     // the caller whether the denylist was trusted for this page.
-    const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl);
+    // Same-title reposts collapse to one tile (see visibleResults);
+    // `total` stays the raw match count, not distinct titles.
+    const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit);
     return json({
       ok: true,
       q,
