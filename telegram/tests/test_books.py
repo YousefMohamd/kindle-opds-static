@@ -22,6 +22,76 @@ def test_normalize_arabic_strips_tashkeel():
     assert normalize_arabic("plain latin 123") == "plain latin 123"
 
 
+def test_normalize_arabic_folds_persian_letters():
+    # نوستالجيا: a query with ج must match a title stored with چ.
+    assert normalize_arabic("نوستالچيا") == "نوستالجيا"
+    assert (
+        normalize_arabic("روايه نوستالچيا لنور اسماعيل")
+        == "روايه نوستالجيا لنور اسماعيل"
+    )
+    assert normalize_arabic("کتاب") == "كتاب"
+    assert normalize_arabic("پدر") == "بدر"
+    assert normalize_arabic("گربه") == "كربه"
+    assert normalize_arabic("ڤيديو") == "فيديو"
+
+
+def test_normalize_arabic_eastern_numerals_deferred_to_day_2():
+    # DEFERRED to day 2 (2026-11-21 follow-up): the ٠-٩ -> 0-9 fold
+    # is NOT applied — live books_fts still holds Eastern numerals
+    # in 15,370 rows and today's D1 write budget is fully used, so
+    # no batch rewrite was applied either. Folding the query now,
+    # without the migration, would make Eastern-numeral queries MISS
+    # rows they currently find. This check locks in the deferred
+    # state — it MUST be flipped to the fold (and the migration run)
+    # on day 2.
+    assert normalize_arabic("٥٥") == "٥٥"
+    assert normalize_arabic("كتاب ١٢٣") == "كتاب ١٢٣"
+
+
+def test_normalize_arabic_never_folds_waw():
+    # NEGATIVE: a leading و is NEVER stripped — "وردة" stays "وردة"
+    # (the particle prefixes و/ف/بال/لل are ladder variants in the
+    # search endpoint only, never folds in the normalizer).
+    assert normalize_arabic("وردة") == "ورده"
+    assert normalize_arabic("والكتاب") == "والكتاب"
+    # And the forbidden letter folds never happen either.
+    assert normalize_arabic("صبر") == "صبر"
+    assert normalize_arabic("طريق") == "طريق"
+    assert normalize_arabic("ذهب") == "ذهب"
+    assert normalize_arabic("قلب") == "قلب"
+    assert normalize_arabic("ابن خلدون") == "ابن خلدون"
+
+
+def test_normalize_for_fts_eastern_numerals_deferred_to_day_2():
+    # Same deferral as normalize_arabic (see above): no fold yet.
+    from tbi.d1_sync import normalize_for_fts  # noqa: E402
+
+    assert normalize_for_fts("كتاب ٥٥ لغزا") == "كتاب ٥٥ لغزا"
+    assert normalize_for_fts("سنة ٢٠٢٦") == "سنه ٢٠٢٦"
+
+
+def test_normalize_arabic_folds_hamza_forms():
+    # Same folds the JS normalizers already had (books.py lacked them).
+    assert normalize_arabic("مؤمن") == "مومن"
+    assert normalize_arabic("سائل") == "سايل"
+    assert normalize_arabic("شيء") == "شي"
+    # رؤوف keeps both waws: ؤ -> و, and the original و stays.
+    assert normalize_arabic("رؤوف") == "رووف"
+
+
+def test_normalize_for_fts_folds_persian():
+    # The FTS text the migration rewrites (d1_sync.normalize_for_fts).
+    from tbi.d1_sync import normalize_for_fts  # noqa: E402
+
+    assert (
+        normalize_for_fts("روايه نوستالچيا لنور اسماعيل")
+        == "روايه نوستالجيا لنور اسماعيل"
+    )
+    # Persian ک composes with ال-stripping: الکتاب -> كتاب.
+    assert normalize_for_fts("الکتاب") == "كتاب"
+    assert normalize_for_fts("مؤمن") == "مومن"
+
+
 def test_english_dash():
     assert parse_title_author("The Old Man and the Sea - Ernest Hemingway.pdf") == (
         "The Old Man and the Sea",
