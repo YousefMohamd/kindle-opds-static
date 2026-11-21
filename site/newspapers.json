@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-21",
-  "generated_at": "2026-11-21T08:53:52.102281+00:00",
+  "generated_at": "2026-11-21T09:03:46.526320+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -9,7 +9,7 @@
       "status": "error",
       "posts_seen": 0,
       "entries": 0,
-      "detail": "API read failed: A wait of 44096 seconds is required (caused by ResolveUsernameRequest)"
+      "detail": "API read failed: A wait of 43502 seconds is required (caused by ResolveUsernameRequest)"
     },
     {
       "key": "joinchat/VGPv_tnlgUJlNjdl",
@@ -82,7 +82,7 @@
   "unmatched": [],
   "dropped": [
     {
-      "name": "😄😁😄  صحف الكويت  😄😁😁",
+      "name": "😄😁😄  صحف مصر  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
@@ -94,11 +94,6 @@
     {
       "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
       "reason": "url",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف مصر  😄😁😁",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -123,6 +118,11 @@
     },
     {
       "name": "😄😁😄  صحف السعودية  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف الكويت  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
