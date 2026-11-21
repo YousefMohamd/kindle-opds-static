@@ -93,13 +93,39 @@
 // query and receives only the small result set.
 //
 // Search semantics: title AND author, Arabic-normalized (NFKC, strip
-// tashkeel/tatweel, unify alef/hamza/yeh forms, ة->ه, ى->ي), lowercased,
-// and the definite article "ال" stripped from the front of a word when
-// >=3 chars remain (so "كاتب" matches "الكاتب"). The query is split
-// into words; ALL words must appear (FTS5 phrase-AND). If the AND
-// query finds nothing, the endpoint retries with the longest word
-// alone (the bot's "Did you mean" does its own suggestion on top).
-// Results are ordered by FTS5 rank (best match first).
+// tashkeel/tatweel, unify alef/hamza/yeh forms, ة->ه, ى->ي, Persian
+// folds), lowercased, and the definite article "ال" stripped from the front of a word when >=3 chars
+// remain (so "كاتب" matches "الكاتب"). The query is split into
+// words and run down a LADDER (see ladderQueries): each tier runs
+// ONLY when the previous one returned 0 rows; the first hit wins
+// and the reply carries `match` (exact|prefix|typo|any|word) naming
+// the tier that produced the results (null when nothing matched).
+//   Tier 0 exact: all words ANDed as exact phrases (today's search).
+//   Tier 0b particle: same AND, with the و/ف/بال/لل prefixes stripped
+//     from words whose remainder is >=4 chars (a ladder variant only
+//     — the full form already returned 0; NEVER a fold, so 'وردة'
+//     stays 'وردة'). Reports match 'exact'.
+//   Tier 1 prefix: same AND, last word as an FTS5 prefix `"w1" AND
+//     "w2"*` (only when the last word is len>=4 — shorter prefixes
+//     are too broad); finds a missing ending.
+//   Tier 2 typo: every word truncated to its first 5-6 chars and
+//     prefix-matched (`"w1"* AND "w2"*`); finds a mid/late-word
+//     substitution (the error must sit past the anchor).
+//   Tier 3 OR/any-word: `"w1" OR "w2"`, bm25-ranked (multi-word only);
+//     finds a query with one wrong word.
+//   Tier 4 longest-word: today's fallback, kept — the longest word
+//     alone (skipped for a single-word query: it IS tier 0).
+// Results are ordered by bm25(books_fts, 3.0, 1.0) — title 3x,
+// author 1x — instead of f.rank. A non-exact `match` means the
+// results are approximate: callers label them 'أقرب النتائج'
+// (website index.html status line, bot runSearch) instead of
+// presenting them as exact matches.
+// Source-hiding (2026-11-21): a result's `source` is populated ONLY
+// when flagged:true; otherwise it is null. The `h=<handle>` param
+// stays in the gated get/send/read links — it is the delivery
+// identity (dl-token/send-to-kindle/tg-send resolve the book by
+// (h,p,f); the proxy checks the exact triple), not displayed text,
+// and stripping it would break every Telegram delivery link.
 //
 // Flagged books: the endpoint IDENTIFIES them, it does not
 // enforce the cap. It reads the shared denylist ONCE per search:
@@ -218,10 +244,23 @@ const SOURCE_RE = /^[A-Za-z0-9_]{1,64}$/; // A Telegram channel/group handle
 // Same normalization as the indexer (tbi.books.normalize_arabic) and
 // the website search page: NFKC, strip tashkeel (U+064B-U+0652) +
 // superscript alef (U+0670) + tatweel (U+0640), unify alef forms
-// (أإآٱ -> ا), ؤ -> و, ئ -> ي, ء removed, ى -> ي, ة -> ه, and fold
+// (أإآٱ -> ا), ؤ -> و, ئ -> ي, ء removed, ى -> ي, ة -> ه, fold
 // Persian letters (چ -> ج, ک/گ -> ك, پ -> ب, ڤ -> ف) so a query with
-// ج finds a title stored with چ (e.g. نوستالچيا). Latin text
-// is lowercased by normalizeQuery; display text is never changed.
+// ج finds a title stored with چ (e.g. نوستالچيا). Latin text is
+// lowercased by normalizeQuery; display text is never changed. Must
+// stay identical to tbi.books.normalize_arabic,
+// d1_sync.normalize_arabic and src/search.ts normalizeArabic.
+// EASTERN NUMERALS DEFERRED to day 2 (2026-11-21 follow-up): the
+// ٠-٩ -> 0-9 fold is NOT applied here — the live books_fts still
+// holds Eastern numerals in 15,370 rows (counted via
+// d1_query_file.py, db ba378afe-4a2e-4d79-b6e9-ad73cf51e8fa) and the
+// D1 write budget for today is fully used, so no batch rewrite was
+// applied either. Folding the query now, without the migration,
+// would make Eastern-numeral queries MISS rows they currently find
+// (query folds to Western digits, index still holds Eastern ones).
+// Day 2 (after the 2026-11-22 02:00 EET reset, once the delta
+// completes): add the fold to all four normalizers + run the FTS
+// migration. NEVER fold: س/ص, ت/ط, ذ/ز/ظ, ق/ك, ح/ه, ابن/بن.
 export function normalizeArabic(text) {
   return (text || "")
     .normalize("NFKC")
@@ -272,6 +311,67 @@ function ftsPhrase(word) {
 //   '"w1" AND "w2" AND ...'
 function ftsMatch(words) {
   return words.map(ftsPhrase).join(" AND ");
+}
+
+// Strip ONE particle prefix (و / ف / بال / لل) from the front of a
+// word, but ONLY when >=4 chars remain — so "والسندباد" -> "السندباد"
+// (then stripAl -> "سندباد") while "وردة" stays "وردة" (remainder
+// "ردة" is 3 chars). A LADDER variant only (see ladderQueries):
+// the stripped form is tried only when the full form returned 0.
+// NEVER a fold — the stored text and the normalizer are untouched.
+// Exported for tests.
+export function stripParticle(word) {
+  if (!word) return word;
+  for (const p of ["بال", "لل"]) {
+    if (word.startsWith(p) && word.length - p.length >= 4) return word.slice(p.length);
+  }
+  for (const p of ["و", "ف"]) {
+    if (word.startsWith(p) && word.length - 1 >= 4) return word.slice(1);
+  }
+  return word;
+}
+
+// The search ladder (see the header): the ordered tiers for one
+// query's words, each { match, expr }. A tier is OMITTED when it
+// cannot add anything: prefix needs a last word len>=4; OR needs
+// >=2 words; longest-word is skipped for a single word (it IS the
+// exact tier); the particle variant is omitted when no word
+// changes. Exported for tests.
+export function ladderQueries(words) {
+  const tiers = [{ match: "exact", expr: ftsMatch(words) }];
+  // Tier 0b — particle-stripped exact AND (match 'exact': it IS an
+  // exact AND of the stripped form). Only when some word changes.
+  const stripped = words.map((w) => stripAl(stripParticle(w)));
+  if (stripped.some((w, i) => w !== words[i])) {
+    tiers.push({ match: "exact", expr: ftsMatch(stripped) });
+  }
+  // Tier 1 — prefix: same AND, last word as an FTS5 prefix.
+  const last = words[words.length - 1];
+  if (words.length > 0 && last.length >= 4) {
+    const prefixExpr =
+      words.slice(0, -1).map(ftsPhrase).join(" AND ")
+      + (words.length > 1 ? " AND " : "")
+      + ftsPhrase(last) + "*";
+    tiers.push({ match: "prefix", expr: prefixExpr });
+  }
+  // Tier 2 — typo: every word truncated to its first 5-6 chars,
+  // prefix-matched. Anchor length: 5 chars for words of length
+  // 5-6, 6 chars for longer words (a longer word can afford a
+  // longer anchor); shorter words use the whole word as the prefix.
+  const typoExpr = words
+    .map((w) => ftsPhrase(w.length >= 7 ? w.slice(0, 6) : w.length >= 5 ? w.slice(0, 5) : w) + "*")
+    .join(" AND ");
+  tiers.push({ match: "typo", expr: typoExpr });
+  // Tier 3 — OR/any-word (multi-word only).
+  if (words.length > 1) {
+    tiers.push({ match: "any", expr: words.map(ftsPhrase).join(" OR ") });
+  }
+  // Tier 4 — longest word alone (today's fallback, kept).
+  if (words.length > 1) {
+    const longest = [...words].sort((a, b) => b.length - a.length)[0];
+    tiers.push({ match: "word", expr: ftsMatch([longest]) });
+  }
+  return tiers;
 }
 
 // -- file size -------------------------------------------------------
@@ -715,11 +815,24 @@ async function d1Search(db, match, limit, offset, source) {
     .prepare(
       "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
         "FROM books_fts f JOIN books b ON b.id = f.rowid " +
-        "WHERE f.books_fts MATCH ?" + srcClause + " ORDER BY f.rank LIMIT ? OFFSET ?",
+        "WHERE f.books_fts MATCH ?" + srcClause + " ORDER BY bm25(books_fts, 3.0, 1.0) LIMIT ? OFFSET ?",
     )
     .bind(match, ...srcParams, limit, offset)
     .all();
   return { total, rows: results || [] };
+}
+
+// Run the search ladder (see ladderQueries): each tier runs ONLY
+// when the previous one returned 0 rows; the first hit wins.
+// Returns { total, rows, match } — match is the winning tier
+// (exact|prefix|typo|any|word) or null when no tier matched.
+// Exported for tests.
+export async function d1SearchLadder(db, words, limit, offset, source) {
+  for (const tier of ladderQueries(words)) {
+    const found = await d1Search(db, tier.expr, limit, offset, source);
+    if (found.total > 0) return { ...found, match: tier.match };
+  }
+  return { total: 0, rows: [], match: null };
 }
 
 function toResult(row, flagged, includeUrl) {
@@ -729,7 +842,13 @@ function toResult(row, flagged, includeUrl) {
   const out = {
     title: row.title,
     author,
-    source: row.source,
+    // Source-hiding (2026-11-21): the channel/group handle is
+    // populated ONLY for flagged books (the bot's neutral
+    // 'عرض المصدر' button needs it as a link target); every other
+    // result carries source: null. The `h=<handle>` param stays in
+    // the gated get/send/read links (see the header) — it is the
+    // delivery identity, not displayed text.
+    source: flagged ? row.source : null,
     kind: row.kind || "channel",
     formats: ext ? [ext] : [],
     flagged: !!flagged,
@@ -970,15 +1089,14 @@ export async function onRequest(context) {
   }
 
   try {
-    // Full AND first; fall back to the longest word alone (same spirit
-    // as the bot's suggestSearch) when nothing matches all words.
-    let found = await d1Search(db, ftsMatch(words), limit, offset, source);
-    if (found.total === 0 && words.length > 1) {
-      const longest = [...words].sort((a, b) => b.length - a.length)[0];
-      found = await d1Search(db, ftsMatch([longest]), limit, offset, source);
-    }
+    // The search ladder (see ladderQueries): exact AND first, then
+    // prefix / typo / OR / longest-word — each tier runs ONLY when
+    // the previous returned 0; the first hit wins. `match` names
+    // the winning tier (null when nothing matched) so callers can
+    // label non-exact results 'أقرب النتائج'.
+    const found = await d1SearchLadder(db, words, limit, offset, source);
     if (found.total === 0) {
-      return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
+      return json({ ok: true, q, match: null, total: 0, limit, offset, ...cov, results: [] });
     }
     // One denylist read for the page (the flags:all blob — see
     // visibleResults). Hidden rows (owner /hide) are dropped before
@@ -990,6 +1108,7 @@ export async function onRequest(context) {
       ok: true,
       q,
       ...(source ? { source } : {}),
+      match: found.match,
       total: Math.max(0, found.total - hiddenCount),
       limit,
       offset,

@@ -75,11 +75,11 @@
 </div>
 
 <div class="card">
-  <h2>مكتبات تلجرام</h2>
+  <h2>المكتبات</h2>
   <p id="tgcount">223 مكتبة — 407,714 كتاب مميز، 600,250 ملف — من قنوات
   وجروبات تيليجرام العامة.</p>
-  <a class="btn" href="/telegram/libraries.html">تصفّح مكتبات تلجرام ←</a>
-  <a class="btn" href="/telegram/">ابحث في كتب تيليجرام</a>
+  <a class="btn" href="/telegram/libraries.html">تصفّح المكتبات ←</a>
+  <a class="btn" href="/telegram/">ابحث في الكتب</a>
   <p class="note">كل مكتبة لها صفحة كتبها الخاصة — اضغط اسم المكتبة في
   القائمة لتصفّح كتبها وحدها، أو افتحها في تيليجرام.</p>
 </div>
@@ -291,7 +291,11 @@ function renderGroup(heading, items, tg) {
     var flag = (tg && b.flagged) ? " <span class=\"flag\">🚩 اطلبه من البوت</span>" : "";
     var botBtn = (tg && b.flagged)
       ? "<div><a class=\"btn\" href=\"" + esc(botDeepLink(b.bot)) + "\">View in bot</a></div>" : "";
-    var lib = tg ? ("تيليجرام — " + (b.source || "")) : (b.library || "");
+    // Source-hiding (2026-11-21): Telegram books show NO library
+    // line at all — the endpoint populates `source` only for flagged
+    // books, and the site never renders it (flagged books point at
+    // the bot instead). OPDS library names are unchanged.
+    var lib = tg ? "" : (b.library || "");
     // Titles open the book page (/book) — for Telegram AND for OPDS
     // titles alike. The book page is the Kindle path (Get on Kindle /
     // read online / send by email), because the Kindle browser blocks
@@ -304,7 +308,7 @@ function renderGroup(heading, items, tg) {
     html += "<li><div class=\"title\"><a href=\"" + esc(titleLink) + "\">" +
       esc(b.title) + "</a></div>" +
       (b.author ? "<div class=\"meta\">" + esc(b.author) + "</div>" : "") +
-      "<div class=\"meta\">" + esc(lib) + "</div>" +
+      (lib ? "<div class=\"meta\">" + esc(lib) + "</div>" : "") +
       (!tg ? "<div class=\"meta\"><a href=\"" + esc(bookPage) + "\">صفحة الكتاب — احصل على الكتاب أو اقرأ أونلاين</a></div>" : "") +
       (fmts || flag ? "<div>" + fmts + flag + "</div>" : "") + botBtn + "</li>";
   }
@@ -322,9 +326,12 @@ function runSearch(q) {
     fetch("/api/tg-search?q=" + enc + "&limit=10").then(function (r) { return r.json(); }),
     fetch("/opds/search?q=" + enc).then(function (r) { return r.text(); }).then(parseOpds)
   ]).then(function (out) {
-    var tg = [], opds = [], tgDown = false, opdsDown = false, tgPartial = false;
+    var tg = [], opds = [], tgDown = false, opdsDown = false, tgPartial = false, tgMatch = null;
     if (out[0].status === "fulfilled" && out[0].value && out[0].value.ok) {
       tg = out[0].value.results || [];
+      // Smart-search ladder (2026-11-21): the endpoint reports
+      // which tier matched (`match`: exact|prefix|typo|any|word).
+      tgMatch = out[0].value.match || null;
       // The Telegram half is a partial D1 snapshot until the import
       // finishes (Thu 2026-11-19) — the endpoint says so in
       // `coverage.partial`; read it, never hardcode it, so the note
@@ -341,6 +348,8 @@ function runSearch(q) {
     if (tgDown) statusEl.textContent += " (بحث تيليجرام غير متاح حالياً — جرّب لاحقاً.)";
     if (opdsDown) statusEl.textContent += " (بحث المكتبات غير متاح حالياً — جرّب لاحقاً.)";
     if (tgPartial) statusEl.textContent += " ملاحظة: فهرس تيليجرام ما زال يُستورَد — يكتمل الخميس 19 نوفمبر 2026، فقد تكون هناك نتائج أخرى لم تظهر بعد.";
+    // Non-exact ladder tiers are labelled "أقرب النتائج" (2026-11-21).
+    if (tg.length && tgMatch && tgMatch !== "exact") statusEl.textContent += " — أقرب النتائج.";
     resEl.innerHTML =
       renderGroup("من تيليجرام", tg, true) +
       renderGroup("من المكتبات", opds, false);

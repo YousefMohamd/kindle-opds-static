@@ -226,7 +226,7 @@ export async function onRequest(context) {
     if (result.error === "flagged") {
       return page("🚩 كتاب عليه علامة",
         "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
-        + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
+        + "<p>للوصول إليه، اطلبه عبر البوت "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
         + backLink, 403);
     }
@@ -275,6 +275,13 @@ export async function onRequest(context) {
     ? url.origin.replace(/^https?:\/\//, "") + short
     : target;
   const shownHref = short ? url.origin + short : target;
+  // Source-hiding (2026-11-21): when there is no short link, the
+  // VISIBLE text of the fallback link must not be the raw target URL
+  // for Telegram books — the signed proxy URL carries h=<handle>.
+  // Show the neutral text "رابط التنزيل" instead; the href still
+  // carries the target, so the download works. OPDS books keep
+  // showing the URL (existing §5 test asserts it).
+  const shownText = short ? shownUrl : (book.kind === "tg" ? "رابط التنزيل" : shownUrl);
   const fmtLabel = book.fmt.toUpperCase();
 
   // Family-specific steps (docs/ereader-detection.md §4.2). The
@@ -361,7 +368,7 @@ export async function onRequest(context) {
       + "<ol>\n"
       + "<li><b>الخطوة 1:</b> اضغط هذا الرابط هنا على جهازك:</li>\n"
       + "</ol>\n"
-      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
+      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownText) + "</a></p>\n"
       + "<p class=\"note tg-only\">في تيليجرام: اضغط الرابط وسيُفتح في متصفح جهازك لتنزيل الملف — من هناك سيظهر في مكتبتك.</p>\n"
       + "<ol start=\"2\">\n"
       + "<li><b>الخطوة 2:</b> سينزّل ملف " + esc(fmtLabel) + " ويظهر في مكتبتك.</li>\n"
@@ -382,7 +389,7 @@ export async function onRequest(context) {
       + "<ol>\n"
       + "<li><b>الخطوة 1:</b> اضغط هذا الرابط هنا على جهازك:</li>\n"
       + "</ol>\n"
-      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
+      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownText) + "</a></p>\n"
       + "<p class=\"note tg-only\">في تيليجرام: اضغط الرابط وسيُفتح في متصفح جهازك لتنزيل الملف.</p>\n"
       + "<ol start=\"2\">\n"
       + "<li><b>الخطوة 2:</b> إن نزّل المتصفح الملف، سيظهر في مكتبتك.</li>\n"
@@ -405,7 +412,7 @@ export async function onRequest(context) {
       + "<ol>\n"
       + "<li><b>الخطوة 1:</b> اضغط هذا الرابط هنا على جهاز Kindle:</li>\n"
       + "</ol>\n"
-      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
+      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownText) + "</a></p>\n"
       + "<ol start=\"2\">\n"
       + "<li><b>الخطوة 2:</b> سينزّل ملف PDF ويظهر في مكتبتك.</li>\n"
       + "<li><b>الخطوة 3:</b> إن لم ينزّل المتصفح الملف، استخدم الإيميل (أدناه) أو ارفع الملف في amazon.com/sendtokindle من هاتفك/حاسوبك (اضغط «Select files from device» واختر ملف PDF، ثم «Send»).</li>\n"
@@ -429,7 +436,7 @@ export async function onRequest(context) {
       + "<ol>\n"
       + "<li><b>الخطوة 1:</b> افتح هذا الرابط من هاتفك أو حاسوبك:</li>\n"
       + "</ol>\n"
-      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownUrl) + "</a></p>\n"
+      + "<p class=\"short\"><a data-tg-download href=\"" + esc(shownHref) + "\">" + esc(shownText) + "</a></p>\n"
       + "<p class=\"note tg-only\">في تيليجرام: اضغط الرابط وسيُفتح في متصفح جهازك لتنزيل الملف — من هناك ارفعه إلى Send to Kindle.</p>\n"
       + "<ol start=\"2\">\n"
       + "<li><b>الخطوة 2:</b> نزّل ملف " + esc(fmtLabel) + " على هاتفك/حاسوبك (ضغطة واحدة على الرابط) — على الهاتف ستجد الملف في مجلد التنزيلات (Downloads)، وستختاره من هناك في الخطوة 3.</li>\n"

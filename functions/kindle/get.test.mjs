@@ -112,6 +112,13 @@ function shortCodeIn(body) {
   return m ? m[1] : null;
 }
 
+// Visible text only (tags stripped) — the delivery hrefs still carry
+// h=<handle> as the delivery identity, so a handle check must look
+// at the text a reader actually sees, not at the raw HTML.
+function visibleText(body) {
+  return (body || "").replace(/<[^>]*>/g, " ");
+}
+
 // The ONLY scripts the page may carry: the two Mini App loaders
 // (Workstream 3b), both defer, both inert outside Telegram. The
 // old "NO <script> anywhere" rule is now "no script except these
@@ -595,6 +602,37 @@ console.log("14. Horizontal action row (2026-11-18):");
   check("14f actionsRow unit: empty -> '', links keep order, wrapped in one div",
     actionsRow() === "" && actionsRow("") === ""
     && actionsRow("<p>A</p>", "", "<p>B</p>") === "<div class=\"actions\">\n<p>A</p><p>B</p></div>\n");
+}
+
+// ================= 15. Source-hiding (2026-11-21) =================
+console.log("15. Source-hiding:");
+{
+  // TG book, no KV: no short link, so the fallback link's VISIBLE
+  // text must be the neutral "رابط التنزيل" — never the raw target
+  // URL (the signed proxy URL carries h=<handle>). The href still
+  // carries the target, so the download works.
+  const env = { PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const r = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "TG No KV" }, env, "10.8.0.1");
+  check("15a TG no KV: 200, no short link, neutral link text",
+    r.status === 200 && shortCodeIn(r.body) === null
+    && r.body.includes(">رابط التنزيل</a>"), "status " + r.status);
+  check("15b TG no KV: visible text has no handle and no t.me/<handle>",
+    !visibleText(r.body).includes("kotobkhana")
+    && !visibleText(r.body).includes("t.me/kotobkhana"));
+  check("15c TG no KV: the href still carries the signed target (download works)",
+    r.body.includes("data-tg-download") && r.body.includes("h=kotobkhana"));
+  // OPDS no-KV keeps showing the URL (§5) — the visible text is
+  // the acquisition URL, not a handle.
+  const rOpds = await call({ lib: "hindawi", id: "13028368", f: "epub", t: "OPDS No KV" }, env, "10.8.0.2");
+  check("15d OPDS no KV: target URL still shown as the link text",
+    rOpds.status === 200 && rOpds.body.includes(">https://www.hindawi.org/books/13028368.epub</a>"));
+  // Flagged 403 page: neutral wording, no "تليجرام" / "قناة النشر".
+  const kv = makeKv({ "flag:kotobkhana:7559": "1" });
+  const envFlag = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const rFlag = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub", t: "Flagged" }, envFlag, "10.8.0.3");
+  check("15e flagged 403: neutral bot wording, no 'تليجرام' / 'قناة النشر'",
+    rFlag.status === 403 && rFlag.body.includes("اطلبه عبر البوت")
+    && !rFlag.body.includes("بوت تليجرام") && !rFlag.body.includes("قناة النشر"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

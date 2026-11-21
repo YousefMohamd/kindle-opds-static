@@ -300,15 +300,15 @@ tgMode = "ok";
   const r = await getBook("Everyone in This Bank Is a Thief");
   check("B1 TG-only title: 200, no longer the no-match page",
     r.status === 200 && !r.body.includes("لم نجد"));
-  check("B1 TG-only title: Telegram card (title/author/source/format)",
+  check("B1 TG-only title: Telegram card (title/author/format, no source line)",
     r.body.includes("Everyone in This Bank Is a Thief")
     && r.body.includes("Benjamin Stevenson")
-    && r.body.includes("kotobkhana")
-    && r.body.includes("EPUB"));
+    && r.body.includes("EPUB")
+    && !r.body.includes("المصدر:"));
   check("B1 TG-only title: section heading with total",
     r.body.includes("من تيليجرام (2 من 42)"));
-  check("B1 TG-only title: source as TEXT, no t.me link anywhere",
-    r.body.includes("المصدر: kotobkhana") && !r.body.includes("https://t.me/kotobkhana/7559"));
+  check("B1 TG-only title: no source line, no t.me post link anywhere (source-hiding 2026-11-21)",
+    !r.body.includes("المصدر:") && !r.body.includes("https://t.me/kotobkhana/7559"));
   check("B1 TG-only title: email is the PRIMARY button (class btn, lib=tg, handle+post)",
     r.body.includes('class="btn" href="/api/send-to-kindle?lib=tg')
     && r.body.includes("h=kotobkhana") && r.body.includes("p=7559")
@@ -1284,9 +1284,9 @@ console.log("O. Book metadata (Workstream 3):");
   check("O21 meta E2E: no placeholder, no invented number anywhere",
     !r.body.includes("؟") && !r.body.includes("حجم غير معروف")
     && !r.body.includes("عدد الصفحات: 0") && !r.body.includes("junk"));
-  check("O22 meta E2E: meta line sits under the format line, before the source line",
+  check("O22 meta E2E: meta line sits inside the 'WS3 Meta Both' card, under the format line (no source line any more — source-hiding 2026-11-21)",
     r.body.indexOf("الحجم: 2.7 MB") > r.body.indexOf("WS3 Meta Both")
-    && r.body.indexOf("الحجم: 2.7 MB") < r.body.indexOf("المصدر: kotobkhana"));
+    && r.body.indexOf("الحجم: 2.7 MB") < r.body.indexOf("WS3 Meta Size"));
   // OPDS cards: no size/pages in their indexes -> no meta line at all.
   tgMode = "throw";
   const rOpds = await getBook("لؤلؤة الحب");

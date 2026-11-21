@@ -48,7 +48,7 @@
 // link). The moment tg-search is live and D1 has books, Telegram
 // cards appear with no further change to this file.
 //
-// Telegram cards are NORMAL cards (title, author, source, format)
+// Telegram cards are NORMAL cards (title, author, format)
 // with the SAME "أرسل لميل قارئي" primary button as
 // OPDS cards — the button sends the book to the Kindle by email
 // (unlimited, no per-user cap). Under it, the SAME device download
@@ -61,10 +61,11 @@
 // pre-built from /api/tg-search (get/send/read) — the endpoint
 // never returns the raw t.me post URL to this page, so no card can
 // ever link straight to a Telegram post.
-// The source (library/channel name) is plain TEXT
-// under the book info, never the button label and never a t.me link:
-// tapping a source link opened the Telegram website, which is not a
-// download.
+// Source-hiding (2026-11-21): NO source line anywhere on this
+// page. The endpoint populates `source` only for flagged books,
+// and this page never renders it — the channel handle survives
+// only INSIDE the delivery URLs (h=<handle>) as the delivery
+// identity, never as visible text, and never as a t.me link.
 // Flagged Telegram books show a 🚩 flag and ONE
 // button, "View in bot" (Workstream 2b) — the bot deep link from
 // /api/tg-search — and NO send button and NO reading on the website,
@@ -691,8 +692,11 @@ export async function onRequest(context) {
       }
       if (related.length < 5) {
         const tgRel = await fetchTelegramResults(url.origin, relWord, 5);
+        // Source-hiding (2026-11-21): Telegram related books show no
+        // source label — pass "" so the "(source)" suffix disappears.
+        // OPDS related books keep their library label above.
         for (const r of tgRel.results || []) {
-          pushRelated(r.title, r.author, r.source || "تيليجرام");
+          pushRelated(r.title, r.author, "");
         }
       }
     }
@@ -857,10 +861,10 @@ export async function onRequest(context) {
 
   // ---- Telegram results: same card layout, same SEND button --------
   // The button is the send action (via the proxy fetch in
-  // functions/api/send-to-kindle.js, lib=tg); the source is plain
-  // TEXT under the book info, never the button label and never a
-  // t.me link — tapping a source link opened the Telegram website,
-  // which is not a download. Flagged books get NO send
+  // functions/api/send-to-kindle.js, lib=tg); the source is never
+  // rendered (source-hiding, 2026-11-21) — the handle survives only
+  // inside the delivery URLs (h=<handle>) as the delivery identity.
+  // Flagged books get NO send
   // button and NO reading on the website, per the website rule
   // (flagged = shown with a 🚩 flag, reachable via the bot, which
   // enforces the 3/day cap); a book that cannot be sent (private
@@ -924,17 +928,18 @@ export async function onRequest(context) {
         body += "<p class=\"desc\">" + esc(desc.text)
           + " <span class=\"src\">(الوصف من " + esc(desc.source) + ")</span></p>\n";
       }
-      body += "<p>تيليجرام"
-        + (r.formats.length ? " · " + esc(r.formats.join("، ")) : "")
-        + (r.flagged ? " · 🚩" : "")
-        + "</p>\n";
+      // Formats only — no "تيليجرام" label (source-hiding,
+      // 2026-11-21: the word Telegram never appears in the UI).
+      const tgFmtLine = (r.formats.length ? esc(r.formats.join("، ")) : "")
+        + (r.flagged ? " · 🚩" : "");
+      if (tgFmtLine) body += "<p>" + tgFmtLine + "</p>\n";
       // Metadata (Workstream 3): file size + page count UNDER the format
       // line — only when known (size comes from the index via tg-search;
       // pages has no source today, so a page-less book shows size alone,
       // and a book with neither shows no line at all).
       const tgMeta = formatBookMeta({ size: r.size, pages: r.pages });
       if (tgMeta) body += "<p class=\"meta\">" + esc(tgMeta) + "</p>\n";
-      body += "<p>المصدر: " + esc(r.source || (r.kind === "group" ? "مجموعة" : "قناة")) + "</p>\n";
+      // No "المصدر:" line (source-hiding, 2026-11-21).
       if (r.flagged) {
         // Flagged book (Workstream 2b): shown with the
         // 🚩 flag and ONE button, "View in bot" — the bot

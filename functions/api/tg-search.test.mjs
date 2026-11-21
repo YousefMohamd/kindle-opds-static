@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -57,6 +57,12 @@ const FIXTURES = [
   // (Live author is ''; the fixture gives it one so the author
   // search below has something to find.)
   ["روايه نوستالچيا لنور اسماعيل", "نور اسماعيل", "L_alnader1", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/L_alnader1/137839", "روايه نوستالچيا لنور اسماعيل.pdf"],
+  // Smart-search ladder fixtures (2026-11-21): one Sindbad book for
+  // the exact/prefix/typo/OR/particle tiers, a numeral title, and a
+  // title-vs-author pair for the bm25 title>author check.
+  ["مغامرات السندباد البحري", "كاتب ما", "ladderchan", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/100", "مغامرات السندباد البحري.pdf"],
+  ["طبخ الزعفران", "مؤلف آخر", "ladderchan", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/102", "طبخ الزعفران.epub"],
+  ["كتاب آخر", "الزعفران", "ladderchan", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/ladderchan/103", "كتاب آخر.epub"],
 ];
 const shard = JSON.parse(readFileSync(SHARD, "utf-8"));
 const rows = shard.books.slice(0, SAMPLE);
@@ -202,7 +208,7 @@ const D1 = mockD1(db);
   const hit = (body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
   check("1d exact title found", !!hit, JSON.stringify((body.results || []).slice(0, 2)));
   check("1e author", hit && hit.author === "Benjamin Stevenson", hit && hit.author);
-  check("1f source kotobkhana", hit && hit.source === "kotobkhana");
+  check("1f source is null for a non-flagged book (source-hiding)", hit && hit.source === null, hit && JSON.stringify(hit.source));
   check("1g kind channel", hit && hit.kind === "channel");
   check("1h formats [EPUB]", hit && JSON.stringify(hit.formats) === JSON.stringify(["EPUB"]));
   // No-direct-download (Workstream H): a PUBLIC caller never gets the
@@ -291,6 +297,12 @@ const D1 = mockD1(db);
     hit && hit.bot === "https://t.me/RliBook_bot?start=dl_kotobkhana_7559_any", hit && hit.bot);
   check("5e non-flagged book carries bot: null",
     hit2 && hit2.bot === null, hit2 && JSON.stringify(hit2.bot));
+  // Source-hiding (2026-11-21): the handle is populated ONLY for
+  // flagged books; a normal book carries source: null.
+  check("5f flagged book carries its source handle",
+    hit && hit.source === "kotobkhana", hit && JSON.stringify(hit.source));
+  check("5g non-flagged book carries source: null",
+    hit2 && hit2.source === null, hit2 && JSON.stringify(hit2.source));
 }
 
 // 5b. botDeepLink unit checks (exported helper).
@@ -323,12 +335,12 @@ const D1 = mockD1(db);
   const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief") + "&source=kotobkhana");
   check("7a source match finds the book", (body.results || []).some((r) => r.title === "Everyone in This Bank Is a Thief"));
   check("7b source echoed", body.source === "kotobkhana", JSON.stringify(body.source));
-  check("7c all results from that source", (body.results || []).every((r) => r.source === "kotobkhana"));
+  check("7c all results hide their source (null, not the handle)", (body.results || []).every((r) => r.source === null));
   const { body: bodyWrong } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief") + "&source=EBook_Library");
   check("7d wrong source finds nothing", bodyWrong.total === 0 && bodyWrong.results.length === 0, `total=${bodyWrong.total}`);
   const { body: bodyBrowse } = await call({ TG_D1: D1 }, "/api/tg-search?source=kotobkhana&limit=5");
   check("7e empty-q source browse lists books", bodyBrowse.ok === true && bodyBrowse.total >= 1 && bodyBrowse.results.length >= 1, `total=${bodyBrowse.total}`);
-  check("7f browse results all from that source", (bodyBrowse.results || []).every((r) => r.source === "kotobkhana"));
+  check("7f browse results hide their source too", (bodyBrowse.results || []).every((r) => r.source === null));
   const { body: bodyNone } = await call({ TG_D1: D1 }, "/api/tg-search?source=zzz_no_such_handle&limit=5");
   check("7g unknown source -> 0 results", bodyNone.total === 0 && bodyNone.results.length === 0);
 }
@@ -988,6 +1000,91 @@ ZEBRA.forEach((f, j) => {
   } finally {
     delete globalThis.caches;
   }
+}
+
+// 28. Smart-search ladder + bm25 ranking + source-hiding (2026-11-21).
+// The ladder fixtures above are the deterministic rows; the shard
+// sample never contains "السندباد"/"الزعفران"/"٥٥" titles, so the
+// tier assertions are exact.
+{
+  const ladder = ladderQueries(["مغامرات", "سندباد"]);
+  check("28a ladder order is exact, prefix, typo, any, word",
+    JSON.stringify(ladder.map((t) => t.match)) === JSON.stringify(["exact", "prefix", "typo", "any", "word"]),
+    JSON.stringify(ladder.map((t) => t.match)));
+  check("28a2 ladder tier 4 is the longest word alone",
+    ladder[4].expr === '"مغامرات"', ladder[4].expr);
+  check("28a3 single-word query skips OR and longest-word (they add nothing)",
+    JSON.stringify(ladderQueries(["سندباد"]).map((t) => t.match)) === JSON.stringify(["exact", "prefix", "typo"]),
+    JSON.stringify(ladderQueries(["سندباد"]).map((t) => t.match)));
+  // 28b: particle stripping is a ladder variant, never a fold.
+  check("28b stripParticle: و/ف/بال/لل stripped when >=4 chars remain",
+    stripParticle("والسندباد") === "السندباد" && stripParticle("فالمكتبة") === "المكتبة"
+    && stripParticle("بالكتاب") === "كتاب" && stripParticle("للبيت") === "للبيت",
+    `${stripParticle("والسندباد")} / ${stripParticle("بالكتاب")} / ${stripParticle("للبيت")}`);
+  check("28b2 stripParticle NEVER folds و: 'وردة' stays 'وردة' (ة->ه still applies)",
+    stripParticle("وردة") === "وردة" && normalizeArabic("وردة") === "ورده");
+  // 28c: exact beats prefix — the same query that COULD prefix-match
+  // reports match 'exact' and finds the book at tier 0.
+  const { body: exactBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("مغامرات السندباد"));
+  check("28c exact query reports match 'exact'",
+    exactBody.match === "exact" && (exactBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
+    `match=${exactBody.match}`);
+  // 28d: prefix finds a missing ending (last word truncated).
+  const { body: prefixBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("مغامرات السندب"));
+  check("28d prefix tier finds the missing ending, match 'prefix'",
+    prefixBody.match === "prefix" && (prefixBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
+    `match=${prefixBody.match}`);
+  // 28e: typo tier finds a mid-word substitution in the FIRST word
+  // (tier 1 cannot — it prefixes only the last word).
+  const { body: typoBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("السندباخ مغامرات"));
+  check("28e typo tier finds the mid-word substitution, match 'typo'",
+    typoBody.match === "typo" && (typoBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
+    `match=${typoBody.match}`);
+  // 28f: OR finds a multi-word query with one wrong word.
+  const { body: orBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("مغامرات زقزوق"));
+  check("28f OR tier finds the book with one wrong word, match 'any'",
+    orBody.match === "any" && (orBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
+    `match=${orBody.match}`);
+  // 28g: longest-word fallback (unit — via d1SearchLadder's tier
+  // list: the OR tier is a superset of it in FTS, so it fires only
+  // when OR is skipped; the ladder still ends with it, kept from
+  // today's fallback).
+  const { body: noBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("زقزوق خربشة"));
+  check("28g no tier matches -> match null, 0 results",
+    noBody.match === null && noBody.total === 0 && noBody.results.length === 0,
+    `match=${noBody.match} total=${noBody.total}`);
+  // 28h: particle variant — "والسندباد" (و + السندباد) finds the book
+  // at the exact tier via the stripped form.
+  const { body: partBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("والسندباد"));
+  check("28h particle variant finds the book, match 'exact'",
+    partBody.match === "exact" && (partBody.results || []).some((r) => r.title === "مغامرات السندباد البحري"),
+    `match=${partBody.match}`);
+  // 28i: bm25 title>author — the title hit ranks above the author hit.
+  const { body: bmBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("الزعفران"));
+  check("28i bm25 ranks the title hit above the author hit",
+    (bmBody.results || []).length >= 2 && bmBody.results[0].title === "طبخ الزعفران"
+    && (bmBody.results || []).some((r) => r.title === "كتاب آخر" && r.author === "الزعفران"),
+    JSON.stringify((bmBody.results || []).slice(0, 2).map((r) => r.title)));
+  // 28j: Eastern numerals — DEFERRED to day 2 (2026-11-21 follow-up).
+  // The ٠-٩ -> 0-9 fold is NOT in normalizeArabic yet: live
+  // books_fts still holds Eastern numerals in 15,370 rows (counted
+  // via d1_query_file.py, db ba378afe-4a2e-4d79-b6e9-ad73cf51e8fa)
+  // and the D1 write budget for today is fully used, so no batch
+  // rewrite was applied either. Folding the query now, without the
+  // migration, would make Eastern-numeral queries MISS rows they
+  // currently find. This check locks in the deferred state — it
+  // MUST be flipped to the fold (and the migration run) on day 2.
+  check("28j Eastern-numeral fold deferred: no fold yet (day 2)",
+    normalizeArabic("٥٥") === "٥٥" && normalizeArabic("كتاب ١٢٣") === "كتاب ١٢٣");
+  // 28k: source field — null for normal, populated for flagged
+  // (lookup branch too).
+  const kvFlag28 = mockKV({ "flag:kotobkhana:7559": "1" });
+  const { body: flagLook } = await call({ TG_D1: D1, RLIBOOK_KV: kvFlag28 }, "/api/tg-search?h=kotobkhana&p=7559");
+  check("28k flagged lookup carries its source handle",
+    flagLook.book && flagLook.book.source === "kotobkhana", JSON.stringify(flagLook.book && flagLook.book.source));
+  const { body: normLook } = await call({ TG_D1: D1 }, "/api/tg-search?h=kotobkhana&p=7559");
+  check("28k2 normal lookup carries source: null",
+    normLook.book && normLook.book.source === null, JSON.stringify(normLook.book && normLook.book.source));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
