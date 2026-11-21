@@ -78,7 +78,25 @@ generator overwrote the non-empty 11-15 page with a 3,139-byte empty
 one because no 11-17 papers had been posted yet) is strictly worse
 than showing the latest available day's papers. The same guard
 applies to the ``--write-empty`` fallback: it only writes the empty
-file when no previous good file exists.
+file when no previous file exists at all (first-run bootstrap) —
+otherwise the guard blocks it (no source read OK) and the previous
+files stay.
+
+Publish guard: before EVERY write (watch and backstop alike),
+:func:`guard_publish` decides whether the new data may overwrite the
+published file — it blocks a steep drop (new total < 50% of the old
+one when the old one has >= 10 papers), the loss of the whole Egypt
+section, a same-day empty result, and any publish when no source
+read OK. A blocked run exits 0 without writing anything; the next
+watch run retries in 10 minutes. The only empty-day publisher is the
+backstop (``--force``) on a new day with all sources read OK.
+
+Watch mode (``--watch``): the trigger dispatches the workflow every
+10 minutes; the generator reads only the hub + the fallback channel
+(15 recent messages each, API-only), diffs today's entries by direct
+message URL against the published file, and exits 0 without writing
+when nothing is new — so the site republishes within ~10-12 minutes
+of the hub posting a batch, and no-change runs commit nothing.
 
 Static pages (Kindle browser): the home page's newspapers card
 (``index.html``) and the per-country page (``site/newspapers/index.html``)
@@ -130,11 +148,14 @@ Run from the repo root (or pass ``--out``)::
     python3 -m tbi.newspapers --out site/newspapers.json --date 2026-11-12
     python3 -m tbi.newspapers --out site/newspapers.json --no-api
     python3 -m tbi.newspapers --out site/newspapers.json --write-empty
+    python3 -m tbi.newspapers --out site/newspapers.json --watch
+    python3 -m tbi.newspapers --out site/newspapers.json --force
 
 Exit code is 0 whenever the file was written (even an empty-day file:
 source failures are recorded in the file's ``sources`` list, not
-raised) AND whenever a 0-entry run keeps the previous files instead
-of writing (see above — that is a deliberate no-op, not a failure).
+raised) AND whenever a run correctly leaves the previous files alone
+(watch: no change; guard: publish blocked; 0-entry run with a
+previous good file) — that is a deliberate no-op, not a failure.
 A non-zero exit means the file itself could not be written.
 """
 
@@ -1299,20 +1320,149 @@ def empty_data(today: date, detail: str = "") -> dict:
     return build_data(today, [], reports)
 
 
-def _previous_data_is_good(out: Path) -> bool:
-    """True when the previous ``newspapers.json`` at ``out`` exists and
-    holds entries (``"empty": false`` with at least one paper). A
-    missing, unreadable, or itself-empty previous file is NOT good —
-    overwriting it with a fresh (possibly empty) file loses nothing.
-    This is the no-overwrite guard: a 0-entry run must never commit
-    an empty file over a good page."""
+def _data_totals(data: dict) -> tuple[int, int]:
+    """(egypt_count, other_count) of a build_data dict; 0, 0 when malformed."""
+    if not isinstance(data, dict):
+        return 0, 0
+    return len(data.get("egypt") or []), len(data.get("other") or [])
+
+
+def guard_publish(new_data: dict, old_data, *, backstop: bool, now=None) -> tuple[bool, str]:
+    """Decide whether ``new_data`` may overwrite the published file.
+
+    Rules (G1–G7 — see the design doc, ``rlibook-newspapers-smart-system.md`` §4):
+    G1 no previous file → allow (first run / bootstrap).
+    G2 new day (``new.date != old.date``) with entries → allow (a new
+       day legitimately starts small).
+    G3 new day, no papers → allow ONLY at backstop with every attempted
+       read successful (no ``"error"`` status) and at least one source
+       ``"ok"``; otherwise block ("new day, no papers yet").
+    G4 same day, no papers → always block (the read failed).
+    G5 same day, old total >= 10, new total < old total // 2 → block
+       ("steep drop"; exactly 50% passes).
+    G6 same day, old Egypt > 0, new Egypt == 0 → block ("Egypt lost").
+    G7 zero sources with status ``"ok"`` → always block (a failed read
+       must never publish anything).
+
+    ``now`` is accepted for signature compatibility and unused — the
+    ``backstop`` flag carries the "is this the backstop run" meaning.
+    Returns ``(allowed, reason)``; a blocked run exits 0 WITHOUT
+    writing anything (old JSON + baked pages stay exactly as they are)
+    and the next watch run retries in 10 minutes.
+    """
+    if not isinstance(old_data, dict) or not old_data.get("date"):
+        return True, "G1: no previous file (first run)"
+    reports = new_data.get("sources") or [] if isinstance(new_data, dict) else []
+    statuses = [r.get("status") for r in reports if isinstance(r, dict)]
+    any_ok = "ok" in statuses
+    any_error = "error" in statuses
+    new_eg, new_other = _data_totals(new_data)
+    new_total = new_eg + new_other
+    new_date = new_data.get("date") if isinstance(new_data, dict) else None
+    old_eg, old_other = _data_totals(old_data)
+    old_total = old_eg + old_other
+    old_date = old_data.get("date")
+
+    # G7 first: a failed read must never publish — not even an "honest" empty.
+    if not any_ok:
+        return False, "G7: no source read OK — keeping previous files"
+    if new_total == 0:
+        if new_date != old_date:
+            # G3: the only empty-day publisher is the backstop, and only
+            # when every read succeeded (an errored source means the day
+            # may not actually be empty).
+            if backstop and not any_error:
+                return True, "G3: new day, no papers, backstop with all sources OK — honest empty day"
+            return False, "G3: new day, no papers yet — keeping yesterday's page"
+        # G4: a same-day empty over a published page means the read failed.
+        return False, "G4: same-day empty over a published page — keeping previous files"
+    if new_date != old_date:
+        return True, "G2: new day with entries"
+    # Same day from here on.
+    if old_total >= 10 and new_total < old_total // 2:
+        return False, f"G5: steep drop {old_total} -> {new_total} — keeping previous files"
+    if old_eg > 0 and new_eg == 0:
+        return False, "G6: Egypt section lost — keeping previous files"
+    return True, "ok"
+
+
+def _load_published(out: Path):
+    """The published ``newspapers.json`` at ``out`` as a dict, or None
+    when it is missing, unreadable, or not a JSON object."""
     try:
-        prev = json.loads(Path(out).read_text(encoding="utf-8"))
+        data = json.loads(Path(out).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    if not isinstance(prev, dict):
-        return False
-    return bool(not prev.get("empty") and (prev.get("egypt") or prev.get("other")))
+        return None
+    return data if isinstance(data, dict) else None
+
+
+async def _watch_api_all(today: date, sources: list[dict], limit: int = 15):
+    """API pass for the watch: ONE Telethon client, hub + fallback,
+    ``limit`` recent messages each, disconnect immediately. Returns
+    {key: (posts, report)} — same shape as :func:`_collect_api_all`."""
+    from .api_history import create_client, load_api_credentials
+
+    api_id, api_hash, session = load_api_credentials(os.environ)
+    client = create_client(api_id, api_hash, session)
+    await client.connect()
+    try:
+        out = {}
+        for source in sources:
+            posts, report = await collect_api_client(client, today, source, limit=limit)
+            out[source["key"]] = (posts, report)
+        return out
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+# Sources the watch checks: the hub + the fallback invite channel.
+# The pending-join private Egyptian channel is skipped (still
+# unavailable — the generator never joins).
+WATCH_SOURCES = [SOURCES[0], SOURCES[1]]
+
+
+def watch_check(today: date, *, limit: int = 15, out=None):
+    """Check whether the hub/fallback have new papers vs the published file.
+
+    API-only (the hub's ``t.me/s/`` preview serves no posts). Opens one
+    Telethon client, reads the hub + the fallback invite channel
+    (``limit`` recent messages each), extracts today's entries, and
+    diffs them by direct message URL (``entry["url"]``) against the
+    published file at ``out`` (default: the repo-root
+    ``site/newspapers.json``). Returns ``(state, new_entries,
+    reports)`` with state ``"changed"`` (>= 1 new URL), ``"unchanged"``
+    (no new URL — exit 0, write nothing), or ``"unknown"`` (a checked
+    source errored — never read as "no new papers"; the caller runs
+    the full collect and lets the guard decide). A missing published
+    file counts as "changed" (first run).
+    """
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    out = Path(out) if out else repo_root / "site" / "newspapers.json"
+    old = _load_published(out)
+    old_urls: set[str] = set()
+    if old is not None:
+        for entry in (old.get("egypt") or []) + (old.get("other") or []):
+            if isinstance(entry, dict) and entry.get("url"):
+                old_urls.add(entry["url"])
+    results = asyncio.run(_watch_api_all(today, WATCH_SOURCES, limit=limit))
+    reports: list[dict] = []
+    entries: list[dict] = []
+    any_error = False
+    for source in WATCH_SOURCES:
+        posts, report = results[source["key"]]
+        reports.append(report)
+        if report["status"] == "error":
+            any_error = True
+        entries.extend(entries_from_posts(posts, today, source))
+    if any_error:
+        return "unknown", entries, reports
+    new_entries = [e for e in entries if e.get("url") not in old_urls]
+    if new_entries:
+        return "changed", new_entries, reports
+    return "unchanged", [], reports
 
 
 # ---------------------------------------------------------------------------
@@ -1520,9 +1670,18 @@ def main(argv=None) -> int:
     parser.add_argument("--max-pages", type=int, default=3,
                         help="preview pages to walk per username source (default 3)")
     parser.add_argument("--write-empty", action="store_true",
-                        help="write an empty-day file without reading any source (workflow fallback); "
-                             "a previous good file is still kept instead — an empty file never "
-                             "overwrites one with entries")
+                        help="write an empty-day file without reading any source "
+                             "(manual bootstrap only — the workflow never uses it; "
+                             "the guard still applies)")
+    parser.add_argument("--watch", action="store_true",
+                        help="watch mode: publish only if the hub/fallback have new "
+                             "papers vs the published file (API-only, 15 recent "
+                             "messages each); exit 0 without writing when nothing "
+                             "is new. --no-api is ignored in this mode.")
+    parser.add_argument("--force", action="store_true",
+                        help="backstop mode: full regenerate; the guard still applies "
+                             "(an honest empty day is published only here). "
+                             "This is also the default when no mode flag is given.")
     parser.add_argument("--pages-root", default=None,
                         help="repo root holding index.html and site/newspapers/index.html "
                              "(default: the repo root this module lives in)")
@@ -1534,21 +1693,40 @@ def main(argv=None) -> int:
     out = Path(args.out) if args.out else repo_root / "site" / "newspapers.json"
     pages_root = Path(args.pages_root) if args.pages_root else repo_root
     today = args.date or datetime.now(CAIRO_TZ).date()
+    old = _load_published(out)
 
-    if args.write_empty:
-        data = empty_data(today, detail="--write-empty fallback (previous step failed)")
-    else:
+    if args.watch:
+        # Watch mode: without credentials there is nothing to watch —
+        # skip quietly (the backstop still runs on schedule).
+        if not _api_credentials_available():
+            print("newspapers watch unavailable (no credentials) — skipping, exit 0")
+            return 0
+        state, new_entries, _watch_reports = watch_check(today, limit=15, out=out)
+        if state == "unchanged":
+            print("newspapers: no change")
+            return 0
+        if state == "unknown":
+            print("newspapers watch: a source read failed — running full collect, guard decides")
+        else:
+            print(f"newspapers watch: {len(new_entries)} new paper(s) — running full collect")
         data = collect(today, use_api=not args.no_api, max_pages=args.max_pages)
-    if data["empty"] and _previous_data_is_good(out):
-        # No entries anywhere in the lookback window (or the
-        # --write-empty fallback): NEVER overwrite a good page with an
-        # empty file. JSON + baked HTML stay exactly as they were.
-        print("NO ENTRIES — keeping previous files")
-        print(f"newspapers {data['date']}: 0 entries in the last "
-              f"{FALLBACK_LOOKBACK_DAYS + 1} days (incl. today) — previous JSON + HTML kept untouched")
-        _print_source_reports(data)
-        print(f"kept {out} unchanged")
-        return 0
+        allowed, reason = guard_publish(data, old, backstop=False)
+        if not allowed:
+            print(f"newspapers: publish blocked ({reason}) — keeping previous files")
+            return 0
+    elif args.write_empty:
+        data = empty_data(today, detail="--write-empty fallback (manual bootstrap only)")
+        allowed, reason = guard_publish(data, old, backstop=True)
+        if not allowed:
+            print(f"newspapers: publish blocked ({reason}) — keeping previous files")
+            return 0
+    else:
+        # Backstop (default and --force): full regenerate, guard still applies.
+        data = collect(today, use_api=not args.no_api, max_pages=args.max_pages)
+        allowed, reason = guard_publish(data, old, backstop=True)
+        if not allowed:
+            print(f"newspapers: publish blocked ({reason}) — keeping previous files")
+            return 0
     if data["date"] != today.isoformat() and not data["empty"]:
         print(f"newspapers: no papers for {today.isoformat()} — fell back to "
               f"{data['date']} (latest day with entries)")
