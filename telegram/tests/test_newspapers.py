@@ -1076,3 +1076,295 @@ def test_newspapers_page_intro_names_egypt_first():
     assert "من خارج مصر" not in text
     assert "مصر أولاً" in text
     assert newspapers.STATIC_BEGIN in text and newspapers.STATIC_END in text
+
+
+# ---------------------------------------------------------------------------
+# Publish guard (guard_publish, G1-G7) + watch mode (--watch)
+# ---------------------------------------------------------------------------
+
+
+def _gent(name, country, region, day, url):
+    info = newspapers.COUNTRIES.get(country, newspapers.UNKNOWN_COUNTRY)
+    return {"name": name, "country": country, "country_name": info["name"],
+            "flag": info["flag"], "region": region, "date": day.isoformat(),
+            "edition": "morning", "url": url, "handle": "arabJournalism",
+            "post_id": 1, "source": "arabJournalism"}
+
+
+def _gdata(day, n_eg, n_other, statuses=("ok", "ok")):
+    """A build_data dict with n_eg Egypt + n_other other entries for `day`."""
+    entries = [_gent(f"ورقة مصر {i}", "EG", "egypt", day,
+                     f"https://t.me/arabJournalism/{100 + i}") for i in range(n_eg)]
+    entries += [_gent(f"ورقة {i}", "SA", "gulf", day,
+                      f"https://t.me/arabJournalism/{200 + i}") for i in range(n_other)]
+    reports = [{"key": k, "label": k, "status": s, "posts_seen": 1,
+                "entries": 1, "detail": ""}
+               for k, s in zip(("arabJournalism", "fallback"), statuses)]
+    return newspapers.build_data(day, entries, reports)
+
+
+def test_guard_no_previous_file_allows():
+    new = _gdata(TODAY, 1, 0)
+    assert newspapers.guard_publish(new, None, backstop=False)[0] is True
+    assert newspapers.guard_publish(new, {}, backstop=False)[0] is True
+    assert newspapers.guard_publish(new, "not-a-dict", backstop=False)[0] is True
+
+
+def test_guard_new_day_with_entries_allows():
+    old = _gdata(date(2026, 11, 11), 10, 68)
+    new = _gdata(TODAY, 2, 1)
+    allowed, reason = newspapers.guard_publish(new, old, backstop=False)
+    assert allowed is True
+    assert reason.startswith("G2")
+
+
+def test_guard_backstop_empty_new_day_allowed():
+    old = _gdata(date(2026, 11, 11), 10, 68)
+    new = _gdata(TODAY, 0, 0)
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is True
+    assert reason.startswith("G3")
+
+
+def test_guard_watch_empty_new_day_blocked():
+    old = _gdata(date(2026, 11, 11), 10, 68)
+    new = _gdata(TODAY, 0, 0)
+    allowed, reason = newspapers.guard_publish(new, old, backstop=False)
+    assert allowed is False
+    assert reason.startswith("G3")
+
+
+def test_guard_backstop_empty_blocked_when_a_source_errored():
+    old = _gdata(date(2026, 11, 11), 10, 68)
+    new = _gdata(TODAY, 0, 0, statuses=("ok", "error"))
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G3")
+
+
+def test_guard_backstop_empty_blocked_when_nothing_read_ok():
+    old = _gdata(date(2026, 11, 11), 10, 68)
+    new = _gdata(TODAY, 0, 0, statuses=("no_preview", "unavailable_no_credentials"))
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G7")
+
+
+def test_guard_same_day_empty_always_blocked():
+    old = _gdata(TODAY, 10, 68)
+    new = _gdata(TODAY, 0, 0)
+    for backstop in (True, False):
+        allowed, reason = newspapers.guard_publish(new, old, backstop=backstop)
+        assert allowed is False
+        assert reason.startswith("G4")
+
+
+def test_guard_steep_drop_blocked():
+    # The 2026-11-19 class: 78 published papers, a glitch read finds 10.
+    old = _gdata(TODAY, 10, 68)
+    new = _gdata(TODAY, 2, 8)
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G5")
+
+
+def test_guard_steep_drop_boundary_exactly_half_passes():
+    old = _gdata(TODAY, 10, 68)   # 78
+    new = _gdata(TODAY, 10, 29)   # 39 == 78 // 2
+    assert newspapers.guard_publish(new, old, backstop=True)[0] is True
+
+
+def test_guard_small_old_total_not_over_guarded():
+    old = _gdata(TODAY, 5, 4)     # 9 < 10: G5 does not apply
+    new = _gdata(TODAY, 1, 0)
+    assert newspapers.guard_publish(new, old, backstop=True)[0] is True
+
+
+def test_guard_old_total_10_boundary():
+    old = _gdata(TODAY, 5, 5)     # 10
+    new = _gdata(TODAY, 2, 3)     # 5 == 10 // 2 -> passes
+    assert newspapers.guard_publish(new, old, backstop=True)[0] is True
+    new = _gdata(TODAY, 2, 2)     # 4 < 5 -> blocked
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G5")
+
+
+def test_guard_egypt_section_lost_blocked():
+    old = _gdata(TODAY, 10, 68)   # 78
+    new = _gdata(TODAY, 0, 68)    # 68 passes G5 (68 >= 39) but loses Egypt
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G6")
+
+
+def test_guard_egypt_zero_to_zero_is_not_a_loss():
+    old = _gdata(TODAY, 0, 40)
+    new = _gdata(TODAY, 0, 41)
+    assert newspapers.guard_publish(new, old, backstop=True)[0] is True
+
+
+def test_guard_egypt_one_to_zero_blocked():
+    old = _gdata(TODAY, 1, 40)    # 41
+    new = _gdata(TODAY, 0, 40)    # 40 passes G5 (40 >= 20), G6 blocks
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G6")
+
+
+def test_guard_no_source_ok_always_blocked():
+    old = _gdata(TODAY, 10, 68)
+    new = _gdata(TODAY, 10, 70, statuses=("error", "error"))
+    allowed, reason = newspapers.guard_publish(new, old, backstop=True)
+    assert allowed is False
+    assert reason.startswith("G7")
+
+
+def _watch_hub_post(post_id):
+    return _post(post_id, "2026-11-12T06:30:00+00:00",
+                 text="الأهرام", files=[_doc("الأهرام 12-11-2026.pdf")])
+
+
+def _watch_fallback_post(post_id):
+    return _post(post_id, "2026-11-12T07:00:00+00:00",
+                 text="الأهرام", files=[_doc("الأهرام 12-11-2026.pdf")],
+                 channel="fallbackchan")
+
+
+def _fake_watch_api(hub_posts, hub_status="ok", fb_posts=(), fb_status="ok"):
+    async def _fake(today, sources, limit=15):
+        return {
+            "arabJournalism": (list(hub_posts),
+                               {"key": "arabJournalism", "label": "hub",
+                                "status": hub_status, "posts_seen": len(hub_posts),
+                                "entries": 0, "detail": ""}),
+            "joinchat/VGPv_tnlgUJlNjdl": (list(fb_posts),
+                                          {"key": "joinchat/VGPv_tnlgUJlNjdl",
+                                           "label": "fallback", "status": fb_status,
+                                           "posts_seen": len(fb_posts), "entries": 0,
+                                           "detail": ""}),
+        }
+    return _fake
+
+
+def test_watch_new_post_is_changed(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 1, 0), out)  # published: .../100
+    monkeypatch.setattr(newspapers, "_watch_api_all",
+                        _fake_watch_api([_watch_hub_post(101)]))
+    state, new_entries, _reports = newspapers.watch_check(TODAY, out=out)
+    assert state == "changed"
+    assert [e["url"] for e in new_entries] == ["https://t.me/arabJournalism/101"]
+
+
+def test_watch_identical_set_is_unchanged(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 1, 0), out)  # published: .../100
+    monkeypatch.setattr(newspapers, "_watch_api_all",
+                        _fake_watch_api([_watch_hub_post(100)]))
+    state, new_entries, _reports = newspapers.watch_check(TODAY, out=out)
+    assert state == "unchanged"
+    assert new_entries == []
+
+
+def test_watch_hub_error_is_unknown(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 1, 0), out)
+    monkeypatch.setattr(newspapers, "_watch_api_all",
+                        _fake_watch_api([_watch_hub_post(101)], hub_status="error"))
+    state, _entries, _reports = newspapers.watch_check(TODAY, out=out)
+    assert state == "unknown"
+
+
+def test_watch_fallback_only_new_post_is_changed(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 1, 0), out)  # hub .../100 only
+    monkeypatch.setattr(newspapers, "_watch_api_all",
+                        _fake_watch_api([_watch_hub_post(100)],
+                                        fb_posts=[_watch_fallback_post(201)]))
+    state, new_entries, _reports = newspapers.watch_check(TODAY, out=out)
+    assert state == "changed"
+    assert [e["url"] for e in new_entries] == ["https://t.me/fallbackchan/201"]
+
+
+def test_watch_missing_published_file_is_changed(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"  # does not exist: first run
+    monkeypatch.setattr(newspapers, "_watch_api_all",
+                        _fake_watch_api([_watch_hub_post(101)]))
+    state, new_entries, _reports = newspapers.watch_check(TODAY, out=out)
+    assert state == "changed"
+    assert len(new_entries) == 1
+
+
+def test_main_watch_unchanged_writes_nothing(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    monkeypatch.setattr(newspapers, "_api_credentials_available", lambda: True)
+    monkeypatch.setattr(newspapers, "watch_check",
+                        lambda today, limit=15, out=None: ("unchanged", [], []))
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12",
+                          "--watch", "--no-pages"])
+    assert rc == 0
+    assert not out.exists()
+
+
+def test_main_watch_no_credentials_skips(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    monkeypatch.setattr(newspapers, "_api_credentials_available", lambda: False)
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12",
+                          "--watch", "--no-pages"])
+    assert rc == 0
+    assert not out.exists()
+
+
+def test_main_watch_changed_publishes(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(date(2026, 11, 11), 10, 68), out)
+    new = _gdata(TODAY, 2, 1)
+    monkeypatch.setattr(newspapers, "_api_credentials_available", lambda: True)
+    monkeypatch.setattr(newspapers, "watch_check",
+                        lambda today, limit=15, out=None:
+                        ("changed", new["egypt"] + new["other"], []))
+    monkeypatch.setattr(newspapers, "collect", lambda *a, **k: new)
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12",
+                          "--watch", "--no-pages"])
+    assert rc == 0
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["date"] == "2026-11-12"
+    assert len(written["egypt"]) == 2
+
+
+def test_main_backstop_blocks_steep_drop(monkeypatch, tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 10, 68), out)  # 78 published
+    glitch = _gdata(TODAY, 2, 8)  # API glitch finds 10
+    monkeypatch.setattr(newspapers, "collect", lambda *a, **k: glitch)
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12",
+                          "--force", "--no-pages"])
+    assert rc == 0
+    kept = json.loads(out.read_text(encoding="utf-8"))
+    assert len(kept["egypt"]) + len(kept["other"]) == 78
+
+
+def test_main_write_empty_over_good_file_is_blocked(tmp_path):
+    out = tmp_path / "newspapers.json"
+    newspapers.write_data(_gdata(TODAY, 10, 68), out)
+    rc = newspapers.main(["--out", str(out), "--date", "2026-11-12",
+                          "--write-empty", "--no-pages"])
+    assert rc == 0
+    kept = json.loads(out.read_text(encoding="utf-8"))
+    assert kept["empty"] is False
+    assert len(kept["egypt"]) + len(kept["other"]) == 78
+
+
+def test_workflow_has_no_write_empty_step_and_new_schedule():
+    text = (REPO_ROOT / ".github" / "workflows" / "telegram-newspapers.yml"
+            ).read_text(encoding="utf-8")
+    # No step may RUN --write-empty (the header comment may mention it
+    # as the removed crash fallback — that is documentation, not a step).
+    runnable = "\n".join(line for line in text.splitlines()
+                         if not line.strip().startswith("#"))
+    assert "--write-empty" not in runnable
+    assert '"0 6 * * *"' not in text
+    assert '"30 9 * * *"' in text
+    assert '"0 15 * * *"' in text
+    assert "mode" in text and "watch" in text
