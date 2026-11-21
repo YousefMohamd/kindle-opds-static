@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from .author_rules import clean_author
+
 BOOK_EXTS = {
     "azw", "azw3", "cbr", "cbz", "chm", "djv", "djvu", "doc", "docx",
     "epub", "fb2", "kepub", "kfx", "lit", "lrf", "mobi", "odt", "pdf",
@@ -62,15 +64,50 @@ _SEPARATORS = re.compile(r"\s*[-–—_]\s*")
 
 # Arabic diacritics (harakat, shadda, superscript alef) + tatweel.
 _AR_DIACRITICS = re.compile(r"[\u064B-\u0652\u0670\u0640]")
-_ALEF_MAP = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ة": "ه", "ى": "ي"})
+_ALEF_MAP = str.maketrans(
+    {
+        "أ": "ا",
+        "إ": "ا",
+        "آ": "ا",
+        "ٱ": "ا",
+        "ة": "ه",
+        "ى": "ي",
+        "ؤ": "و",
+        "ئ": "ي",
+        "ء": None,  # deleted (None in str.maketrans = delete)
+        # Persian letters folded to their Arabic look-alikes, so a
+        # query with ج finds a title stored with چ (e.g. نوستالچيا).
+        "چ": "ج",
+        "ک": "ك",
+        "گ": "ك",
+        "پ": "ب",
+        "ڤ": "ف",
+        # NOTE: Eastern Arabic numerals (٠-٩ -> 0-9) are DEFERRED to
+        # day 2 (2026-11-21 follow-up) — live books_fts still holds
+        # them in 15,370 rows and today's D1 write budget is fully
+        # used, so no batch rewrite was applied either. Folding the
+        # query now, without the migration, would make
+        # Eastern-numeral queries MISS rows they currently find.
+    }
+)
 
 
 def normalize_arabic(text: str) -> str:
     """Search normalization for Arabic: strip tashkeel (harakat, shadda,
     superscript alef) and tatweel, unify alef forms (أ إ آ ٱ -> ا),
-    ة -> ه and ى -> ي. Display text is never changed — this is only
-    for search/dedup, so a plain query like "متون" finds a filename
-    stored as "مُتَوِّنُ"."""
+    ة -> ه and ى -> ي, fold hamza forms (ؤ -> و, ئ -> ي, ء removed),
+    and fold Persian letters (چ -> ج, ک/گ -> ك, پ -> ب, ڤ -> ف).
+    Display text is never changed — this is only for search/dedup, so
+    a plain query like "متون" finds a filename stored as "مُتَوِّنُ",
+    and "نوستالجيا" finds a title stored as "نوستالچيا". NEVER fold:
+    س/ص, ت/ط, ذ/ز/ظ, ق/ك, ح/ه, ابن/بن — and NEVER strip a leading و:
+    "وردة" stays "وردة" (the particle prefixes و/ف/بال/لل are ladder
+    variants in the search endpoint only, never folds here).
+    Eastern Arabic numerals (٠-٩ -> 0-9) are DEFERRED to day 2
+    (2026-11-21 follow-up): live books_fts still holds them in
+    15,370 rows and today's D1 write budget is fully used. Must stay
+    identical to d1_sync.normalize_arabic and the JS normalizeArabic
+    in functions/api/tg-search.js and src/search.ts."""
     text = unicodedata.normalize("NFKC", text or "")
     text = _AR_DIACRITICS.sub("", text)
     return text.translate(_ALEF_MAP)
@@ -126,6 +163,14 @@ def _looks_like_author(part: str, max_words: int = 4) -> bool:
     return True
 
 
+def _finish(title: str, author: str) -> tuple[str, str]:
+    """Single exit for parse_title_author: the author is cleaned by
+    the self-maintaining author rules (``tbi.author_rules``) — a
+    denylisted word or a fragment of the title is dropped to "" so
+    the book enters the catalog clean. The title is never changed."""
+    return title.strip(), clean_author(title, author)
+
+
 def parse_title_author(filename: str, caption: str = "") -> tuple[str, str]:
     """Return (title, author) from a filename, falling back to the caption.
 
@@ -137,28 +182,32 @@ def parse_title_author(filename: str, caption: str = "") -> tuple[str, str]:
     The author is the part that looks like a person name; when both
     parts look like names, the LAST part is taken as the author (the
     "Title - Author" shape is the most common in these groups).
+    The returned author is cleaned by ``tbi.author_rules`` (a
+    denylisted word or a title fragment is dropped to "") — every
+    caller (backfill, daily sync, realtime sync) gets a clean author
+    with no extra work.
     """
     clean = _clean(filename)
     title, author = clean, ""
     # "Title (Author)"
     m = re.match(r"^(?P<title>.+?)\s*\((?P<author>[^()]{1,60})\)\s*$", clean)
     if m and _looks_like_author(m.group("author")):
-        return m.group("title").strip(), m.group("author").strip()
+        return _finish(m.group("title"), m.group("author"))
     # "Title by Author"
     m = re.match(
         r"^(?P<title>.+?)\s+by\s+(?P<author>.+?)\s*$", clean, flags=re.IGNORECASE
     )
     if m and _looks_like_author(m.group("author")):
-        return m.group("title").strip(), m.group("author").strip()
+        return _finish(m.group("title"), m.group("author"))
     # "A - B": pick the author-looking part; prefer the last part.
     parts = [p for p in _SEPARATORS.split(clean) if p.strip()]
     if len(parts) >= 2:
         if _looks_like_author(parts[-1]) and not _looks_like_author(parts[0]):
-            return " - ".join(parts[:-1]).strip(), parts[-1].strip()
+            return _finish(" - ".join(parts[:-1]), parts[-1])
         if _looks_like_author(parts[-1]) and _looks_like_author(parts[0]):
-            return " - ".join(parts[:-1]).strip(), parts[-1].strip()
+            return _finish(" - ".join(parts[:-1]), parts[-1])
         if _looks_like_author(parts[0]) and not _looks_like_author(parts[-1]):
-            return " - ".join(parts[1:]).strip(), parts[0].strip()
+            return _finish(" - ".join(parts[1:]), parts[0])
     # Caption fallback: "author: ..." / "by ..." / "للكاتب ..."
     cap = (caption or "").strip()
     if cap:
@@ -169,7 +218,7 @@ def parse_title_author(filename: str, caption: str = "") -> tuple[str, str]:
         )
         if m and _looks_like_author(m.group(1), max_words=8):
             author = m.group(1).strip()
-    return title, author
+    return _finish(title, author)
 
 
 def _norm_key(text: str) -> str:
