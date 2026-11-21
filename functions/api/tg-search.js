@@ -102,29 +102,41 @@
 // Results are ordered by FTS5 rank (best match first).
 //
 // Flagged books: the endpoint IDENTIFIES them, it does not
-// enforce the cap. For each result it checks the shared KV denylist
-// (same mechanism as functions/api/dl-token.js): a KV key
-// `flag:<handle>:<post_id>` means the book IS flagged.
+// enforce the cap. It reads the shared denylist ONCE per search:
+// a single KV key `flags:all` = { flagged: ["handle:postId", ...],
+// hidden: ["handle:postId", ...] } (read once, cached in
+// caches.default for 1 h — see flagStateForRows), instead of one
+// KV get per result row. The bot rebuilds `flags:all` from the
+// `flag:` / `hidden:` keys whenever one changes (see
+// rlibook-flags-all-writer-patch.md); until the blob exists the
+// endpoint falls back to the per-row gets (correct, just slower).
 // The handle + post_id come from the result's t.me post URL. The bot
 // enforces the 3/day successful-flagged-search cap and the
-// invite-unlocks-3-more rule. If RLIBOOK_KV is not bound, or no flag
-// key exists, flagged is false — the honest v1 limit (same as the
-// token issuer): "not flagged" means "not on the denylist". Block 7
-// populates the `flag:` keys from the bot's flags.ts list; until then
-// the bot's own matchFlagged check on the query remains the primary
-// flag gate.
+// invite-unlocks-3-more rule. If RLIBOOK_KV is not bound, flagged is
+// false — the honest v1 limit (same as the token issuer): "not
+// flagged" means "not on the denylist".
+// A KV failure NEVER fails open here: when the denylist cannot be
+// read, the reply carries `flagStatus: "degraded"`, every result
+// carries `flagCheck: "degraded"` and NO delivery links (get/send/
+// read/bot all null — and the raw post URL is withheld even from an
+// authenticated bot caller). The website renders a ⚠️ badge from
+// flagStatus; search itself keeps working (metadata only) until KV
+// recovers.
 //
-// Hidden (owner-removed) books: a KV key `hidden:<handle>:<post_id>`
-// means the book is REMOVED from search entirely — it never appears
-// in results, `total` drops by the hidden rows on the page, and the
-// single-book lookup answers `book: null` exactly as if the post did
-// not exist (no title leaks). Set by the owner's /hide command or by
-// an approved user report (value = the approving report's rid, or
+// Hidden (owner-removed) books: a `hidden:<handle>:<post_id>` entry
+// in the `flags:all` blob means the book is REMOVED from search
+// entirely — it never appears in results, `total` drops by the
+// hidden rows on the page, and the single-book lookup answers
+// `book: null` exactly as if the post did not exist (no title
+// leaks). Set by the owner's /hide command or by an approved user
+// report (value = the approving report's rid, or
 // `manual:<ownerId>:<timestamp>` for a manual hide). A KV failure
-// fails OPEN here (the book stays visible — search must never fail
-// because the hide check did); dl-token.js fails CLOSED at mint
-// time instead, so a hidden book still cannot be downloaded even
-// if it slips through a search. The bot's /flags + /hide + /unhide
+// no longer fails open for the DELIVERY path: a degraded page has
+// no links at all, and dl-token.js fails CLOSED at mint time, so a
+// hidden book still cannot be downloaded even if its title slips
+// through a search. (Its title may stay visible in a degraded page
+// — the hide itself is unenforceable while KV is down — but no file
+// can leave through it.) The bot's /flags + /hide + /unhide
 // (src/control-panel.ts) manage these keys; the catalog file
 // (KOReader) is unaffected and still lists every file.
 //
@@ -139,11 +151,16 @@
 //                            apply functions/api/tg-search-schema.sql,
 //                            populate with telegram/tbi/d1_sync.py.
 //   KV binding  RLIBOOK_KV  (optional) — the shared namespace the bot +
-//                            OPDS feed use; flag denylist keys
-//                            `flag:<handle>:<post_id>` and owner-hide
-//                            keys `hidden:<handle>:<post_id>`.
-//                            Missing -> all results report flagged:
-//                            false and hidden: false.
+//                            OPDS feed use; the denylist blob
+//                            `flags:all` = { flagged: [...], hidden:
+//                            [...] } (rebuilt by the bot from the
+//                            `flag:<handle>:<post_id>` /
+//                            `hidden:<handle>:<post_id>` keys — the
+//                            per-row keys remain the source of truth
+//                            and the fallback), the coverage cache
+//                            `tg-search:coverage`, and the `d1:guard`
+//                            flag. Missing -> all results report
+//                            flagged: false and hidden: false.
 //   Secret      TG_SEARCH_BOT_KEY (optional) — the shared secret the
 //                            Telegram bot sends as the `x-rlibook-bot-key`
 //                            header so the endpoint returns the raw t.me
@@ -173,18 +190,24 @@
 // { indexed, target, partial } — the D1 indexed count right now, the
 // D1 final-import target (323,325), and whether D1 is still a partial
 // snapshot (indexed < target). `indexed` comes from a KV cache
-// (key `tg-search:coverage`, 1 h TTL; refreshed by a live COUNT(*)
+// (key `tg-search:coverage`, 6 h TTL; refreshed by a live COUNT(*)
 // on a cache miss — see d1Coverage), so the full-table count runs at
-// most 24 times/day instead of on every search. Callers (e.g. /book)
+// most 4 times/day instead of on every search. The live COUNT(*) is
+// additionally barred by the `d1:guard` KV flag (set by the watchdog
+// when D1 errors) and by a 4-refreshes/day KV counter — on guard the
+// endpoint returns the last cached coverage or omits the field, and
+// a KV failure never triggers a live count (that compound failure
+// killed search on 2026-11-19). Callers (e.g. /book)
 // show the partial note only while partial is true, so it disappears
 // on its own when the import finishes.
 //
 // Free-tier friendly: one D1 query (FTS MATCH, reads ~10-100 rows;
-// 5M rows read/day on Workers Free) + up to `limit` parallel KV gets
-// for the flag check + one KV get for the coverage cache. The
-// coverage COUNT(*) (a full-table scan, ~150k rows) runs only on a
-// cache miss, at most once an hour. No catalog fetch, no heavy work.
-// D1 writes happen only in the population script, never here.
+// 5M rows read/day on Workers Free) + ONE KV get for the denylist
+// blob (`flags:all`, edge-cached 1 h) + one KV get for the coverage
+// cache. The coverage COUNT(*) (a full-table scan, ~323k rows) runs
+// only on a cache miss, at most 4 times/day, never under `d1:guard`.
+// No catalog fetch, no heavy work. D1 writes happen only in the
+// population script, never here.
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -195,7 +218,9 @@ const SOURCE_RE = /^[A-Za-z0-9_]{1,64}$/; // A Telegram channel/group handle
 // Same normalization as the indexer (tbi.books.normalize_arabic) and
 // the website search page: NFKC, strip tashkeel (U+064B-U+0652) +
 // superscript alef (U+0670) + tatweel (U+0640), unify alef forms
-// (أإآٱ -> ا), ؤ -> و, ئ -> ي, ء removed, ى -> ي, ة -> ه. Latin text
+// (أإآٱ -> ا), ؤ -> و, ئ -> ي, ء removed, ى -> ي, ة -> ه, and fold
+// Persian letters (چ -> ج, ک/گ -> ك, پ -> ب, ڤ -> ف) so a query with
+// ج finds a title stored with چ (e.g. نوستالچيا). Latin text
 // is lowercased by normalizeQuery; display text is never changed.
 export function normalizeArabic(text) {
   return (text || "")
@@ -206,7 +231,12 @@ export function normalizeArabic(text) {
     .replace(/ئ/g, "ي")
     .replace(/ء/g, "")
     .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه");
+    .replace(/ة/g, "ه")
+    .replace(/[چ]/g, "ج")
+    .replace(/[ک]/g, "ك")
+    .replace(/[گ]/g, "ك")
+    .replace(/[پ]/g, "ب")
+    .replace(/[ڤ]/g, "ف");
 }
 
 // Strip the definite article "ال" from the front of a word, but only
@@ -296,19 +326,153 @@ export function parsePostUrl(url) {
   return { handle: m[1], postId: m[2] };
 }
 
-// Flag check against the shared KV denylist (same as dl-token.js).
-// A key `flag:<handle>:<post_id>` means flagged.
-async function isFlagged(env, url) {
+// --- flags:all denylist blob (resilience batch, 2026-11-20) --------
+// The flag/hide denylist used to cost one KV get per result row
+// (up to ~101/search at limit 50) — and a KV failure failed OPEN,
+// silently showing flagged books as clean. It is now ONE KV key:
+//
+//   flags:all = { flagged: ["handle:postId", ...],
+//                 hidden:  ["handle:postId", ...] }
+//
+// rebuilt by the bot from the `flag:` / `hidden:` keys whenever one
+// changes (see ~/workspace/rlibook-flags-all-writer-patch.md). The
+// per-row `flag:` / `hidden:` keys remain the source of truth and
+// the fallback: while the blob does not exist yet (rollout), the
+// endpoint falls back to the per-row gets — correct, just slower —
+// so deploying the read side first can never un-flag a book.
+// The blob is also cached in caches.default for 1 h, so a steady
+// state costs ~0 KV reads per search after the first.
+//
+// flagStateForRows() returns { status, flagged, hidden }:
+//   "ok"       — blob read (or no KV binding: empty sets, the
+//                honest v1 limit, same as before).
+//   "legacy"   — blob missing/malformed: the sets were built with
+//                the per-row gets instead. Correct, just slower.
+//   "degraded" — a KV read threw: flag state is UNKNOWN and the
+//                sets are EMPTY and must NOT be trusted. The caller
+//                must disable delivery links and surface
+//                flagStatus: "degraded" (see visibleResults).
+// Never throws.
+const FLAGS_ALL_KEY = "flags:all";
+const FLAGS_CACHE_URL = "https://rlibook.internal/flags-all";
+const FLAGS_CACHE_MAX_AGE_SECONDS = 3600; // 1 h
+
+/** Validate a flags:all blob value into { flagged: Set, hidden: Set }
+// of "handle:postId" entries, or null when the value is not a usable
+// blob (not an object, or a flagged/hidden field that is present but
+// not an array). Junk entries inside an array are dropped, never
+// trusted. Exported for tests. */
+export function parseFlagsBlob(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (
+    ("flagged" in value && !Array.isArray(value.flagged)) ||
+    ("hidden" in value && !Array.isArray(value.hidden))
+  ) {
+    return null;
+  }
+  const clean = (arr) => {
+    const out = new Set();
+    for (const e of arr || []) {
+      if (typeof e !== "string") continue;
+      const m = /^([A-Za-z0-9_]{1,64}):(\d{1,20})$/.exec(e.trim());
+      if (m) out.add(`${m[1]}:${m[2]}`);
+    }
+    return out;
+  };
+  return { flagged: clean(value.flagged), hidden: clean(value.hidden) };
+}
+
+// Read the flags:all blob: edge cache (caches.default, 1 h) first,
+// then one KV get. Returns { flagged: Set, hidden: Set } or null
+// when the key is absent or malformed (the caller falls back to the
+// legacy per-row gets). Throws on a KV/edge-cache read error (the
+// caller treats that as degraded, never as "no flags"). In the
+// Node test environment `caches` is undefined — the typeof guard
+// keeps that path dead there; the edge-cache behaviour is covered
+// by a test that installs a fake global `caches`.
+async function flagsBlobGet(env) {
   const kv = env && env.RLIBOOK_KV;
-  if (!kv) return false;
-  const parsed = parsePostUrl(url);
-  if (!parsed) return false;
+  const edge = typeof caches !== "undefined" && caches.default ? caches.default : null;
+  if (edge) {
+    try {
+      const hit = await edge.match(FLAGS_CACHE_URL);
+      if (hit) {
+        const parsed = parseFlagsBlob(await hit.json());
+        if (parsed) return parsed;
+        // A cached malformed blob is a corrupt cache entry, not a
+        // missing blob — fall through to KV and re-cache.
+      }
+    } catch (e) {
+      // Edge-cache failure: fall through to KV.
+    }
+  }
+  const raw = await kv.get(FLAGS_ALL_KEY);
+  if (!raw) return null;
+  let parsed = null;
   try {
-    const v = await kv.get(`flag:${parsed.handle}:${parsed.postId}`);
-    return v !== null;
+    parsed = parseFlagsBlob(JSON.parse(raw));
   } catch (e) {
-    console.warn("[tg-search] flag lookup failed:", e && e.message);
-    return false;
+    return null;
+  }
+  if (!parsed) return null;
+  // Best-effort edge-cache fill (a failure never fails the request).
+  if (edge) {
+    try {
+      await edge.put(
+        FLAGS_CACHE_URL,
+        new Response(
+          JSON.stringify({ flagged: [...parsed.flagged], hidden: [...parsed.hidden] }),
+          {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": `max-age=${FLAGS_CACHE_MAX_AGE_SECONDS}`,
+            },
+          },
+        ),
+      );
+    } catch (e) {
+      // Best-effort only.
+    }
+  }
+  return parsed;
+}
+
+// The denylist for one page of rows: { status, flagged, hidden }
+// (see the header above). `rows` is needed only for the legacy
+// fallback (the per-row gets); the blob path ignores it.
+async function flagStateForRows(env, rows) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv) return { status: "ok", flagged: new Set(), hidden: new Set() };
+  let blob = null;
+  try {
+    blob = await flagsBlobGet(env);
+  } catch (e) {
+    console.warn("[tg-search] flags:all lookup failed:", e && e.message);
+    return { status: "degraded", flagged: new Set(), hidden: new Set() };
+  }
+  if (blob) return { status: "ok", flagged: blob.flagged, hidden: blob.hidden };
+  // Blob missing/malformed: legacy per-row gets. Any KV failure
+  // here degrades the whole page — never a silent unflag.
+  try {
+    const flagged = new Set();
+    const hidden = new Set();
+    await Promise.all(
+      (rows || []).map(async (r) => {
+        const parsed = parsePostUrl(r.url);
+        if (!parsed) return;
+        const key = `${parsed.handle}:${parsed.postId}`;
+        const [f, h] = await Promise.all([
+          kv.get(`flag:${parsed.handle}:${parsed.postId}`),
+          kv.get(`hidden:${parsed.handle}:${parsed.postId}`),
+        ]);
+        if (f !== null) flagged.add(key);
+        if (h !== null) hidden.add(key);
+      }),
+    );
+    return { status: "legacy", flagged, hidden };
+  } catch (e) {
+    console.warn("[tg-search] legacy flag lookup failed:", e && e.message);
+    return { status: "degraded", flagged: new Set(), hidden: new Set() };
   }
 }
 
@@ -330,49 +494,43 @@ export function botDeepLink(row) {
   return `https://t.me/${BOT_USERNAME}?start=dl_${parsed.handle}_${parsed.postId}_any`;
 }
 
-// Hidden check (owner-only /hide, Workstream 2b). A key
-// `hidden:<handle>:<post_id>` means the book is REMOVED from
-// search. Same shape as isFlagged; a KV failure fails OPEN here
-// (the book stays visible — search must never fail because the
-// hide check did; dl-token.js fails CLOSED at mint time instead,
-// so a hidden book still cannot be downloaded). Reports never
-// set this key — an approved report sets `flag:` instead.
-async function isHidden(env, url) {
-  const kv = env && env.RLIBOOK_KV;
-  if (!kv) return false;
-  const parsed = parsePostUrl(url);
-  if (!parsed) return false;
-  try {
-    const v = await kv.get(`hidden:${parsed.handle}:${parsed.postId}`);
-    return v !== null;
-  } catch (e) {
-    console.warn("[tg-search] hidden lookup failed:", e && e.message);
-    return false;
-  }
-}
-
-// Flag + hide for one page of rows: hidden rows are dropped (never
-// returned), the rest are mapped with their flagged boolean and
-// bot deep link. Returns { results, hiddenCount } — hiddenCount
-// adjusts `total` (see the header: only the hidden rows on THIS
-// page are subtracted).
+// Flag + hide for one page of rows, from ONE denylist read (the
+// flags:all blob — see flagStateForRows). Hidden rows are dropped
+// (never returned), the rest are mapped with their flagged boolean
+// and bot deep link. Returns { results, hiddenCount, flagStatus } —
+// hiddenCount adjusts `total` (see the header: only the hidden rows
+// on THIS page are subtracted). flagStatus is "ok" (blob), "legacy"
+// (blob missing — per-row gets were used; correct, just slower), or
+// "degraded" (KV failed — flag state UNKNOWN: every result is
+// returned with delivery links disabled and flagCheck: "degraded",
+// the raw post URL is withheld even from the bot, and the caller
+// must surface flagStatus. A degraded page never fails open.)
 async function visibleResults(env, rows, includeUrl) {
-  const checks = await Promise.all(
-    rows.map(async (r) => ({
-      flagged: await isFlagged(env, r.url),
-      hidden: await isHidden(env, r.url),
-    })),
-  );
+  const state = await flagStateForRows(env, rows);
+  if (state.status === "degraded") {
+    const results = (rows || []).map((r) => {
+      const out = toResult(r, false, false);
+      out.get = null;
+      out.send = null;
+      out.read = null;
+      out.bot = null;
+      out.flagCheck = "degraded";
+      return out;
+    });
+    return { results, hiddenCount: 0, flagStatus: "degraded" };
+  }
   const results = [];
   let hiddenCount = 0;
-  rows.forEach((r, i) => {
-    if (checks[i].hidden) {
+  for (const r of rows || []) {
+    const parsed = parsePostUrl(r.url);
+    const key = parsed ? `${parsed.handle}:${parsed.postId}` : null;
+    if (key && state.hidden.has(key)) {
       hiddenCount++;
-      return;
+      continue;
     }
-    results.push(toResult(r, checks[i].flagged, includeUrl));
-  });
-  return { results, hiddenCount };
+    results.push(toResult(r, key ? state.flagged.has(key) : false, includeUrl));
+  }
+  return { results, hiddenCount, flagStatus: state.status };
 }
 
 // D1 final-import target (distinct books). The import finished
@@ -386,14 +544,15 @@ const D1_FINAL_TARGET = 323318;
 // import), not per request — so it is cached in KV (same RLIBOOK_KV
 // binding the flag check already uses, same read-through pattern as
 // functions/api/ratings.js) instead of running a full-table COUNT(*)
-// on every search. A bare COUNT(*) scans ~150k rows, and at the 5M
-// rows/day free-tier budget ~30 searches/day would exhaust it and
+// on every search. A bare COUNT(*) scans ~323k rows, and at the 5M
+// rows/day free-tier budget ~15 searches/day would exhaust it and
 // site search would die with 500 for the rest of the day. With a
-// 1 h TTL the count is refreshed at most 24 times/day and is at most
-// 1 h stale — fine for a "how complete is D1" indicator. On a cache
-// miss, a KV error, or a malformed cached value, the code falls back
-// to the live COUNT(*) (and best-effort repopulates the cache), so a
-// missing or broken cache can never break a search.
+// 6 h TTL the count is refreshed at most 4 times/day and is at most
+// 6 h stale — fine for a "how complete is D1" indicator. On a cache
+// miss the code runs the live COUNT(*) ONLY when the guard allows it
+// (see d1Coverage): a missing or broken cache can never break a
+// search, and a KV failure can never TRIGGER a live count either —
+// that compound failure killed search on 2026-11-19.
 //
 // 2026-11-20: the 1 h TTL broke live search — the coverage COUNT(*)
 // refreshes up to 24×/day × 323,318 rows = 7.76M rows/day against the
@@ -403,6 +562,62 @@ const D1_FINAL_TARGET = 323318;
 // 6 h stale — fine for a completeness indicator.
 const COVERAGE_CACHE_KEY = "tg-search:coverage";
 const COVERAGE_CACHE_TTL_SECONDS = 21600; // 6 h
+
+// Coverage guard (resilience batch, 2026-11-20): the live COUNT(*)
+// is barred while the `d1:guard` KV flag is set (the watchdog sets
+// it — value = a reason string, any non-null value counts — when
+// the search canary reports D1 errors; delete the key to clear it),
+// and barred after 4 refreshes in one UTC day (the D1 budget
+// resets 00:00 UTC). The refresh counter is one KV key per UTC day
+// (`tg-search:coverage:refreshes:<YYYY-MM-DD>`, 48 h TTL), one
+// write per refresh. Two concurrent refreshes can both read N and
+// both write N+1 — the budget may overshoot by one; the 6 h cache
+// TTL still bounds the normal case to 4/day, so the counter is the
+// backstop for cache-eviction storms, not a precise ledger.
+const D1_GUARD_KEY = "d1:guard";
+const COVERAGE_REFRESHES_PER_DAY = 4;
+const COVERAGE_REFRESH_COUNTER_TTL_SECONDS = 172800; // 48 h
+
+function coverageRefreshCounterKey(now = new Date()) {
+  return `tg-search:coverage:refreshes:${now.toISOString().slice(0, 10)}`;
+}
+
+// True when the live COUNT(*) is barred right now: the guard flag
+// is set, today's refresh budget is spent, or KV itself cannot be
+// read (the guard state is unknown, so the count is barred — a KV
+// failure must never trigger a live COUNT(*)). Never throws. No KV
+// binding -> false (no guard to read; the count is the only source,
+// the pre-existing behaviour for an unbound KV).
+async function coverageRefreshBarred(env) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return false;
+  try {
+    const guard = await kv.get(D1_GUARD_KEY);
+    if (guard !== null) return true;
+    const raw = await kv.get(coverageRefreshCounterKey());
+    const used = raw === null ? 0 : parseInt(raw, 10);
+    return Number.isFinite(used) && used >= COVERAGE_REFRESHES_PER_DAY;
+  } catch (e) {
+    return true;
+  }
+}
+
+// Record one coverage refresh against today's budget (best-effort:
+// a failure never fails the request, and a lost increment only
+// means the budget check may allow one extra refresh).
+async function coverageRefreshCount(env) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function" || typeof kv.put !== "function") return;
+  try {
+    const key = coverageRefreshCounterKey();
+    const raw = await kv.get(key);
+    const used = raw === null ? 0 : parseInt(raw, 10);
+    const next = (Number.isFinite(used) ? used : 0) + 1;
+    await kv.put(key, String(next), { expirationTtl: COVERAGE_REFRESH_COUNTER_TTL_SECONDS });
+  } catch (e) {
+    // Best-effort only.
+  }
+}
 
 // Read the cached coverage count (an integer), or null. Never throws.
 async function coverageCacheGet(env) {
@@ -434,18 +649,23 @@ async function coverageCachePut(env, indexed) {
 // Coverage of the D1 snapshot: how many books D1 holds right now vs
 // the final-import target. Served from the KV cache when present
 // (see above); otherwise a direct COUNT(*) — the same count
-// /api/stats uses for books_d1.count. Never throws: on any failure
-// returns null and the caller omits the field, so a failed count can
-// never break a search.
+// /api/stats uses for books_d1.count — but ONLY when the guard
+// allows it (see coverageRefreshBarred). On guard, returns null and
+// the caller omits the field, so a failed or barred count can never
+// break a search. Never throws.
 async function d1Coverage(db, env) {
   const cached = await coverageCacheGet(env);
   if (cached !== null) {
     return { indexed: cached, target: D1_FINAL_TARGET, partial: cached < D1_FINAL_TARGET };
   }
+  if (await coverageRefreshBarred(env)) {
+    return null;
+  }
   try {
     const row = await db.prepare("SELECT COUNT(*) AS n FROM books").bind().first();
     const indexed = row ? Number(row.n) || 0 : 0;
     await coverageCachePut(env, indexed);
+    await coverageRefreshCount(env);
     return { indexed, target: D1_FINAL_TARGET, partial: indexed < D1_FINAL_TARGET };
   } catch (e) {
     console.warn("[tg-search] coverage count failed:", e && e.message);
@@ -651,10 +871,10 @@ export async function onRequest(context) {
   const includeUrl = isBotRequest(request, env);
 
   // Coverage is computed once per request and attached to every ok:true
-  // reply below (spread as `...cov`); a failed count yields no field
-  // rather than a broken search. The count comes from the KV cache
-  // when present (see d1Coverage) — the live COUNT(*) runs only on a
-  // cache miss, at most once an hour.
+  // reply below (spread as `...cov`); a failed or barred count yields
+  // no field rather than a broken search. The count comes from the KV
+  // cache when present (see d1Coverage) — the live COUNT(*) runs only
+  // on a cache miss, at most 4 times/day, never under `d1:guard`.
   const coverage = await d1Coverage(db, env);
   const cov = coverage ? { coverage } : {};
 
@@ -679,13 +899,30 @@ export async function onRequest(context) {
       if (!row) {
         return json({ ok: true, ...cov, book: null });
       }
-      // Owner-hide: a hidden post reads as "unknown post" — the
-      // same null, no "removed" notice, no title leak.
-      if (await isHidden(env, row.url)) {
-        return json({ ok: true, ...cov, book: null });
+      // One denylist read for this row (flags:all blob — see
+      // flagStateForRows). Degraded (KV failed): the book is
+      // returned with NO links and flagCheck: "degraded" — the raw
+      // post URL is withheld even from the bot, so a lookup can
+      // never hand out a download for a book whose flag state is
+      // unknown. Hidden (owner-hide): the post reads as "unknown
+      // post" — the same null, no "removed" notice, no title leak.
+      const state = await flagStateForRows(env, [row]);
+      if (state.status === "degraded") {
+        const out = toResult(row, false, false);
+        out.get = null;
+        out.send = null;
+        out.read = null;
+        out.bot = null;
+        out.flagCheck = "degraded";
+        return json({ ok: true, ...cov, flagStatus: "degraded", book: out });
       }
-      const flagged = await isFlagged(env, row.url);
-      return json({ ok: true, ...cov, book: toResult(row, flagged, includeUrl) });
+      const parsed = parsePostUrl(row.url);
+      const key = parsed ? `${parsed.handle}:${parsed.postId}` : null;
+      if (key && state.hidden.has(key)) {
+        return json({ ok: true, ...cov, flagStatus: state.status, book: null });
+      }
+      const flagged = key ? state.flagged.has(key) : false;
+      return json({ ok: true, ...cov, flagStatus: state.status, book: toResult(row, flagged, includeUrl) });
     } catch (e) {
       console.warn("[tg-search] post lookup failed:", e && e.message);
       return json(
@@ -708,9 +945,12 @@ export async function onRequest(context) {
       }
       // Hidden rows (owner /hide) are dropped before the reply;
       // `total` is adjusted by the hidden rows on this page only.
-      const { results, hiddenCount } = await visibleResults(env, found.rows, includeUrl);
+      // flagStatus ("ok" | "legacy" | "degraded") tells the caller
+      // whether the denylist was trusted for this page.
+      const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl);
       return json({
         ok: true, q: "", source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov,
+        flagStatus,
         results,
       });
     } catch (e) {
@@ -740,11 +980,12 @@ export async function onRequest(context) {
     if (found.total === 0) {
       return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
     }
-    // Flag check per result, in parallel (one KV get each, at most
-    // `limit` gets; missing KV binding -> all unflagged). Hidden
-    // rows (owner /hide) are dropped before the reply, and `total`
-    // is adjusted by the hidden rows on this page only.
-    const { results, hiddenCount } = await visibleResults(env, found.rows, includeUrl);
+    // One denylist read for the page (the flags:all blob — see
+    // visibleResults). Hidden rows (owner /hide) are dropped before
+    // the reply, and `total` is adjusted by the hidden rows on this
+    // page only. flagStatus ("ok" | "legacy" | "degraded") tells
+    // the caller whether the denylist was trusted for this page.
+    const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl);
     return json({
       ok: true,
       q,
@@ -753,6 +994,7 @@ export async function onRequest(context) {
       limit,
       offset,
       ...cov,
+      flagStatus,
       results,
     });
   } catch (e) {

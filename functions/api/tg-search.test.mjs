@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -52,6 +52,11 @@ const FIXTURES = [
   ["قصة كل شخص", "كاتب ما", "kotobkhana", "channel", "pdf", "3.1 MB", "2026-11-08", "https://t.me/kotobkhana/7558", "قصة كل شخص.pdf"],
   ["أليس الصبح بقريب", "بلال فضل", "kotobkhana", "channel", "epub", "1.5 MB", "2026-11-07", "https://t.me/kotobkhana/7557", "أليس الصبح بقريب.epub"],
   ["أنّا كارنينا", "ليو تولستوي", "kotobkhana", "channel", "epub", "4.0 MB", "2026-11-06", "https://t.me/kotobkhana/7556", "أنا كارنينا.epub"],
+  // Persian-letter title (live D1 id 137839, L_alnader1): stored with
+  // چ, must be found by a query with ج after the FTS migration.
+  // (Live author is ''; the fixture gives it one so the author
+  // search below has something to find.)
+  ["روايه نوستالچيا لنور اسماعيل", "نور اسماعيل", "L_alnader1", "channel", "pdf", "1.0 MB", "2026-11-20", "https://t.me/L_alnader1/137839", "روايه نوستالچيا لنور اسماعيل.pdf"],
 ];
 const shard = JSON.parse(readFileSync(SHARD, "utf-8"));
 const rows = shard.books.slice(0, SAMPLE);
@@ -142,6 +147,21 @@ function mockKVStore(entries = {}) {
     put: async (k, v, opts) => { m.set(k, v); writes.push({ key: k, value: v, opts }); },
   };
 }
+// KV mock with put + a log of every get() key (so tests can assert
+// the flags:all blob costs exactly ONE KV get per search, not one
+// per row — and that the legacy fallback really does per-row gets).
+function countingKV(entries = {}) {
+  const m = new Map(Object.entries(entries));
+  const writes = [];
+  const getCalls = [];
+  return {
+    store: m,
+    writes,
+    getCalls,
+    get: async (k) => { getCalls.push(k); return m.has(k) ? m.get(k) : null; },
+    put: async (k, v, opts) => { m.set(k, v); writes.push({ key: k, value: v, opts }); },
+  };
+}
 // D1 mock that counts executions of the coverage COUNT(*) only
 // (exact SQL "SELECT COUNT(*) AS n FROM books") — the FTS and browse
 // counts are different statements and must still run.
@@ -220,6 +240,27 @@ const D1 = mockD1(db);
   // "كاتب" (no ال) should match a title containing "الكاتب".
   const { body: body2 } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("كل شخص"));
   check("3b multi-word AND (كل شخص)", body2.total >= 2, `total=${body2.total}`);
+}
+
+// 27. Persian-letter folding (Fix A — نوستالجيا): a query with ج must
+// find a title stored with چ, and vice versa. The test DB's FTS rows
+// are built with the fixed normalizeArabic (same as the migration
+// rewrites live books_fts with), so this is the post-migration state.
+{
+  check("27a normalizeArabic folds چ -> ج", normalizeArabic("نوستالچيا") === "نوستالجيا");
+  check("27b normalizeArabic folds ک/گ -> ك", normalizeArabic("کتاب") === "كتاب" && normalizeArabic("گربه") === "كربه");
+  check("27c normalizeArabic folds پ -> ب, ڤ -> ف", normalizeArabic("پدر") === "بدر" && normalizeArabic("ڤيديو") === "فيديو");
+  check("27d normalizeArabic keeps hamza folds", normalizeArabic("مؤمن") === "مومن" && normalizeArabic("شيء") === "شي");
+  const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("نوستالجيا"));
+  check("27e query نوستالجيا (ج) finds title stored as نوستالچيا (چ)",
+    (body.results || []).some((r) => r.title === "روايه نوستالچيا لنور اسماعيل"),
+    JSON.stringify((body.results || []).slice(0, 2)));
+  const { body: bodyCh } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("نوستالچيا"));
+  check("27f query نوستالچيا (چ) finds the same book",
+    (bodyCh.results || []).some((r) => r.title === "روايه نوستالچيا لنور اسماعيل"));
+  const { body: bodyAu } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("نور اسماعيل"));
+  check("27g author search finds the Persian-title book",
+    (bodyAu.results || []).some((r) => r.author === "نور اسماعيل"));
 }
 
 // 4. Null author (not "").
@@ -407,13 +448,24 @@ const D1 = mockD1(db);
     bodyBad2.coverage && bodyBad2.coverage.indexed === TOTAL_ROWS,
     JSON.stringify(bodyBad2.coverage));
 
-  // 10k: KV get throws -> fall back to the live COUNT(*), search works.
+  // 10k: KV failure NEVER triggers a live COUNT(*) any more
+  // (resilience batch, 2026-11-20): a KV error + a live count
+  // compounded and killed search on 2026-11-19. The coverage field
+  // is omitted instead and the search itself still works.
   const counted4 = countingD1(db);
   const kvThrow = { get: async () => { throw new Error("KV down"); }, put: async () => { throw new Error("KV down"); } };
   const { body: bodyThrow } = await call({ TG_D1: counted4.db, RLIBOOK_KV: kvThrow }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("10k KV failure falls back to the live COUNT(*)",
-    bodyThrow.coverage && bodyThrow.coverage.indexed === TOTAL_ROWS
-    && counted4.coverageCountQueries === 1, JSON.stringify(bodyThrow.coverage));
+  check("10k KV failure omits coverage (no field, not a stale count)",
+    bodyThrow.coverage === undefined, JSON.stringify(bodyThrow.coverage));
+  check("10k2 KV failure runs ZERO coverage COUNT(*)",
+    counted4.coverageCountQueries === 0,
+    `coverage COUNT(*) ran ${counted4.coverageCountQueries} times`);
+  check("10k3 KV failure still returns search results",
+    bodyThrow.total >= 1 && (bodyThrow.results || []).length >= 1, `total=${bodyThrow.total}`);
+  check("10k4 KV failure degrades the flag check too (links disabled, never fail-open)",
+    bodyThrow.flagStatus === "degraded"
+    && (bodyThrow.results || []).every((r) => r.get === null && r.send === null && r.read === null && r.flagCheck === "degraded"),
+    JSON.stringify({ flagStatus: bodyThrow.flagStatus, first: (bodyThrow.results || [])[0] }));
 
   // 10l: a cached value at/above the target reports partial: false —
   // the /book partial note self-removes from the cached value too.
@@ -682,6 +734,260 @@ ZEBRA.forEach((f, j) => {
     && lookupFlag.book.bot === "https://t.me/RliBook_bot?start=dl_kotobkhana_7559_any"
     && lookupFlag.book.get === null && lookupFlag.book.send === null && lookupFlag.book.read === null
     && !("url" in lookupFlag.book), JSON.stringify(lookupFlag.book));
+}
+
+// 17. d1:guard (resilience batch): while the guard flag is set,
+// the live COUNT(*) NEVER runs — the coverage field is omitted and
+// the search itself is unaffected.
+{
+  const today = new Date().toISOString().slice(0, 10);
+  const counterKey = `tg-search:coverage:refreshes:${today}`;
+  const counted = countingD1(db);
+  const kvGuard = mockKVStore({ "d1:guard": "D1 exhausted 2026-11-20 (watchdog)" });
+  const { body } = await call({ TG_D1: counted.db, RLIBOOK_KV: kvGuard }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("17a guard set -> coverage omitted", body.coverage === undefined, JSON.stringify(body.coverage));
+  check("17b guard set -> ZERO coverage COUNT(*)", counted.coverageCountQueries === 0, `ran ${counted.coverageCountQueries} times`);
+  check("17c guard set -> search results still returned", body.total >= 1 && (body.results || []).length >= 1, `total=${body.total}`);
+  check("17d guard set -> no refresh counter written", !kvGuard.writes.some((w) => w.key === counterKey), JSON.stringify(kvGuard.writes.map((w) => w.key)));
+}
+
+// 18. Coverage refresh budget: at most 4 live COUNT(*) per UTC day
+// (one KV counter write per refresh). At 4 the count is barred;
+// below 4 it runs once and the counter increments.
+{
+  const today = new Date().toISOString().slice(0, 10);
+  const counterKey = `tg-search:coverage:refreshes:${today}`;
+  // 18a: counter at 4 -> barred, no count, coverage omitted.
+  const countedFull = countingD1(db);
+  const kvFull = mockKVStore({ [counterKey]: "4" });
+  const { body: bodyFull } = await call({ TG_D1: countedFull.db, RLIBOOK_KV: kvFull }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("18a counter at 4 -> coverage omitted", bodyFull.coverage === undefined, JSON.stringify(bodyFull.coverage));
+  check("18b counter at 4 -> ZERO coverage COUNT(*)", countedFull.coverageCountQueries === 0, `ran ${countedFull.coverageCountQueries} times`);
+  check("18c counter at 4 -> search still works", bodyFull.total >= 1, `total=${bodyFull.total}`);
+  // 18d: counter at 3 -> the count runs exactly once, the counter
+  // is incremented to 4 (48 h TTL), and the cache is populated.
+  const counted3 = countingD1(db);
+  const kv3 = mockKVStore({ [counterKey]: "3" });
+  const { body: body3 } = await call({ TG_D1: counted3.db, RLIBOOK_KV: kv3 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("18d counter at 3 -> live COUNT(*) runs once",
+    body3.coverage && body3.coverage.indexed === TOTAL_ROWS + 3 && counted3.coverageCountQueries === 1,
+    JSON.stringify(body3.coverage));
+  const counterWrite = kv3.writes.find((w) => w.key === counterKey);
+  check("18e counter at 3 -> counter incremented to 4",
+    !!counterWrite && counterWrite.value === "4", JSON.stringify(counterWrite && counterWrite.value));
+  check("18f counter write carries a 48 h TTL",
+    !!counterWrite && counterWrite.opts && counterWrite.opts.expirationTtl === 172800,
+    JSON.stringify(counterWrite && counterWrite.opts));
+  // 18g: first refresh of the day (no counter key) -> count runs,
+  // counter written as "1".
+  const counted0 = countingD1(db);
+  const kv0 = mockKVStore();
+  const { body: body0 } = await call({ TG_D1: counted0.db, RLIBOOK_KV: kv0 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("18g no counter key -> live COUNT(*) runs once",
+    body0.coverage && body0.coverage.indexed === TOTAL_ROWS + 3 && counted0.coverageCountQueries === 1,
+    JSON.stringify(body0.coverage));
+  const counterWrite0 = kv0.writes.find((w) => w.key === counterKey);
+  check("18h no counter key -> counter written as 1",
+    !!counterWrite0 && counterWrite0.value === "1", JSON.stringify(counterWrite0 && counterWrite0.value));
+}
+
+// 19. parseFlagsBlob (exported helper): shape validation.
+{
+  const good = parseFlagsBlob({ flagged: ["kotobkhana:7559", "books2023:125155"], hidden: ["testchannel:4242"] });
+  check("19a valid blob -> Sets with the entries",
+    good && good.flagged.has("kotobkhana:7559") && good.flagged.has("books2023:125155")
+    && good.hidden.has("testchannel:4242") && good.flagged.size === 2 && good.hidden.size === 1,
+    JSON.stringify(good && { f: [...good.flagged], h: [...good.hidden] }));
+  check("19b junk entries dropped, good ones kept",
+    (() => {
+      const p = parseFlagsBlob({ flagged: ["kotobkhana:7559", "not a key", "bad-handle!:1", "x:abc", 42, null, "a:1:2"], hidden: [] });
+      return p && p.flagged.size === 1 && p.flagged.has("kotobkhana:7559");
+    })());
+  check("19c missing arrays -> empty Sets (blob with only flagged is fine)",
+    (() => {
+      const p = parseFlagsBlob({ flagged: ["kotobkhana:7559"] });
+      return p && p.flagged.size === 1 && p.hidden.size === 0;
+    })());
+  check("19d non-array flagged field -> null (malformed, caller falls back)",
+    parseFlagsBlob({ flagged: "kotobkhana:7559", hidden: [] }) === null);
+  check("19e non-object -> null", parseFlagsBlob(null) === null && parseFlagsBlob("x") === null && parseFlagsBlob([]) === null);
+  check("19f empty object -> empty Sets", (() => {
+    const p = parseFlagsBlob({});
+    return p && p.flagged.size === 0 && p.hidden.size === 0;
+  })());
+}
+
+// 20. flags:all blob: one KV get per search (not one per row), and
+// the blob — not the per-row keys — decides flagged/hidden.
+{
+  const blob = JSON.stringify({ flagged: ["kotobkhana:7559"], hidden: ["testchannel:4242"] });
+  const kv = countingKV({ "flags:all": blob });
+  const { body } = await call({ TG_D1: D1, RLIBOOK_KV: kv }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hit = (body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("20a blob flags the book", hit && hit.flagged === true, JSON.stringify(hit && hit.flagged));
+  check("20b blob-flagged book has the bot link and no delivery links",
+    hit && hit.bot === "https://t.me/RliBook_bot?start=dl_kotobkhana_7559_any"
+    && hit.get === null && hit.send === null && hit.read === null, JSON.stringify(hit));
+  check("20c flagStatus ok when the blob was used", body.flagStatus === "ok", JSON.stringify(body.flagStatus));
+  check("20d exactly ONE KV get of flags:all",
+    kv.getCalls.filter((k) => k === "flags:all").length === 1,
+    JSON.stringify(kv.getCalls));
+  check("20e ZERO per-row flag:/hidden: gets when the blob exists",
+    kv.getCalls.filter((k) => k.startsWith("flag:") || k.startsWith("hidden:")).length === 0,
+    JSON.stringify(kv.getCalls));
+  // Hidden via the blob drops the book (Zebra post).
+  const { body: bodyZ } = await call({ TG_D1: D1, RLIBOOK_KV: countingKV({ "flags:all": blob }) },
+    "/api/tg-search?q=" + encodeURIComponent("Zebra Control Panel"));
+  check("20f blob-hidden post -> its only matching file is gone (total 0)",
+    bodyZ.total === 0 && bodyZ.results.length === 0, `total=${bodyZ.total}`);
+  const { body: bodyZ2 } = await call({ TG_D1: D1, RLIBOOK_KV: countingKV({ "flags:all": blob }) },
+    "/api/tg-search?q=" + encodeURIComponent("Zebra"));
+  check("20g blob-hidden post drops BOTH files on it (only the other post remains)",
+    bodyZ2.total === 1 && bodyZ2.results.length === 1 && bodyZ2.results[0].title === "Zebra Other Book",
+    `total=${bodyZ2.total}`);
+  // The blob wins over a stale per-row key: a flag: key that is NOT
+  // in the blob does not flag the book (the blob is the denylist).
+  const kvStale = countingKV({ "flags:all": JSON.stringify({ flagged: [], hidden: [] }), "flag:kotobkhana:7559": "1" });
+  const { body: bodyS } = await call({ TG_D1: D1, RLIBOOK_KV: kvStale }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hitS = (bodyS.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("20h empty blob + stale per-row flag: key -> NOT flagged (blob is authoritative)",
+    hitS && hitS.flagged === false, JSON.stringify(hitS && hitS.flagged));
+}
+
+// 21. Blob missing -> legacy per-row gets (rollout safety): the
+// old flag:/hidden: keys still decide, so deploying the read side
+// before the writer can never un-flag a book.
+{
+  const kv = countingKV({ "flag:kotobkhana:7559": "1", "hidden:testchannel:4242": "manual:999:1" });
+  const { body } = await call({ TG_D1: D1, RLIBOOK_KV: kv }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hit = (body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("21a no blob -> per-row flag: key still flags", hit && hit.flagged === true);
+  check("21b no blob -> flagStatus legacy", body.flagStatus === "legacy", JSON.stringify(body.flagStatus));
+  check("21c no blob -> per-row gets really ran",
+    kv.getCalls.some((k) => k === "flag:kotobkhana:7559"), JSON.stringify(kv.getCalls));
+  const { body: bodyZ } = await call({ TG_D1: D1, RLIBOOK_KV: countingKV({ "hidden:testchannel:4242": "manual:999:1" }) },
+    "/api/tg-search?q=" + encodeURIComponent("Zebra Control Panel"));
+  check("21d no blob -> per-row hidden: key still drops the book",
+    bodyZ.total === 0 && bodyZ.results.length === 0, `total=${bodyZ.total}`);
+}
+
+// 22. Blob malformed (bad JSON, or a non-array field) -> legacy
+// fallback, same as missing.
+{
+  const kvBad = countingKV({ "flags:all": "not-json{{", "flag:kotobkhana:7559": "1" });
+  const { body } = await call({ TG_D1: D1, RLIBOOK_KV: kvBad }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hit = (body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("22a malformed blob JSON -> legacy fallback still flags", hit && hit.flagged === true);
+  check("22b malformed blob JSON -> flagStatus legacy", body.flagStatus === "legacy", JSON.stringify(body.flagStatus));
+  const kvBad2 = countingKV({ "flags:all": JSON.stringify({ flagged: "kotobkhana:7559" }), "flag:kotobkhana:7559": "1" });
+  const { body: body2 } = await call({ TG_D1: D1, RLIBOOK_KV: kvBad2 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hit2 = (body2.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("22c non-array flagged field -> legacy fallback still flags", hit2 && hit2.flagged === true);
+  check("22d non-array flagged field -> flagStatus legacy", body2.flagStatus === "legacy", JSON.stringify(body2.flagStatus));
+}
+
+// 23. KV failure on the denylist -> DEGRADED, never fail-open:
+// results are returned (search works) but with NO delivery links,
+// a flagCheck marker on every result, and flagStatus at the top —
+// and the raw post URL is withheld even from the bot.
+{
+  const kvThrow = { get: async () => { throw new Error("KV down"); }, put: async () => { throw new Error("KV down"); } };
+  const { body } = await call({ TG_D1: D1, RLIBOOK_KV: kvThrow }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("23a degraded -> flagStatus degraded", body.flagStatus === "degraded", JSON.stringify(body.flagStatus));
+  check("23b degraded -> results still returned", body.total >= 1 && (body.results || []).length >= 1, `total=${body.total}`);
+  check("23c degraded -> every result has NO links and flagCheck degraded",
+    (body.results || []).every((r) => r.get === null && r.send === null && r.read === null && r.bot === null && r.flagCheck === "degraded"),
+    JSON.stringify((body.results || [])[0]));
+  check("23d degraded -> coverage omitted too (KV down bars the count)",
+    body.coverage === undefined, JSON.stringify(body.coverage));
+  // Bot caller, same KV failure -> still no raw url.
+  const botReq = new Request("https://example.com/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"),
+    { method: "GET", headers: { "x-rlibook-bot-key": BOT_KEY } });
+  const botRes = await onRequest({ request: botReq, env: { TG_D1: D1, TG_SEARCH_BOT_KEY: BOT_KEY, RLIBOOK_KV: kvThrow }, params: {} });
+  const botBody = await botRes.json();
+  check("23e degraded bot caller -> no raw url, no links",
+    botBody.flagStatus === "degraded"
+    && (botBody.results || []).every((r) => !("url" in r) && r.get === null && r.send === null && r.read === null),
+    JSON.stringify({ flagStatus: botBody.flagStatus, first: (botBody.results || [])[0] }));
+}
+
+// 24. Single-book lookup under KV failure: same degraded contract.
+{
+  const kvThrow = { get: async () => { throw new Error("KV down"); }, put: async () => { throw new Error("KV down"); } };
+  const { body } = await call({ TG_D1: D1, RLIBOOK_KV: kvThrow }, "/api/tg-search?h=kotobkhana&p=7559");
+  check("24a lookup degraded -> book returned (not null), links disabled",
+    body.book && body.book.title === "Everyone in This Bank Is a Thief"
+    && body.book.get === null && body.book.send === null && body.book.read === null
+    && body.book.flagCheck === "degraded" && body.flagStatus === "degraded",
+    JSON.stringify(body.book));
+  const botReq = new Request("https://example.com/api/tg-search?h=kotobkhana&p=7559",
+    { method: "GET", headers: { "x-rlibook-bot-key": BOT_KEY } });
+  const botRes = await onRequest({ request: botReq, env: { TG_D1: D1, TG_SEARCH_BOT_KEY: BOT_KEY, RLIBOOK_KV: kvThrow }, params: {} });
+  const botBody = await botRes.json();
+  check("24b lookup degraded bot caller -> no raw url",
+    botBody.book && !("url" in botBody.book) && botBody.book.flagCheck === "degraded",
+    JSON.stringify(botBody.book));
+  // Lookup with a good blob still reports flagStatus.
+  const kvBlob = countingKV({ "flags:all": JSON.stringify({ flagged: ["kotobkhana:7559"], hidden: [] }) });
+  const { body: bodyF } = await call({ TG_D1: D1, RLIBOOK_KV: kvBlob }, "/api/tg-search?h=kotobkhana&p=7559");
+  check("24c lookup with blob -> flagged, bot link, flagStatus ok",
+    bodyF.book && bodyF.book.flagged === true && bodyF.flagStatus === "ok"
+    && bodyF.book.bot === "https://t.me/RliBook_bot?start=dl_kotobkhana_7559_any"
+    && bodyF.book.get === null, JSON.stringify(bodyF.book));
+}
+
+// 25. No KV binding at all: the honest v1 limit is unchanged —
+// all unflagged, flagStatus ok, delivery links present.
+{
+  const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  const hit = (body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+  check("25a no KV -> flagged false, flagStatus ok",
+    hit && hit.flagged === false && body.flagStatus === "ok", JSON.stringify({ flagged: hit && hit.flagged, flagStatus: body.flagStatus }));
+  check("25b no KV -> delivery links present (nothing to distrust)",
+    hit && hit.get !== null && hit.send !== null, JSON.stringify(hit && { get: hit.get, send: hit.send }));
+  check("25c no KV -> no flagCheck marker on results",
+    hit && !("flagCheck" in hit), JSON.stringify(Object.keys(hit)));
+}
+
+// 26. Edge cache (caches.default, 1 h): the second search in the
+// hour serves flags:all from the edge cache — zero KV gets for
+// flags. Runs LAST: it installs a fake global `caches` and removes
+// it again in a finally, so no other section sees it.
+{
+  const edgeStore = new Map();
+  globalThis.caches = {
+    default: {
+      match: async (url) => {
+        const raw = edgeStore.get(String(url));
+        return raw === undefined
+          ? null
+          : new Response(raw, { headers: { "content-type": "application/json" } });
+      },
+      put: async (url, res) => { edgeStore.set(String(url), await res.text()); },
+    },
+  };
+  try {
+    const blob = JSON.stringify({ flagged: ["kotobkhana:7559"], hidden: [] });
+    const kv1 = countingKV({ "flags:all": blob });
+    const { body: body1 } = await call({ TG_D1: D1, RLIBOOK_KV: kv1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+    const hit1 = (body1.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+    check("26a first search reads the blob from KV and flags the book",
+      hit1 && hit1.flagged === true && kv1.getCalls.filter((k) => k === "flags:all").length === 1,
+      JSON.stringify(kv1.getCalls));
+    check("26b first search fills the edge cache", edgeStore.size === 1, `edge entries=${edgeStore.size}`);
+    // Second search, fresh KV mock (same blob): the edge cache
+    // answers, KV is never asked for flags:all.
+    const kv2 = countingKV({ "flags:all": blob });
+    const { body: body2 } = await call({ TG_D1: D1, RLIBOOK_KV: kv2 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+    const hit2 = (body2.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+    check("26c second search still flags the book from the edge cache",
+      hit2 && hit2.flagged === true, JSON.stringify(hit2 && hit2.flagged));
+    check("26d second search makes ZERO KV gets for flags:all",
+      kv2.getCalls.filter((k) => k === "flags:all").length === 0,
+      JSON.stringify(kv2.getCalls));
+  } finally {
+    delete globalThis.caches;
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
