@@ -80,9 +80,11 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
   check("1 generated date present", text.includes(NEWEST.generated_at.slice(0, 10)));
   check("1 NO book t.me link anywhere (source is text, not a link)",
     !text.includes(NEWEST.books[0].url) && !text.includes("المصدر في تليجرام"));
-  check("1 send button present (lib=tg, handle+post)",
-    text.includes("/api/send-to-kindle?lib=tg")
+  check("1 send button present (bot deep link send_<handle>_<post>)",
+    text.includes("https://t.me/RliBook_bot?start=send_")
     && text.includes("أرسل لميل قارئي"));
+  check("1 NO direct /api/send-to-kindle link anywhere (bot handoff, 2026-11-21)",
+    !text.includes("/api/send-to-kindle"));
   check("1 no colour emoji on the page (F3: old Kindle shows tofu)",
     !text.includes("📧") && !text.includes("📚") && !text.includes("⚑") && !text.includes("🆕"));
   check("1 NO direct-download link anywhere (removed from /book 2026-11-13; /new never had one)",
@@ -207,14 +209,18 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
     text.indexOf("🚩 هذا الكتاب عليه علامة") !== -1
     && text.indexOf("🚩 هذا الكتاب عليه علامة") < text.indexOf("قناة النشر"));
   check("7 flagged: other books still have send buttons",
-    text.includes("/api/send-to-kindle?lib=tg"));
+    text.includes("https://t.me/RliBook_bot?start=send_"));
   check("7 flag check cost: one KV get per shown book (30)",
     flagGets === 30, "flag gets=" + flagGets);
 }
 {
+  // Bot handoff (2026-11-21): the send URL is the bot deep link and
+  // carries NO fingerprint — the bot identifies the user in Telegram
+  // itself. A ?fp= on the page URL must never leak into any href.
   const { text } = await get("/new?fp=FP123", null);
-  check("7 fp passthrough: send URLs carry the fingerprint",
-    text.includes("&amp;fp=FP123"));
+  check("7 fp never leaks into send URLs (bot identifies the user)",
+    text.includes("https://t.me/RliBook_bot?start=send_")
+    && !text.includes("FP123"));
 }
 {
   const mobi = { generated_at: NEWEST.generated_at, count: 1, books: [{
@@ -232,11 +238,11 @@ async function get(path, kvValue, newest = NEWEST, kvOverride) {
   check("7 parse private-group c/ link -> null",
     parseTelegramPostUrl("https://t.me/c/1/2") === null);
   const u = telegramSendUrl(
-    { title: "T", format: "PDF", url: "https://t.me/s/5" }, "");
-  check("7 send URL: lib=tg + handle + post + format",
-    u === "/api/send-to-kindle?lib=tg&amp;h=s&amp;p=5&amp;f=pdf&amp;t=T", u);
+    { title: "T", format: "PDF", url: "https://t.me/s/5" });
+  check("7 send URL: bot deep link send_<handle>_<post>",
+    u === "https://t.me/RliBook_bot?start=send_s_5", u);
   check("7 send URL: flagged book object -> null",
-    telegramSendUrl({ title: "T", format: "PDF", url: "https://t.me/s/5", flagged: true }, "") === null);
+    telegramSendUrl({ title: "T", format: "PDF", url: "https://t.me/s/5", flagged: true }) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

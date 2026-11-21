@@ -230,6 +230,15 @@ console.log("J. Mini App send-to-Kindle contract (bot-only)");
 check("send endpoint URL is the bot miniapp-convert-send", () => {
   eq(O.MINIAPP_CONVERT_SEND_URL, "https://rlibook-bot.mohamedyou1357.workers.dev/miniapp-convert-send");
 });
+check("convert page email never calls /api/send-to-kindle directly (bot handoff, 2026-11-21)", () => {
+  // The page's only email path is the bot's /miniapp-convert-send
+  // (initData-validated, bot-enforced 3/day) — a converted file has
+  // no Telegram post identity, so no start=send_ deep link exists
+  // for it and no direct endpoint call may appear.
+  const src = readFileSync("site/convert/convert-app.js", "utf-8");
+  assert.ok(!src.includes("/api/send-to-kindle"), "convert-app.js calls /api/send-to-kindle");
+  assert.ok(src.includes("MINIAPP_CONVERT_SEND_URL"), "send path does not use the bot endpoint");
+});
 check("send size limit is 20 MB", () => eq(O.MINIAPP_SEND_MAX_EPUB_BYTES, 20 * 1024 * 1024));
 check("E_NO_EMAIL -> link your Kindle email in the bot first", () => {
   const m = O.miniappSendErrorMessage("E_NO_EMAIL");

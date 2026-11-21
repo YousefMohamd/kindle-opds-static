@@ -5,10 +5,14 @@
 //     -> 200 text/html — the newest 30 books added to the catalog:
 //        title, author, source (as TEXT under the book info), format,
 //        post date, and a "أرسل لميل قارئي" send button (the button
-//        is the send action, via /api/send-to-kindle?lib=tg, which
-//        fetches the file from the Block 2 proxy first). No JavaScript,
-//        minimal CSS, tiny page — built for the Kindle experimental
-//        browser. Same style as functions/book.js.
+//        is the send action, via the bot deep link
+//        https://t.me/RliBook_bot?start=send_<handle>_<post>, so the
+//        send falls under the bot's limits — heavy-action bucket
+//        3/hour, fingerprint — instead of calling
+//        /api/send-to-kindle directly, which has no bot limits).
+//        No JavaScript, minimal CSS, tiny page — built for the
+//        Kindle experimental browser. Same style as functions/book.js
+//        (its botSendLink, same deep link).
 //
 // Flagged books: a 🚩 flag, NO send button, NO
 // reading on the website — with a one-line explanation that the book
@@ -128,21 +132,25 @@ export function parseTelegramPostUrl(url) {
 // Formats the email endpoint accepts (Send-to-Kindle's list).
 export const TG_SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
 
+export const BOT_LINK = "https://t.me/RliBook_bot";
+
 /** The send URL for one newest book, or null when it cannot be sent
  *  from the website (flagged, private-group link, no usable format, or
- *  a non-sendable format). `fpQ` is the "&amp;fp=..." suffix ("" when
- *  no fingerprint). Exported for tests. */
-export function telegramSendUrl(b, fpQ = "") {
+ *  a non-sendable format). The URL is the bot deep link
+ *  https://t.me/RliBook_bot?start=send_<handle>_<post> — the same
+ *  botSendLink pattern functions/book.js uses for the book page, so
+ *  the send runs under the bot's limits (heavy-action bucket,
+ *  fingerprint via the bot's own lookup) instead of calling
+ *  /api/send-to-kindle directly. No fingerprint rides on the link:
+ *  the bot identifies the user in Telegram itself. Exported for
+ *  tests. */
+export function telegramSendUrl(b) {
   if (!b || b.flagged) return null;
   const post = parseTelegramPostUrl(b.url);
   if (!post) return null;
   const fmt = String(b.format || "").trim().toLowerCase();
   if (!TG_SENDABLE_FORMATS.has(fmt)) return null;
-  return "/api/send-to-kindle?lib=tg"
-    + "&amp;h=" + encodeURIComponent(post.handle)
-    + "&amp;p=" + post.postId
-    + "&amp;f=" + fmt
-    + "&amp;t=" + encodeURIComponent(b.title || "") + fpQ;
+  return BOT_LINK + "?start=send_" + post.handle + "_" + post.postId;
 }
 
 // Flag check against the shared KV denylist (same as
@@ -228,8 +236,6 @@ export async function onRequest(context) {
   // does not parse to a public t.me post cannot be flagged this way
   // and report unflagged. Missing KV binding -> all unflagged.
   const flagged = await Promise.all(books.map((b) => isFlagged(env, b.url)));
-  const fp = (url.searchParams.get("fp") || "").trim();
-  const fpQ = fp ? "&amp;fp=" + encodeURIComponent(fp) : "";
 
   const headers = {
     "content-type": "text/html; charset=utf-8",
@@ -271,7 +277,7 @@ export async function onRequest(context) {
         + "للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n";
     } else {
-      const sendUrl = telegramSendUrl(b, fpQ);
+      const sendUrl = telegramSendUrl(b);
       if (sendUrl) {
         body += "<p><a class=\"btn\" href=\"" + sendUrl + "\">أرسل لميل قارئي</a></p>\n";
       } else {
@@ -282,8 +288,7 @@ export async function onRequest(context) {
     }
     body += "</div>\n";
   }
-  body += "<p class=\"note\">زر «أرسل لميل قارئي» يجلب الكتاب من تيليجرام "
-    + "ثم يرسله إلى بريد جهازك. الكتب التي عليها 🚩 تُطلب من البوت.</p>\n"
+  body += "<p class=\"note\">زر «أرسل لميل قارئي» يفتح البوت، والبوت يرسل الكتاب إلى بريد جهازك (بحد البوت اليومي). الكتب التي عليها 🚩 تُطلب من البوت.</p>\n"
     + foot;
   return new Response(body, { headers });
 }
