@@ -1,23 +1,23 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-20T19:31:18.963262+00:00 — **Status:** failed — **Mode:** api-backfill — **Duration:** 2m 3s
+**Date:** 2026-11-21T04:53:16.137812+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
 
 ## Summary so far
-- **Channels with data: 51 of 51 walkable** — **1151937 posts, 601366 book files** (408237 distinct books)
+- **Channels with data: 51 of 51 walkable** — **1151938 posts, 601366 book files** (408237 distinct books)
 - **Channels with 0 book files: 8** (drop candidates — see below)
 - **Dropped channels: 8** (0 book files in the full first run — history kept in the DB, no longer fetched; see below)
 - **Low-density channels: 4** (fewer than 1 book file per 100 posts — kept active, see below)
 - **Not yet indexed: 0 channels**
-- **Failures this run: 1** (see below; a failed channel keeps its last-good data)
+- **Failures this run: 0** (see below; a failed channel keeps its last-good data)
 - **Groups indexed from exports: 172** — 0 more groups are commented out in channels.yaml, each needs a Desktop JSON export
 
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| comics_link (group) | 2300 | 1116 | export |
+| Mohanime (group) | 0 | 0 | export |
 
 ## Indexed channels (51)
 
@@ -118,7 +118,8 @@ Kept active, but they yield fewer than 1 book file per 100 posts — they cost w
 
 ## What failed so far
 
-- comics_link (group) — The authorization key (session file) was used under two different IP addresses simultaneously, and can no longer be used. Use the same session exclusively, or use different sessions (caused by GetHistoryRequest)
+Nothing failed on this run.
+- [comics_link](https://t.me/comics_link) — The authorization key (session file) was used under two different IP addresses simultaneously, and can no longer be used. Use the same session exclusively, or use different sessions (caused by GetHistoryRequest) (from an earlier run)
 
 ## Not yet indexed — remaining 0 channels
 
@@ -179,7 +180,7 @@ Reason: public groups have no t.me/s/ preview, so live scraping is impossible. E
 - dar-maana — 143 posts, 70 book files (ok)
 - ddfkindle — 1376 posts, 834 book files (ok)
 - debsibooks — 5221 posts, 1516 book files (ok)
-- donaldduckcomics — 5521 posts, 4657 book files (ok)
+- donaldduckcomics — 5522 posts, 4657 book files (ok)
 - DrKhaledFahmy — 394 posts, 169 book files (ok)
 - Drnonaphrmacy — 7517 posts, 383 book files (ok)
 - dvjhtj — 2787 posts, 0 book files (ok)

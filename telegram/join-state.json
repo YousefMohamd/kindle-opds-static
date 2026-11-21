@@ -395,20 +395,20 @@
       "folder": "added"
     },
     "donaldduckcomics": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-21T04:50:13.834149+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "Mohanime": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-21T04:53:08.254127+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "BabyEnglishBooks": {
       "status": "pending",
