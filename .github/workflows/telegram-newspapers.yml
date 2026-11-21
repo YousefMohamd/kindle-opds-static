@@ -1,42 +1,36 @@
-# Daily newspapers (جرائد اليوم) — link-out only.
+# Newspapers — SMART publishing: watch (every 10 min) + backstop.
 #
-# Regenerates site/newspapers.json once a day and publishes it with the
-# static site. The generator OVERWRITES the file every run, so
-# yesterday's papers disappear the moment today's are written; when no
-# source yields a paper, the file is still written (empty lists,
-# "empty": true) and the pages show "لا يوجد جرائد اليوم" instead of
-# rendering broken or stale papers. The generator also bakes the day's
-# papers as plain HTML into index.html and site/newspapers/index.html
-# (static — the Kindle browser has no fetch(), so the pages must not
-# depend on the JSON); the commit step below must add those two pages
-# alongside the JSON, or the baked content goes stale.
+# The watch publishes within ~10-12 min of the hub posting a batch
+# (04:00 / 07:00 / Egypt ~10:00 Cairo — no fixed time). The backstops
+# are insurance only, for when the trigger is down: 09:30 UTC
+# (11:30 Cairo — the observed "morning complete" time, 4 days
+# straight) and 15:00 UTC (17:00 Cairo, straggler catch). The 06:00
+# UTC run is removed: it fires before Egypt papers exist.
 #
-# Sources (see telegram/tbi/newspapers.py for the verification notes):
-#   * Hub @arabJournalism — public, but its t.me/s/ preview currently
-#     serves no posts (redirect to the info card), so the preview path
-#     alone yields nothing; the API path below is what actually reads it.
-#   * Fallback invite-link channel — API-only (no preview exists).
-#   * Private Egyptian channel — the owner's join request is PENDING;
-#     the generator NEVER joins, so this source stays
-#     unavailable_pending_join until the owner is a member.
+# The generator NEVER overwrites a good page with a much smaller one:
+# see guard_publish() in telegram/tbi/newspapers.py (steep-drop <50%,
+# Egypt-section loss, failed-read, premature-empty rules). A blocked
+# run exits 0 without writing; the next watch retries in 10 min.
+# The old --write-empty crash fallback is gone: a crash writes
+# nothing and keeps the old page.
 #
-# The API path needs the SAME GitHub Actions secrets as the manual
-# api-backfill (TELEGRAM_API_ID / TELEGRAM_API_HASH /
-# TELEGRAM_SESSION_STRING) — encrypted secrets, never in the repo, never
-# logged. If they are absent the job still succeeds and publishes an
-# honest empty-day file (the generator records per-source statuses in
-# the file itself). No PDF is ever downloaded, stored, or served: each
-# entry is only a link to its Telegram post.
-#
-# Schedule: 06:00 UTC = 08:00 Africa/Cairo — after the morning papers
-# drop. Manual runs (workflow_dispatch) any time. This job never touches
-# the book index or the long telegram-sync job.
+# Sources, links, and the no-download rule are unchanged (see
+# telegram/tbi/newspapers.py). The generator never joins anything.
+# Secrets: the same 3 Telegram secrets as before. No new secrets.
 name: telegram-newspapers
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "30 9 * * *"
+    - cron: "0 15 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "watch = publish only if the hub has new papers; backstop = full regenerate (guard still applies)"
+        required: false
+        default: "backstop"
+        type: choice
+        options: [watch, backstop]
 
 concurrency:
   group: kindle-opds-static-telegram-newspapers
@@ -67,13 +61,14 @@ jobs:
         run: pip install -e ".[api]"
 
       - name: Generate today's newspapers
-        run: python3 -m tbi.newspapers --out ../site/newspapers.json
+        run: |
+          if [ "${{ inputs.mode }}" = "watch" ]; then
+            python3 -m tbi.newspapers --out ../site/newspapers.json --watch
+          else
+            python3 -m tbi.newspapers --out ../site/newspapers.json --force
+          fi
 
-      - name: Fallback — write an empty-day file if generation failed
-        if: failure()
-        run: python3 -m tbi.newspapers --out ../site/newspapers.json --write-empty
-
-      - name: Commit + push
+      - name: Commit + push (only when the files changed)
         working-directory: .
         run: |
           git config user.name "github-actions[bot]"
@@ -81,7 +76,11 @@ jobs:
           # The baked static pages must be committed too, or the
           # Kindle-browser pages go stale (they do not fetch the JSON).
           git add site/newspapers.json index.html site/newspapers/index.html
-          git commit -m "[newspapers] daily update" || echo "nothing to commit"
+          if git diff --cached --quiet; then
+            echo "newspapers: no change — nothing to commit"
+            exit 0
+          fi
+          git commit -m "[newspapers] update"
           # Rebase before pushing (same pattern as telegram-sync): a code
           # push during the run must not lose this commit. Never force-push.
           git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — check the output; do not force-push."; exit 1; }
