@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-21",
-  "generated_at": "2026-11-21T07:34:15.007013+00:00",
+  "generated_at": "2026-11-21T07:44:08.901094+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -9,13 +9,13 @@
       "status": "error",
       "posts_seen": 0,
       "entries": 0,
-      "detail": "API read failed: A wait of 48874 seconds is required (caused by ResolveUsernameRequest)"
+      "detail": "API read failed: A wait of 48280 seconds is required (caused by ResolveUsernameRequest)"
     },
     {
       "key": "joinchat/VGPv_tnlgUJlNjdl",
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
-      "posts_seen": 294,
+      "posts_seen": 297,
       "entries": 3,
       "detail": ""
     },
@@ -82,6 +82,21 @@
   "unmatched": [],
   "dropped": [
     {
+      "name": "😄😁😄  صحف الكويت  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف اليوم السبت 21-11-26   😄😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
+      "reason": "url",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف مصر  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -112,18 +127,8 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
-      "name": "😄😁😄  صحف الكويت  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
       "name": "😄😁😄  صحف اليوم الجمعه 29-11-26  😄😁",
       "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
-      "reason": "url",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
