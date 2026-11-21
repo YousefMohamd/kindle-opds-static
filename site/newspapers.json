@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-21",
-  "generated_at": "2026-11-21T09:13:54.639921+00:00",
+  "generated_at": "2026-11-21T09:23:41.028461+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -9,14 +9,14 @@
       "status": "error",
       "posts_seen": 0,
       "entries": 0,
-      "detail": "API read failed: A wait of 42894 seconds is required (caused by ResolveUsernameRequest)"
+      "detail": "API read failed: A wait of 42307 seconds is required (caused by ResolveUsernameRequest)"
     },
     {
       "key": "joinchat/VGPv_tnlgUJlNjdl",
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
-      "posts_seen": 293,
-      "entries": 3,
+      "posts_seen": 300,
+      "entries": 13,
       "detail": ""
     },
     {
@@ -28,7 +28,99 @@
       "detail": "private channel — the owner's join request is pending; this tool never joins"
     }
   ],
-  "egypt": [],
+  "egypt": [
+    {
+      "name": "الأخبار",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134889",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134889,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الأهرام",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134886",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134886,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الأهرام المسائي",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "evening",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134888",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134888,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الجمهورية",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134885",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134885,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشروق",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134882",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134882,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "المساء",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134881",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134881,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "المصري اليوم",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-21",
+      "url": "https://t.me/Arabic_News_Papers/134890",
+      "handle": "Arabic_News_Papers",
+      "post_id": 134890,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    }
+  ],
   "other": [
     {
       "name": "الجزيرة",
@@ -71,6 +163,12 @@
     }
   ],
   "countries": [
+    {
+      "code": "EG",
+      "name": "مصر",
+      "flag": "🇪🇬",
+      "count": 7
+    },
     {
       "code": "SA",
       "name": "السعودية",
