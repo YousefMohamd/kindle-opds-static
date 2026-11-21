@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-21",
-  "generated_at": "2026-11-21T08:13:54.911402+00:00",
+  "generated_at": "2026-11-21T08:23:40.834723+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -9,13 +9,13 @@
       "status": "error",
       "posts_seen": 0,
       "entries": 0,
-      "detail": "API read failed: A wait of 46494 seconds is required (caused by ResolveUsernameRequest)"
+      "detail": "API read failed: A wait of 45908 seconds is required (caused by ResolveUsernameRequest)"
     },
     {
       "key": "joinchat/VGPv_tnlgUJlNjdl",
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
-      "posts_seen": 297,
+      "posts_seen": 293,
       "entries": 3,
       "detail": ""
     },
@@ -224,11 +224,6 @@
     {
       "name": "😄😁😄  صحف اليوم الأحد 15-11-26  😄😁😄",
       "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "598a3cda-a423-4645-b72d-3e29882a7f8b.pdf",
-      "reason": "uuid",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ]
