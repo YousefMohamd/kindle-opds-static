@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-21",
-  "generated_at": "2026-11-21T03:53:49.301824+00:00",
+  "generated_at": "2026-11-21T04:04:07.664041+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -9,7 +9,7 @@
       "status": "error",
       "posts_seen": 0,
       "entries": 0,
-      "detail": "API read failed: A wait of 62099 seconds is required (caused by ResolveUsernameRequest)"
+      "detail": "API read failed: A wait of 61481 seconds is required (caused by ResolveUsernameRequest)"
     },
     {
       "key": "joinchat/VGPv_tnlgUJlNjdl",
