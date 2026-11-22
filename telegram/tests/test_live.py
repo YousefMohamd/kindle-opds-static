@@ -1,22 +1,27 @@
-"""Tests for tbi.live — KV live-additions (real-time sync layer)."""
+"""Tests for tbi.live — DO live-additions (real-time sync layer)."""
 
 import json
+import os
 import sys
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tbi.live import (  # noqa: E402
+    LIVE_CURSOR_KEY,
     LIVE_KEY,
-    CloudflareKV,
+    LiveStateClient,
     append_live_books,
     live_books_from_post,
     live_totals,
     merge_live_books,
     parse_live,
+    read_cursor,
     read_live,
     reset_live,
+    write_cursor,
 )
 from tbi.scrape import FileMeta, Post  # noqa: E402
 
@@ -128,25 +133,21 @@ def test_parse_live_rejects_bad_shapes():
     assert parse_live({"books": [{"no": "id"}, _book()]})["books"] == [_book()]
 
 
-class _FakeKV(CloudflareKV):
-    """CloudflareKV with the HTTP layer stubbed (in-memory dict)."""
+class _FakeStore:
+    """LiveStateStore test double (in-memory dict)."""
 
     def __init__(self):
         self.data: dict[str, str] = {}
 
-    def _request(self, method, key, body=None):
-        if method == "GET":
-            if key not in self.data:
-                return 404, b""
-            return 200, self.data[key].encode("utf-8")
-        if method == "PUT":
-            self.data[key] = body.decode("utf-8") if body else ""
-            return 200, b'{"success": true}'
-        raise AssertionError(method)
+    def get(self, key):
+        return self.data.get(key)
+
+    def put(self, key, value):
+        self.data[key] = value
 
 
 def test_append_and_read_round_trip():
-    kv = _FakeKV()
+    kv = _FakeStore()
     assert read_live(kv)["books"] == []
     value = append_live_books(kv, [_book()])
     assert value["totals"] == {"posts": 1, "files": 1, "books": 1}
@@ -158,13 +159,13 @@ def test_append_and_read_round_trip():
 
 
 def test_append_empty_is_a_no_op():
-    kv = _FakeKV()
+    kv = _FakeStore()
     assert append_live_books(kv, [])["books"] == []
     assert LIVE_KEY not in kv.data
 
 
 def test_reset_live_clears_the_key():
-    kv = _FakeKV()
+    kv = _FakeStore()
     append_live_books(kv, [_book()])
     assert len(read_live(kv)["books"]) == 1
     reset_live(kv)
@@ -173,11 +174,143 @@ def test_reset_live_clears_the_key():
     assert stored["books"] == []
 
 
-def test_kv_requires_credentials():
+def test_cursor_round_trip():
+    store = _FakeStore()
+    assert read_cursor(store) == {}
+    write_cursor(store, {"chanA": 101, "chanB": 55})
+    assert read_cursor(store) == {"chanA": 101, "chanB": 55}
+    assert json.loads(store.data[LIVE_CURSOR_KEY]) == {"chanA": 101, "chanB": 55}
+
+
+def test_live_state_requires_token():
     with patch.dict("os.environ", {}, clear=True):
         try:
-            CloudflareKV()
+            LiveStateClient()
         except RuntimeError as exc:
-            assert "CLOUDFLARE_API_TOKEN" in str(exc)
+            assert "LIVE_SYNC_TOKEN" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
+    # With the token set it constructs (default bot URL).
+    with patch.dict(
+        "os.environ", {"LIVE_SYNC_TOKEN": "tok"}, clear=True
+    ):
+        client = LiveStateClient()
+        assert client.bot_url == LiveStateClient.DEFAULT_BOT_URL
+    # RLIBOOK_BOT_URL overrides the bot URL.
+    with patch.dict(
+        "os.environ",
+        {"LIVE_SYNC_TOKEN": "tok", "RLIBOOK_BOT_URL": "https://bot.example/"},
+        clear=True,
+    ):
+        assert LiveStateClient().bot_url == "https://bot.example"
+
+
+class _FakeResponse:
+    """Minimal urlopen response (status + read + context manager)."""
+
+    def __init__(self, status, body: bytes):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeHTTPError(urllib.error.HTTPError):
+    """urllib.error.HTTPError with a canned body (what urlopen raises
+    on a non-2xx status)."""
+
+    def __init__(self, code, body: bytes):
+        super().__init__(
+            "https://bot.example/api/live-state", code, f"HTTP {code}", {}, None
+        )
+        self._body = body
+
+    def read(self):
+        return self._body
+
+
+def _client_with_http(calls, responses):
+    """LiveStateClient whose urlopen is stubbed.
+
+    ``responses`` maps (method, key) -> (status, body); every call is
+    recorded in ``calls`` as (method, url, body, auth_header). A
+    non-2xx status is raised as _FakeHTTPError, like urlopen does.
+    """
+    from urllib.parse import unquote
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+
+    def fake_urlopen(req, timeout=30):
+        method = req.get_method()
+        url = req.full_url
+        key = unquote(url.split("key=", 1)[1])
+        body = req.data or b""
+        calls.append((method, url, body, req.get_header("Authorization")))
+        status, payload = responses[(method, key)]
+        if status >= 400:
+            raise _FakeHTTPError(status, payload)
+        return _FakeResponse(status, payload)
+
+    patcher = patch("urllib.request.urlopen", side_effect=fake_urlopen)
+    patcher.start()
+    return client, patcher
+
+
+def test_live_state_client_get_put_round_trip():
+    calls = []
+    doc = json.dumps({"since": "2026-11-22T00:00:00+00:00", "books": []})
+    client, patcher = _client_with_http(
+        calls,
+        {
+            ("GET", LIVE_KEY): (404, b""),
+            ("PUT", LIVE_KEY): (200, b'{"ok":true}'),
+        },
+    )
+    try:
+        assert client.get(LIVE_KEY) is None
+        client.put(LIVE_KEY, doc)
+    finally:
+        patcher.stop()
+    assert len(calls) == 2
+    method, url, body, auth = calls[1]
+    assert method == "PUT"
+    assert url == "https://bot.example/api/live-state?key=live%3Aadditions"
+    assert body == doc.encode("utf-8")
+    assert auth == "Bearer tok"
+
+
+def test_live_state_client_get_returns_body():
+    calls = []
+    doc = json.dumps({"chanA": 101})
+    client, patcher = _client_with_http(
+        calls, {("GET", LIVE_CURSOR_KEY): (200, doc.encode("utf-8"))}
+    )
+    try:
+        assert client.get(LIVE_CURSOR_KEY) == doc
+    finally:
+        patcher.stop()
+    assert calls[0][0] == "GET"
+    assert calls[0][3] == "Bearer tok"
+
+
+def test_live_state_client_put_failure_raises():
+    calls = []
+    client, patcher = _client_with_http(
+        calls, {("PUT", LIVE_KEY): (401, b'{"ok":false,"error":"unauthorized"}')}
+    )
+    try:
+        try:
+            client.put(LIVE_KEY, "{}")
+        except RuntimeError as exc:
+            assert "401" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    finally:
+        patcher.stop()
