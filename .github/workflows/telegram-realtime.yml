@@ -3,12 +3,13 @@
 # Runs `tbi.live_sync` every 5 minutes: checks every configured
 # channel/group for posts newer than the last check (Telegram API,
 # `min_id` — covers groups too, which the public preview cannot see)
-# and writes any new book posts to the Cloudflare KV live-additions
-# key (`live:additions`) immediately. The bot's /resources and the
-# Telegram search endpoint read that key, so a new book is visible
-# within ~5-7 minutes of being posted (cron 5 min + check ~1-2 min +
-# KV write ~instant) — without waiting for the daily 03:00 UTC sync
-# and its Pages deploy.
+# and writes any new book posts to the bot Worker's Durable Object
+# live-additions key (`live:additions`) immediately, through the
+# bot's /api/live-state endpoint (Bearer LIVE_SYNC_TOKEN). The bot's
+# /resources and the Telegram search endpoint read that key, so a new
+# book is visible within ~5-7 minutes of being posted (cron 5 min +
+# check ~1-2 min + DO write ~instant) — without waiting for the daily
+# 03:00 UTC sync and its Pages deploy.
 #
 # This is the DEPLOYABLE real-time path (no always-on host, no card,
 # $0 — public repo, unlimited Actions minutes). It does NOT meet the
@@ -20,21 +21,27 @@
 #
 # Durability: this workflow does NOT commit index.db (the runner is
 # ephemeral and committing every 5 minutes would flood the repo). The
-# books are in KV immediately (visible) and the daily sync (03:00 UTC)
+# books are in the DO immediately (visible) and the daily sync (03:00 UTC)
 # re-discovers the same new posts from the committed index.db and
-# commits them durably. The KV append dedupes by book id, so a book
+# commits them durably. The DO append dedupes by book id, so a book
 # found by both this check and the daily sync is never counted twice.
 # The daily sync resets `live:additions` after it publishes, so the
 # key always holds "books added since the last daily publish".
 #
+# History: before v4.8.57 the two live keys lived in Cloudflare KV.
+# KV's free tier allows 1,000 writes/day/account and the runs
+# exhausted it daily (runs #382+ all failed with KV HTTP 429), so the
+# keys moved to the bot's Durable Object (100,000 rows written/day).
+#
 # Secrets required (repo Settings -> Secrets and variables -> Actions):
 #   TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
 #     (already configured — same as the api-backfill workflow)
-#   CLOUDFLARE_API_TOKEN  (needs "Workers KV Storage: Edit" on RLIBOOK_KV)
-#   CLOUDFLARE_ACCOUNT_ID (the Cloudflare account id)
-#   RLIBOOK_KV_ID         (the RLIBOOK_KV namespace id)
-# The Cloudflare secrets are NEW — the owner adds them; no token value
-# is ever in the repo.
+#   LIVE_SYNC_TOKEN (the shared secret for the bot Worker's
+#     /api/live-state endpoint — the SAME value as the Worker's
+#     LIVE_SYNC_TOKEN secret; the owner adds it, no token value is
+#     ever in the repo)
+# The old Cloudflare KV secrets (CLOUDFLARE_API_TOKEN,
+# CLOUDFLARE_ACCOUNT_ID, RLIBOOK_KV_ID) are no longer used here.
 name: telegram-realtime
 
 on:
@@ -43,7 +50,7 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
-# Two realtime runs must never overlap: they share the KV cursor.
+# Two realtime runs must never overlap: they share the DO cursor.
 concurrency:
   group: kindle-opds-static-telegram-realtime
   cancel-in-progress: false
@@ -71,10 +78,10 @@ jobs:
 
       - name: Decompress the seed DB (for the cursor seed)
         # Same as the daily sync: the repo stores ONLY index.db.gz.
-        # live_sync seeds its KV cursor from the DB's newest_post_id
+        # live_sync seeds its DO cursor from the DB's newest_post_id
         # on the first run (so it catches every post since the last
         # daily sync). The decompressed DB is never committed here —
-        # this workflow only writes to KV; the daily sync owns the
+        # this workflow only writes the live state; the daily sync owns the
         # durable index.db.
         run: |
           if [ -f index.db.gz ]; then
@@ -85,12 +92,10 @@ jobs:
             echo "::warning::telegram/index.db.gz is missing — the cursor will seed from the live newest post instead."
           fi
 
-      - name: Live sync (new-only -> KV live-additions)
+      - name: Live sync (new-only -> DO live-additions)
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+          LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
         run: python -m tbi.live_sync --config channels.yaml --db index.db
