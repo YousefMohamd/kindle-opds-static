@@ -314,3 +314,37 @@ def test_live_state_client_put_failure_raises():
             raise AssertionError("expected RuntimeError")
     finally:
         patcher.stop()
+
+
+def test_live_state_client_sends_rlibook_user_agent():
+    """Run #491: Cloudflare 1010 blocks python-urllib's default UA."""
+    seen = {}
+
+    def fake_urlopen(req, timeout=30):
+        seen["ua"] = req.get_header("User-agent")
+        seen["accept"] = req.get_header("Accept")
+        return _FakeResponse(200, b"{}")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        assert client.get(LIVE_CURSOR_KEY) == "{}"
+    assert seen["ua"] == "RliBook/1.0 (+https://rlibook.tech)"
+    assert seen["accept"] == "*/*"
+
+
+def test_live_state_client_retries_transient_drop_then_succeeds():
+    """Cloudflare intermittently drops python-urllib connections
+    (RemoteDisconnected / IncompleteRead); one transient drop must
+    not fail the sync — the client retries with backoff."""
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(req.get_method())
+        if len(calls) == 1:
+            raise urllib.error.URLError("Remote end closed connection")
+        return _FakeResponse(200, b'{"ok":true}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        assert client.get(LIVE_CURSOR_KEY) == '{"ok":true}'
+    assert len(calls) == 2
