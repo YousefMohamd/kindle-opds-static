@@ -427,20 +427,20 @@
       "folder": "added"
     },
     "stories_kids": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "storybooksforkids": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "audiobooks_kid": {
       "status": "pending",
