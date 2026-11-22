@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -227,21 +228,51 @@ class LiveStateClient:
 
         return f"{self.bot_url}/api/live-state?{urlencode({'key': key})}"
 
+    # Cloudflare intermittently drops python-urllib connections to the
+    # Worker route (RemoteDisconnected / IncompleteRead — measured 3/10
+    # ok from one host even with the right UA, while curl is 10/10).
+    # Retry transient failures; PUT is idempotent (same key + value).
+    _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+    _MAX_ATTEMPTS = 4
+    _BACKOFF_S = (1, 2, 4)
+
     def _request(self, method: str, key: str, body: Optional[bytes] = None):
         req = urllib.request.Request(
             self._url(key),
             data=body,
             method=method,
             headers={
+                # Cloudflare 1010 blocks python-urllib's default
+                # User-Agent on the Worker route (run #491 proved it);
+                # same UA the bot already uses everywhere else.
+                "User-Agent": "RliBook/1.0 (+https://rlibook.tech)",
+                "Accept": "*/*",
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
             },
         )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return resp.status, resp.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read()
+        for attempt in range(self._MAX_ATTEMPTS):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return resp.status, resp.read()
+            except urllib.error.HTTPError as exc:
+                status, payload = exc.code, exc.read()
+                retryable = (
+                    status in self._RETRYABLE_STATUS
+                    or (status == 403 and b"1010" in payload)
+                )
+                if not retryable or attempt == self._MAX_ATTEMPTS - 1:
+                    return status, payload
+            except urllib.error.URLError as exc:
+                # RemoteDisconnected / IncompleteRead / timeouts / DNS.
+                if attempt == self._MAX_ATTEMPTS - 1:
+                    raise RuntimeError(
+                        f"live-state {method} {key}: {exc!r} "
+                        f"after {self._MAX_ATTEMPTS} attempts"
+                    ) from exc
+            if attempt < self._MAX_ATTEMPTS - 1:
+                time.sleep(self._BACKOFF_S[attempt])
+        raise RuntimeError(f"live-state {method} {key}: unreachable")
 
     def get(self, key: str) -> Optional[str]:
         """Read a key; None when the key does not exist (404)."""
