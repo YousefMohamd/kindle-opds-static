@@ -1,11 +1,12 @@
-"""Live additions (real-time sync) — Cloudflare KV layer.
+"""Live additions (real-time sync) — Durable Object layer.
 
 A new book posted in any channel/group must be visible in the bot's
 /resources counts and in search within ~1 minute. The durable catalog
 (the static site) only changes when a sync publishes (daily 03:00 UTC),
-so new books are ALSO written here, to a Cloudflare KV key, the moment
-they are indexed — by the Telethon listener (``tbi.listener``) or by
-the frequent new-only check (``tbi.live_sync``).
+so new books are ALSO written here, to the bot Worker's Durable
+Object, the moment they are indexed — by the Telethon listener
+(``tbi.listener``) or by the frequent new-only check
+(``tbi.live_sync``).
 
 KV key ``live:additions`` (JSON)::
 
@@ -29,20 +30,28 @@ A LiveBook is one book file (metadata only — never the file bytes)::
       "dedupe_key": str
     }
 
-Why KV and not a git commit + Pages deploy: a Pages deploy takes
+Why the DO and not a git commit + Pages deploy: a Pages deploy takes
 ~1-2 minutes, which already breaks the 1-minute goal, and committing
-every few minutes would flood the repo. A KV write is ~100 ms and the
-bot reads its own KV on every /resources call, so a new book is
+every few minutes would flood the repo. A DO write is ~100 ms and the
+bot reads its own DO on every /resources call, so a new book is
 visible the moment it is written. The daily sync (03:00 UTC) merges
 these books into the durable static catalog and then resets this key
 (see ``reset_live``) — so the key always holds "books added since the
 last daily publish" and the bot never double-counts them.
 
-The bot (rlibook-bot-worker) reads this key with ``store.getLiveAdditions``
-and adds ``totals`` to the published manifest numbers in /resources;
-the Telegram search endpoint reads ``books`` to include them in
-search results. The exact contract is documented in
-``rlibook-realtime-sync/DESIGN.md``.
+History: before v4.8.57 the two keys (``live:additions``,
+``live:cursor``) lived in Cloudflare KV. KV's free tier allows only
+1,000 writes/day/account, and the realtime runs exhausted it daily —
+runs #382 and later all failed with KV HTTP 429 — so the keys moved
+to the bot's Durable Object (100,000 rows written/day) through its
+``/api/live-state`` endpoint (``LiveStateClient`` below). The website
+reads the same keys through public GET ``/api/live-state``.
+
+The bot (rlibook-bot-worker) reads this key from its Durable Object
+with ``store.getLiveAdditions`` and adds ``totals`` to the published
+manifest numbers in /resources; the Telegram search endpoint reads
+``books`` to include them in search results. The exact contract is
+documented in ``rlibook-realtime-sync/DESIGN.md``.
 """
 
 from __future__ import annotations
@@ -52,7 +61,7 @@ import os
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Protocol
 
 from .books import BOOK_EXTS, dedupe_key, parse_title_author
 from .scrape import FileMeta, Post
@@ -166,44 +175,57 @@ def parse_live(data: Any) -> dict[str, Any]:
     }
 
 
-class CloudflareKV:
-    """Minimal Cloudflare KV client (urllib only, no extra deps).
+class LiveStateStore(Protocol):
+    """Anything ``read_live`` / ``append_live_books`` / ``read_cursor``
+    / ``write_cursor`` / ``reset_live`` can read from and write to:
+    the real ``LiveStateClient`` (bot Worker -> Durable Object) or a
+    test double with the same two methods."""
 
-    Credentials come from the environment (never in the repo):
-    ``CLOUDFLARE_API_TOKEN``, ``CLOUDFLARE_ACCOUNT_ID``,
-    ``RLIBOOK_KV_ID`` (the namespace id — the same RLIBOOK_KV the bot
-    uses). The token needs "Workers KV Storage: Edit" on that
-    namespace. Raises ``RuntimeError`` when the credentials are
-    missing; a missing key reads as ``None`` (not an error).
+    def get(self, key: str) -> Optional[str]: ...
+    def put(self, key: str, value: str) -> None: ...
+
+
+class LiveStateClient:
+    """Client for the bot Worker's live-state endpoint (v4.8.57).
+
+    The two live keys (``live:additions``, ``live:cursor``) live in
+    the bot's Durable Object, reached through GET/PUT
+    ``/api/live-state?key=<key>`` on the bot Worker. GET is public
+    read-only; PUT needs ``Authorization: Bearer <LIVE_SYNC_TOKEN>``
+    (the Worker secret — the same value as the GitHub Actions
+    secret ``LIVE_SYNC_TOKEN`` on kindle-opds-static).
+
+    Configuration comes from the environment (never in the repo):
+    ``LIVE_SYNC_TOKEN`` and optionally ``RLIBOOK_BOT_URL``
+    (default https://rlibook-bot.mohamedyou1357.workers.dev).
+    Raises ``RuntimeError`` when the token is missing; a missing key
+    reads as ``None`` (not an error).
     """
 
-    BASE = "https://api.cloudflare.com/client/v4"
+    DEFAULT_BOT_URL = "https://rlibook-bot.mohamedyou1357.workers.dev"
 
     def __init__(
         self,
         token: Optional[str] = None,
-        account_id: Optional[str] = None,
-        namespace_id: Optional[str] = None,
+        bot_url: Optional[str] = None,
     ) -> None:
-        self.token = token or os.environ.get("CLOUDFLARE_API_TOKEN", "")
-        self.account_id = account_id or os.environ.get(
-            "CLOUDFLARE_ACCOUNT_ID", ""
-        )
-        self.namespace_id = namespace_id or os.environ.get("RLIBOOK_KV_ID", "")
-        if not (self.token and self.account_id and self.namespace_id):
+        self.token = token or os.environ.get("LIVE_SYNC_TOKEN", "")
+        self.bot_url = (
+            bot_url
+            or os.environ.get("RLIBOOK_BOT_URL", "")
+            or self.DEFAULT_BOT_URL
+        ).rstrip("/")
+        if not self.token:
             raise RuntimeError(
-                "Cloudflare KV credentials missing: set "
-                "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and "
-                "RLIBOOK_KV_ID (GitHub Actions secrets / host env vars)."
+                "Live-state token missing: set LIVE_SYNC_TOKEN "
+                "(GitHub Actions secret / host env var — the same "
+                "value as the bot Worker's LIVE_SYNC_TOKEN secret)."
             )
 
     def _url(self, key: str) -> str:
-        from urllib.parse import quote
+        from urllib.parse import urlencode
 
-        return (
-            f"{self.BASE}/accounts/{self.account_id}/storage/kv/"
-            f"namespaces/{self.namespace_id}/values/{quote(key, safe='')}"
-        )
+        return f"{self.bot_url}/api/live-state?{urlencode({'key': key})}"
 
     def _request(self, method: str, key: str, body: Optional[bytes] = None):
         req = urllib.request.Request(
@@ -227,25 +249,23 @@ class CloudflareKV:
         if status == 404:
             return None
         if status != 200:
-            raise RuntimeError(f"KV GET {key}: HTTP {status}: {body[:200]!r}")
+            raise RuntimeError(
+                f"live-state GET {key}: HTTP {status}: {body[:200]!r}"
+            )
         return body.decode("utf-8")
 
     def put(self, key: str, value: str) -> None:
         """Write a key (overwrites). Raises on failure."""
         status, body = self._request("PUT", key, body=value.encode("utf-8"))
         if status != 200:
-            raise RuntimeError(f"KV PUT {key}: HTTP {status}: {body[:200]!r}")
-        try:
-            data = json.loads(body.decode("utf-8"))
-        except ValueError:
-            data = {}
-        if isinstance(data, dict) and data.get("success") is False:
-            raise RuntimeError(f"KV PUT {key}: {body[:300]!r}")
+            raise RuntimeError(
+                f"live-state PUT {key}: HTTP {status}: {body[:200]!r}"
+            )
 
 
-def read_live(kv: CloudflareKV) -> dict[str, Any]:
+def read_live(store: LiveStateStore) -> dict[str, Any]:
     """Read the live-additions value (empty when the key is absent)."""
-    raw = kv.get(LIVE_KEY)
+    raw = store.get(LIVE_KEY)
     if raw is None:
         return empty_live()
     try:
@@ -254,37 +274,37 @@ def read_live(kv: CloudflareKV) -> dict[str, Any]:
         return empty_live()
 
 
-def append_live_books(kv: CloudflareKV, books: list[dict[str, Any]]) -> dict[str, Any]:
+def append_live_books(store: LiveStateStore, books: list[dict[str, Any]]) -> dict[str, Any]:
     """Append books to the live-additions key (dedupe + cap).
 
     Returns the stored value (with ``totals``). A no-op when ``books``
-    is empty (no KV write). Raises on KV failure so the caller can
+    is empty (no DO write). Raises on write failure so the caller can
     retry or log it — the durable daily sync is the fallback.
     """
     if not books:
-        return read_live(kv)
-    current = read_live(kv)
+        return read_live(store)
+    current = read_live(store)
     merged = merge_live_books(current["books"], books)
     value = {
         "since": current.get("since") or _now_iso(),
         "books": merged,
         "totals": live_totals(merged),
     }
-    kv.put(LIVE_KEY, json.dumps(value, ensure_ascii=False))
+    store.put(LIVE_KEY, json.dumps(value, ensure_ascii=False))
     return value
 
 
-def reset_live(kv: CloudflareKV) -> None:
+def reset_live(store: LiveStateStore) -> None:
     """Clear the live-additions key (called by the daily sync AFTER it
     has published the durable catalog — the books are then in the
     static site, so the live window starts fresh and the bot never
     double-counts them)."""
-    kv.put(LIVE_KEY, json.dumps(empty_live(), ensure_ascii=False))
+    store.put(LIVE_KEY, json.dumps(empty_live(), ensure_ascii=False))
 
 
-def read_cursor(kv: CloudflareKV) -> dict[str, int]:
+def read_cursor(store: LiveStateStore) -> dict[str, int]:
     """Read the live-sync cursor: {handle: newest post_id checked}."""
-    raw = kv.get(LIVE_CURSOR_KEY)
+    raw = store.get(LIVE_CURSOR_KEY)
     if raw is None:
         return {}
     try:
@@ -296,5 +316,5 @@ def read_cursor(kv: CloudflareKV) -> dict[str, int]:
     return {k: int(v) for k, v in data.items() if isinstance(v, int)}
 
 
-def write_cursor(kv: CloudflareKV, cursor: dict[str, int]) -> None:
-    kv.put(LIVE_CURSOR_KEY, json.dumps(cursor, ensure_ascii=False))
+def write_cursor(store: LiveStateStore, cursor: dict[str, int]) -> None:
+    store.put(LIVE_CURSOR_KEY, json.dumps(cursor, ensure_ascii=False))

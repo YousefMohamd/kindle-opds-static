@@ -3,11 +3,11 @@
 Runs every 5 minutes from GitHub Actions (``telegram-realtime`` workflow)
 and checks every configured channel/group for posts newer than the last
 check, using the Telegram API (``tbi.api_history.iter_api_posts`` with
-``min_id``). New book posts are written to the KV live-additions key
-(``live:additions``) immediately — so the bot's /resources and search
-see them without waiting for a Pages deploy — and the per-source cursor
-(``live:cursor``) is saved so the next run only fetches posts newer
-than this one.
+``min_id``). New book posts are written to the bot Worker's Durable
+Object live-additions key (``live:additions``) immediately — so the
+bot's /resources and search see them without waiting for a Pages
+deploy — and the per-source cursor (``live:cursor``) is saved so the
+next run only fetches posts newer than this one.
 
 Why the API and not the public preview: the preview (t.me/s/) cannot
 see groups at all (168 of the 219 sources), and checking 219 sources
@@ -18,7 +18,7 @@ and ``iter_api_posts`` already honours flood waits. The API route is
 the same approved route as the manual backfill (GitHub Actions secrets,
 never in the repo); this only reads new posts, never personal chats.
 
-Latency: cron (up to 5 min) + check (~1-2 min) + KV write (~instant)
+Latency: cron (up to 5 min) + check (~1-2 min) + DO write (~instant)
 = ~5-7 minutes worst case. That is the best polling can do — it does
 NOT meet the strict 1-minute goal. The true 1-minute path is the
 Telethon listener (``tbi.listener``), which sees a new post the moment
@@ -28,18 +28,23 @@ primary path until a host for the listener is approved.
 
 Durability: this check does NOT commit ``index.db`` (the runner is
 ephemeral and committing every 5 minutes would flood the repo). The
-books are in KV immediately (visible) and the daily sync (03:00 UTC)
+books are in the DO immediately (visible) and the daily sync (03:00 UTC)
 re-discovers the same new posts from the committed index.db and
-commits them durably. The KV append dedupes by book id, so a book
+commits them durably. The DO append dedupes by book id, so a book
 found by both this check and the daily sync is never counted twice.
 
 Usage (GitHub Actions — secrets from the repo settings)::
 
     TELEGRAM_API_ID=... TELEGRAM_API_HASH=... TELEGRAM_SESSION_STRING=... \
-    CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... RLIBOOK_KV_ID=... \
+    LIVE_SYNC_TOKEN=... \
     python -m tbi.live_sync --config channels.yaml
 
-``--dry-run`` prints what would be indexed without writing KV.
+``LIVE_SYNC_TOKEN`` is the shared secret for the bot Worker's
+``/api/live-state`` endpoint (the same value as the Worker's
+``LIVE_SYNC_TOKEN`` secret); ``RLIBOOK_BOT_URL`` overrides the bot
+Worker URL (default https://rlibook-bot.mohamedyou1357.workers.dev).
+
+``--dry-run`` prints what would be indexed without writing the live state.
 ``--once`` runs a single check and exits (the default); the workflow
 runs it on a cron, so no loop is built in.
 """
@@ -60,7 +65,7 @@ from .api_history import (
 )
 from .config import load_config
 from .live import (
-    CloudflareKV,
+    LiveStateClient,
     append_live_books,
     live_books_from_post,
     read_cursor,
@@ -195,18 +200,18 @@ async def amain(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 
-    kv: Optional[CloudflareKV] = None
+    store: Optional[LiveStateClient] = None
     if not args.dry_run:
         try:
-            kv = CloudflareKV()
+            store = LiveStateClient()
         except RuntimeError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 2
 
-    # Cursor: KV first, else seed from the committed index.db.
+    # Cursor: DO first, else seed from the committed index.db.
     cursor: dict[str, int] = {}
-    if kv is not None:
-        cursor = read_cursor(kv)
+    if store is not None:
+        cursor = read_cursor(store)
     if not cursor and not args.no_db:
         try:
             store = Store(args.db or cfg.settings.db)
@@ -234,16 +239,16 @@ async def amain(args: argparse.Namespace) -> int:
             print(f"failed sources ({len(failed)}): {', '.join('@' + h for h in failed)}")
         return 0
 
-    if books and kv is not None:
-        value = append_live_books(kv, books)
+    if books and store is not None:
+        value = append_live_books(store, books)
         log.info(
-            "pushed %d new book(s) to KV live-additions "
+            "pushed %d new book(s) to the DO live-additions "
             "(live total now %d)",
             len(books),
             len(value["books"]),
         )
-    if kv is not None:
-        write_cursor(kv, new_cursor)
+    if store is not None:
+        write_cursor(store, new_cursor)
     if failed:
         log.warning("failed sources this run: %s", ", ".join(failed))
     print(
@@ -256,7 +261,7 @@ async def amain(args: argparse.Namespace) -> int:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Frequent new-only check: index new book posts from "
-        "every channel/group into KV live-additions (5-minute cron)."
+        "every channel/group into the DO live-additions (5-minute cron)."
     )
     parser.add_argument("--config", default="channels.yaml")
     parser.add_argument("--db", default=None, help="index.db path (default: from config)")
