@@ -10,14 +10,17 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tbi.live import (  # noqa: E402
+    LIVE_BATCH_MAX_BYTES,
     LIVE_CURSOR_KEY,
     LIVE_KEY,
+    LIVE_LAST_SCAN_KEY,
     LiveStateClient,
     append_live_books,
     live_books_from_post,
     live_totals,
     merge_live_books,
     parse_live,
+    put_live_batch,
     read_cursor,
     read_live,
     reset_live,
@@ -138,12 +141,26 @@ class _FakeStore:
 
     def __init__(self):
         self.data: dict[str, str] = {}
+        self.batches: list[dict] = []
 
     def get(self, key):
         return self.data.get(key)
 
     def put(self, key, value):
         self.data[key] = value
+
+    def put_batch(self, batch):
+        """Atomic batch (v4.8.63): applies the whole batch at once."""
+        self.batches.append(batch)
+        if "additions" in batch:
+            self.data[LIVE_KEY] = json.dumps(batch["additions"], ensure_ascii=False)
+        if "cursor" in batch:
+            self.data[LIVE_CURSOR_KEY] = json.dumps(batch["cursor"], ensure_ascii=False)
+        if "scan_run_id" in batch:
+            self.data[LIVE_LAST_SCAN_KEY] = json.dumps(
+                {"scan_run_id": batch["scan_run_id"], **batch.get("stats", {})},
+                ensure_ascii=False,
+            )
 
 
 def test_append_and_read_round_trip():
@@ -345,6 +362,311 @@ def test_live_state_client_retries_transient_drop_then_succeeds():
         return _FakeResponse(200, b'{"ok":true}')
 
     client = LiveStateClient(token="tok", bot_url="https://bot.example")
-    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
         assert client.get(LIVE_CURSOR_KEY) == '{"ok":true}'
     assert len(calls) == 2
+
+
+# --- hardening (v4.8.63): #632 — TimeoutError retry, jitter, profiles,
+# circuit breaker, atomic batch -----------------------------------------
+
+def test_live_state_client_retries_bare_timeout_error():
+    """Run #632: the final cursor PUT died on a BARE TimeoutError
+    (socket read timeout) — the old code caught only
+    HTTPError/URLError, so the retry never fired. A TimeoutError
+    must be retried like any other transient failure."""
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(req.get_method())
+        if len(calls) < 3:
+            raise TimeoutError("The read operation timed out")
+        return _FakeResponse(200, b'{"ok":true}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        assert client.get(LIVE_CURSOR_KEY) == '{"ok":true}'
+    assert len(calls) == 3
+
+
+def test_live_state_client_retries_os_error():
+    """RemoteDisconnected / reset connections (OSError) are
+    transient and must be retried."""
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ConnectionResetError("connection reset by peer")
+        return _FakeResponse(200, b'{"ok":true}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        assert client.get(LIVE_CURSOR_KEY) == '{"ok":true}'
+    assert len(calls) == 2
+
+
+def test_live_state_client_never_retries_4xx():
+    """A 4xx (wrong token, bad body, too large) can never be fixed
+    by retrying — exactly one attempt, then the error surfaces."""
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(1)
+        raise _FakeHTTPError(400, b'{"ok":false}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        try:
+            client.put(LIVE_KEY, "{}")
+        except RuntimeError as exc:
+            assert "400" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    assert len(calls) == 1
+
+
+def test_live_state_client_retries_5xx_then_succeeds():
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(1)
+        if len(calls) < 3:
+            raise _FakeHTTPError(503, b"unavailable")
+        return _FakeResponse(200, b'{"ok":true}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        client.put(LIVE_KEY, "{}")
+    assert len(calls) == 3
+
+
+def test_live_state_client_full_jitter_backoff():
+    """Full jitter: sleep uniform(0, base * 2**attempt), base 1s —
+    the caps must grow 1, 2, 4 across the retries (and the sleeps
+    stay inside them)."""
+    import random
+
+    caps = []
+
+    def spy_uniform(a, b):
+        caps.append(b)
+        return 0  # no real sleep
+
+    def fake_urlopen(req, timeout=30):
+        raise TimeoutError("read timed out")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", side_effect=spy_uniform),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        try:
+            client.get(LIVE_CURSOR_KEY)
+        except RuntimeError as exc:
+            assert "after 4 attempts" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    assert caps == [1.0, 2.0, 4.0]
+
+
+def test_live_state_client_cursor_put_profile():
+    """Cursor PUTs are small: 15 s timeout, 5 attempts (the #632
+    profile — the cursor write is the one that must not die)."""
+    timeouts = []
+
+    def fake_urlopen(req, timeout=30):
+        timeouts.append(timeout)
+        raise TimeoutError("read timed out")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        try:
+            client.put(LIVE_CURSOR_KEY, "{}")
+        except RuntimeError as exc:
+            assert "after 5 attempts" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    assert timeouts == [15] * 5
+
+
+def test_live_state_client_bulk_put_profile():
+    """Bulk (additions) PUTs are large: 30 s timeout, 3 attempts."""
+    timeouts = []
+
+    def fake_urlopen(req, timeout=30):
+        timeouts.append(timeout)
+        raise TimeoutError("read timed out")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        try:
+            client.put(LIVE_KEY, "{}")
+        except RuntimeError as exc:
+            assert "after 3 attempts" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    assert timeouts == [30] * 3
+
+
+def test_live_state_client_circuit_breaker():
+    """After 3 consecutive failed requests the client fails fast
+    without touching the network; a success resets the count."""
+    calls = []
+
+    def failing(req, timeout=30):
+        calls.append(1)
+        raise TimeoutError("read timed out")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=failing),
+    ):
+        # Three failed GETs (4 attempts each) trip the breaker.
+        for _ in range(3):
+            try:
+                client.get(LIVE_CURSOR_KEY)
+            except RuntimeError as exc:
+                assert "after 4 attempts" in str(exc)
+        assert len(calls) == 12
+        # The fourth call fails fast — no new network attempt.
+        try:
+            client.get(LIVE_CURSOR_KEY)
+        except RuntimeError as exc:
+            assert "circuit breaker open" in str(exc)
+        else:
+            raise AssertionError("expected circuit-breaker RuntimeError")
+        assert len(calls) == 12
+
+
+def test_live_state_client_circuit_breaker_resets_on_success():
+    """Two failures then a success resets the breaker — the next
+    failure is retried normally instead of failing fast."""
+    calls = []
+
+    def flaky(req, timeout=30):
+        calls.append(1)
+        if len(calls) == 9:
+            return _FakeResponse(200, b"{}")
+        raise TimeoutError("read timed out")
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with (
+        patch("random.uniform", return_value=0),
+        patch("urllib.request.urlopen", side_effect=flaky),
+    ):
+        for _ in range(2):
+            try:
+                client.get(LIVE_CURSOR_KEY)
+            except RuntimeError:
+                pass
+        assert client.get(LIVE_CURSOR_KEY) == "{}"  # resets the count
+        try:
+            client.get(LIVE_CURSOR_KEY)
+        except RuntimeError as exc:
+            assert "circuit breaker" not in str(exc)
+            assert "after 4 attempts" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+    assert len(calls) == 8 + 1 + 4
+
+
+def test_live_state_client_put_batch_posts_to_batch_endpoint():
+    """put_batch hits PUT /api/live-state/batch with the JSON body
+    (additions + cursor + scan_run_id + stats)."""
+    seen = {}
+
+    def fake_urlopen(req, timeout=30):
+        seen["url"] = req.full_url
+        seen["method"] = req.get_method()
+        seen["body"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse(200, b'{"ok":true}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    batch = {
+        "additions": {"since": "2026-11-24T00:00:00+00:00", "books": []},
+        "cursor": {"chanA": 101},
+        "scan_run_id": "run-1",
+        "stats": {"books_added": 0, "failed_sources": 0, "total_sources": 219},
+    }
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        client.put_batch(batch)
+    assert seen["url"] == "https://bot.example/api/live-state/batch"
+    assert seen["method"] == "PUT"
+    assert seen["body"] == batch
+
+
+def test_live_state_client_put_batch_failure_raises():
+    def fake_urlopen(req, timeout=30):
+        raise _FakeHTTPError(401, b'{"ok":false}')
+
+    client = LiveStateClient(token="tok", bot_url="https://bot.example")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        try:
+            client.put_batch({"cursor": {}})
+        except RuntimeError as exc:
+            assert "401" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+
+
+def test_put_live_batch_atomic_path():
+    """The happy path writes additions + cursor + last-scan in ONE
+    batch call (and returns True)."""
+    store = _FakeStore()
+    value = {"since": "2026-11-24T00:00:00+00:00", "books": [_book()], "totals": {"posts": 1, "files": 1, "books": 1}}
+    assert put_live_batch(store, value, {"chanA": 101}, "run-7", {"books_added": 1}) is True
+    assert len(store.batches) == 1
+    batch = store.batches[0]
+    assert batch["additions"] == value
+    assert batch["cursor"] == {"chanA": 101}
+    assert batch["scan_run_id"] == "run-7"
+    assert batch["stats"] == {"books_added": 1}
+    assert json.loads(store.data[LIVE_KEY]) == value
+    assert json.loads(store.data[LIVE_CURSOR_KEY]) == {"chanA": 101}
+    assert json.loads(store.data[LIVE_LAST_SCAN_KEY])["scan_run_id"] == "run-7"
+
+
+def test_put_live_batch_falls_back_when_oversize():
+    """An oversize payload falls back to sequential PUTs, cursor
+    last — and returns False so the caller can say so."""
+    store = _FakeStore()
+    value = {"since": "2026-11-24T00:00:00+00:00", "books": [_book()]}
+    with patch("tbi.live.LIVE_BATCH_MAX_BYTES", 10):
+        assert put_live_batch(store, value, {"chanA": 101}, "run-8") is False
+    assert store.batches == []
+    assert json.loads(store.data[LIVE_KEY]) == value
+    assert json.loads(store.data[LIVE_CURSOR_KEY]) == {"chanA": 101}
+    assert LIVE_LAST_SCAN_KEY not in store.data
+
+
+def test_put_live_batch_falls_back_without_put_batch():
+    """A store without put_batch (an old double) gets sequential
+    PUTs, cursor last."""
+
+    class _OldStore(_FakeStore):
+        put_batch = None  # type: ignore[assignment]
+
+    store = _OldStore()
+    value = {"since": "2026-11-24T00:00:00+00:00", "books": []}
+    assert put_live_batch(store, value, {"chanA": 5}, "run-9") is False
+    assert json.loads(store.data[LIVE_CURSOR_KEY]) == {"chanA": 5}

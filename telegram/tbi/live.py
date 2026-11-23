@@ -56,8 +56,10 @@ documented in ``rlibook-realtime-sync/DESIGN.md``.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import random
 import time
 import urllib.error
 import urllib.request
@@ -69,6 +71,17 @@ from .scrape import FileMeta, Post
 
 LIVE_KEY = "live:additions"
 LIVE_CURSOR_KEY = "live:cursor"
+# Last-scan record (v4.8.63): written ONLY by the atomic batch PUT
+# (PUT /api/live-state/batch), read by the bot's GET /health. It is
+# never written through the single-key PUT — the endpoint rejects it
+# there, so a scan record can only ever land next to the scan it
+# describes.
+LIVE_LAST_SCAN_KEY = "live:last_scan"
+# Batch payload ceiling (v4.8.63): the endpoint caps bodies at
+# 2 MB; stay under it. A merged additions doc is capped at 500
+# books (~300 KB worst case), so the batch fits with wide margin —
+# the fallback below is purely defensive.
+LIVE_BATCH_MAX_BYTES = 1_900_000
 MAX_LIVE_BOOKS = 500
 
 
@@ -222,23 +235,94 @@ class LiveStateClient:
                 "(GitHub Actions secret / host env var — the same "
                 "value as the bot Worker's LIVE_SYNC_TOKEN secret)."
             )
+        # Circuit breaker (v4.8.63): consecutive failed requests.
+        # At _BREAKER_TRIP the client fails fast instead of
+        # hammering a dead endpoint; any success resets it.
+        self._failures = 0
 
     def _url(self, key: str) -> str:
         from urllib.parse import urlencode
 
         return f"{self.bot_url}/api/live-state?{urlencode({'key': key})}"
 
+    def _batch_url(self) -> str:
+        return f"{self.bot_url}/api/live-state/batch"
+
     # Cloudflare intermittently drops python-urllib connections to the
     # Worker route (RemoteDisconnected / IncompleteRead — measured 3/10
     # ok from one host even with the right UA, while curl is 10/10).
     # Retry transient failures; PUT is idempotent (same key + value).
     _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
-    _MAX_ATTEMPTS = 4
-    _BACKOFF_S = (1, 2, 4)
+    # Per-operation profiles (v4.8.63, #632 fix): the fatal error
+    # was the final cursor PUT timing out on READ (a bare
+    # TimeoutError after 30 s) — the old code caught only
+    # HTTPError/URLError, so the retry never fired and the run
+    # died on its last write, after a ~50-minute flood. Cursor
+    # writes are small and cheap: short timeout, more tries. Bulk
+    # writes are large: long timeout, fewer tries. Reads keep the
+    # old 30 s / 4 tries.
+    _GET_PROFILE = (30, 4)
+    _BULK_PUT_PROFILE = (30, 3)
+    _CURSOR_PUT_PROFILE = (15, 5)
+    # Full jitter (v4.8.63): sleep uniform(0, base * 2**attempt),
+    # capped — desynchronises retries after a shared outage.
+    _BACKOFF_BASE_S = 1.0
+    _BACKOFF_CAP_S = 30.0
+    # Circuit breaker: fail fast after this many consecutive
+    # failed requests (v4.8.63).
+    _BREAKER_TRIP = 3
+
+    def _profile(self, method: str, key: str) -> tuple[int, int]:
+        if method == "GET":
+            return self._GET_PROFILE
+        if key == LIVE_CURSOR_KEY:
+            return self._CURSOR_PUT_PROFILE
+        return self._BULK_PUT_PROFILE
+
+    def _sleep_jitter(self, attempt: int) -> None:
+        cap = min(self._BACKOFF_CAP_S, self._BACKOFF_BASE_S * (2**attempt))
+        time.sleep(random.uniform(0, cap))
 
     def _request(self, method: str, key: str, body: Optional[bytes] = None):
-        req = urllib.request.Request(
+        timeout, max_attempts = self._profile(method, key)
+        return self._request_url(
+            method,
             self._url(key),
+            body,
+            timeout,
+            max_attempts,
+            label=f"{method} {key}",
+        )
+
+    def _request_batch(self, body: bytes):
+        timeout, max_attempts = self._BULK_PUT_PROFILE
+        return self._request_url(
+            "PUT",
+            self._batch_url(),
+            body,
+            timeout,
+            max_attempts,
+            label="PUT live:batch",
+        )
+
+    def _request_url(
+        self,
+        method: str,
+        url: str,
+        body: Optional[bytes],
+        timeout: int,
+        max_attempts: int,
+        *,
+        label: str,
+    ):
+        if self._failures >= self._BREAKER_TRIP:
+            raise RuntimeError(
+                f"live-state {label}: circuit breaker open "
+                f"({self._failures} consecutive failures) — refusing "
+                "to call a dead endpoint"
+            )
+        req = urllib.request.Request(
+            url,
             data=body,
             method=method,
             headers={
@@ -251,9 +335,10 @@ class LiveStateClient:
                 "Content-Type": "application/json",
             },
         )
-        for attempt in range(self._MAX_ATTEMPTS):
+        for attempt in range(max_attempts):
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    self._failures = 0
                     return resp.status, resp.read()
             except urllib.error.HTTPError as exc:
                 status, payload = exc.code, exc.read()
@@ -261,18 +346,36 @@ class LiveStateClient:
                     status in self._RETRYABLE_STATUS
                     or (status == 403 and b"1010" in payload)
                 )
-                if not retryable or attempt == self._MAX_ATTEMPTS - 1:
+                if not retryable:
+                    # Never retry a 4xx (401 wrong token, 400 bad
+                    # body, 413 too large): retrying cannot fix it.
                     return status, payload
-            except urllib.error.URLError as exc:
-                # RemoteDisconnected / IncompleteRead / timeouts / DNS.
-                if attempt == self._MAX_ATTEMPTS - 1:
+                if attempt == max_attempts - 1:
+                    self._failures += 1
+                    return status, payload
+            except (
+                TimeoutError,
+                OSError,
+                urllib.error.URLError,
+                http.client.HTTPException,
+            ) as exc:
+                # #632: a read timeout raises a BARE TimeoutError
+                # (socket.timeout), NOT URLError — the old code
+                # caught only HTTPError/URLError, so the retry
+                # never fired. OSError covers RemoteDisconnected /
+                # reset connections; HTTPException covers
+                # IncompleteRead during resp.read(). (URLError is
+                # itself an OSError subclass — listed explicitly so
+                # the intent survives a reader's skim.)
+                if attempt == max_attempts - 1:
+                    self._failures += 1
                     raise RuntimeError(
-                        f"live-state {method} {key}: {exc!r} "
-                        f"after {self._MAX_ATTEMPTS} attempts"
+                        f"live-state {label}: {exc!r} "
+                        f"after {max_attempts} attempts"
                     ) from exc
-            if attempt < self._MAX_ATTEMPTS - 1:
-                time.sleep(self._BACKOFF_S[attempt])
-        raise RuntimeError(f"live-state {method} {key}: unreachable")
+            if attempt < max_attempts - 1:
+                self._sleep_jitter(attempt)
+        raise RuntimeError(f"live-state {label}: unreachable")
 
     def get(self, key: str) -> Optional[str]:
         """Read a key; None when the key does not exist (404)."""
@@ -291,6 +394,16 @@ class LiveStateClient:
         if status != 200:
             raise RuntimeError(
                 f"live-state PUT {key}: HTTP {status}: {body[:200]!r}"
+            )
+
+    def put_batch(self, batch: dict[str, Any]) -> None:
+        """Atomic batch PUT (v4.8.63): additions + cursor (+ scan
+        record) in ONE DO transaction. Raises on failure."""
+        body = json.dumps(batch, ensure_ascii=False).encode("utf-8")
+        status, payload = self._request_batch(body)
+        if status != 200:
+            raise RuntimeError(
+                f"live-state PUT live:batch: HTTP {status}: {payload[:200]!r}"
             )
 
 
@@ -349,3 +462,42 @@ def read_cursor(store: LiveStateStore) -> dict[str, int]:
 
 def write_cursor(store: LiveStateStore, cursor: dict[str, int]) -> None:
     store.put(LIVE_CURSOR_KEY, json.dumps(cursor, ensure_ascii=False))
+
+
+def put_live_batch(
+    store: LiveStateStore,
+    additions_value: dict[str, Any],
+    cursor: dict[str, int],
+    scan_run_id: str,
+    stats: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Write the merged additions + cursor (+ scan record) in ONE
+    atomic batch PUT (v4.8.63) — the DO writes all three keys in
+    one transaction, so a crash or timeout can never leave a new
+    book list with an old cursor (the #632 mode: the additions
+    PUT landed and the cursor PUT timed out).
+
+    Returns True when the atomic batch landed, False when the
+    fallback ran: an oversize payload (over LIVE_BATCH_MAX_BYTES)
+    or a store without ``put_batch`` falls back to sequential
+    PUTs, cursor last — the pre-4.8.63 behaviour. The last-scan
+    record is NOT written on the fallback path (the single-key
+    PUT rejects live:last_scan), so /health keeps reporting the
+    previous scan's age until a batch lands. Raises on write
+    failure, like the other writers — the caller retries next
+    run from the old cursor (safe: whole-value upserts + dedupe).
+    """
+    batch = {
+        "additions": additions_value,
+        "cursor": cursor,
+        "scan_run_id": scan_run_id,
+        "stats": dict(stats or {}),
+    }
+    body = json.dumps(batch, ensure_ascii=False).encode("utf-8")
+    put_batch = getattr(store, "put_batch", None)
+    if put_batch is not None and len(body) <= LIVE_BATCH_MAX_BYTES:
+        put_batch(batch)
+        return True
+    store.put(LIVE_KEY, json.dumps(additions_value, ensure_ascii=False))
+    store.put(LIVE_CURSOR_KEY, json.dumps(cursor, ensure_ascii=False))
+    return False
