@@ -29,9 +29,19 @@ download — the Kindle browser cannot download EPUBs, so it opens
 `/kindle/get`, whose Kindle steps are phone → download → Send to
 Kindle for Web. Desktop, mobile, and no-UA visitors see **no
 download button at all** — email + reader only, and no `/kindle/get`
-link anywhere on their page. The button always points at the delivery
-page `/kindle/get` (10-minute token-gated short link, 5/day cap) —
-never at a file. Email stays the primary button and stays unlimited.
+link anywhere on their page — **except a Telegram in-app browser UA
+(2026-11-22)**: a plain bot link (`https://rlibook.tech/book?q=…`)
+tapped in a Telegram chat opens in Telegram's in-app browser, NOT as
+a Mini App (no `initData`, so the WS3b `tg-only` button stays hidden)
+and the UA carries no e-reader token, so the page showed NO download
+button at all. A UA containing `telegram` (Android / iOS / desktop
+in-app browser, and the Mini App webview itself) now renders the
+same `/kindle/get` button **visibly** with the Kindle-flow label
+(`احصل على الكتاب على جهازك`) — the device family is unknowable
+from here, and the delivery page carries the per-device steps. The
+button always points at the delivery page `/kindle/get`
+(10-minute token-gated short link, 5/day cap) — never at a file.
+Email stays the primary button and stays unlimited.
 
 ## 1. How the gate works
 
@@ -46,7 +56,11 @@ never at a file. Email stays the primary button and stays unlimited.
   (`functions/kindle/[[path]].js`, Workstream E — unchanged here).
   A card renders its download button only when it has a `/kindle/get`
   link **and** the label is non-empty (`if (getUrl && downloadLabel)`),
-  for OPDS cards and Telegram cards alike.
+  for OPDS cards and Telegram cards alike — **or** when the UA is a
+  Telegram in-app browser UA (`isTelegramUA(ua)`, 2026-11-22: the
+  same `/kindle/get` button, visible, Kindle-flow label; the
+  `tg-only` Mini-App-only button then does not render, so the three
+  branches never duplicate).
 - The family banner on `/book` now quotes the button that actually
   exists (Kobo/PocketBook quote their device label; generic no longer
   quotes a label it does not have).
@@ -115,6 +129,7 @@ Two consequences that follow from the design, stated plainly:
 | Generic e-reader (`eReader`/`EBRD`) | ✅ primary | `📥 جرّب تنزيل الكتاب على جهازك` | ✅ | ✅ on-device wording, no sendtokindle |
 | Kindle | ✅ primary | `📥 احصل على الكتاب على جهازك` (phone → Send to Kindle) | ✅ | ✅ phone → sendtokindle wording |
 | Desktop / mobile / no UA | ✅ primary | — none, no `/kindle/get` link on the page | ✅ | ❌ email only |
+| Telegram in-app browser UA (2026-11-22) | ✅ primary | `احصل على الكتاب على جهازك` (visible; delivery page carries the per-device steps) | ✅ | ✅ phone → sendtokindle wording |
 | Tolino / Boox | ✅ primary | — none (see §5) | ✅ | ❌ email only |
 
 ## 4. Files changed (this workstream)

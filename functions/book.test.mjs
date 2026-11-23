@@ -30,7 +30,7 @@
 //   D. Kindle-friendly: a small combined page stays under 8 KB.
 
 import { readFileSync } from "node:fs";
-import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, otherWaysNote, downloadSection, reportSection, botSendLink, BOT_LINK, REPORT_CRITERIA } from "./book.js";
+import { onRequest, fetchTelegramResults, fetchEnrichment, formatFileSize, validatePages, formatBookMeta, ereaderDownloadLabel, isTelegramUA, otherWaysNote, downloadSection, reportSection, botSendLink, BOT_LINK, REPORT_CRITERIA } from "./book.js";
 
 let pass = 0;
 let fail = 0;
@@ -1495,6 +1495,66 @@ console.log("S. Bot email handoff:");
   const pdf = await getBook("كتاب PDF تجريبي");
   check("S8 TG PDF card: convert still derives from the endpoint send link (identity carrier)",
     pdf.body.includes("/api/convert-book?lib=tg"));
+}
+
+// ============ T. Telegram in-app browser UA (2026-11-22) ============
+// Root cause: a plain bot link (https://rlibook.tech/book?q=…)
+// opens in Telegram's in-app browser — NOT a Mini App (no initData,
+// so html.tg-webapp is never added and the tg-only button stays
+// hidden) — and the UA carries no e-reader token, so the WS1b gate
+// hid the visible button too. The page showed the book with NO
+// download button at all. A Telegram UA now renders the same
+// /kindle/get button VISIBLY with the Kindle-flow label.
+console.log("T. Telegram in-app browser UA:");
+const TG_ANDROID_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Telegram-Android/10.5.0";
+const TG_IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Telegram/10.5.0";
+const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+{
+  tgMode = "throw";
+  const r = await getBook("لؤلؤة الحب", "", TG_ANDROID_UA);
+  check("T1 OPDS card + Telegram UA: VISIBLE download button (Kindle-flow label, /kindle/get link)",
+    r.status === 200
+    && r.body.includes("احصل على الكتاب على جهازك")
+    && r.body.includes("/kindle/get?lib=hindawi"), "status " + r.status);
+  check("T1 OPDS card + Telegram UA: exactly one /kindle/get link and ZERO tg-only sections (no duplicate)",
+    tgOnlyGetLinks(r.body).all === 1 && tgOnlyGetLinks(r.body).tgOnly === 0);
+  check("T1 OPDS card + Telegram UA: Download section label present, button comes FIRST (before email)",
+    r.body.includes("تنزيل الكتاب:")
+    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("أرسل لميل قارئي"));
+  check("T1 OPDS card + Telegram UA: footer explains the 10-minute link + sendtokindle (Kindle-flow wording)",
+    r.body.includes("رابط تنزيل يعمل 10 دقائق") && r.body.includes("amazon.com/sendtokindle"));
+}
+{
+  tgMode = "ok";
+  const r = await getBook("Everyone in This Bank Is a Thief", "&fp=FP1", TG_IOS_UA);
+  check("T2 TG card + Telegram UA (iOS): VISIBLE download button (/kindle/get?lib=tg), Download first",
+    r.status === 200
+    && r.body.includes("احصل على الكتاب على جهازك")
+    && r.body.includes("/kindle/get?lib=tg")
+    && r.body.indexOf("احصل على الكتاب على جهازك") < r.body.indexOf("أرسل لميل قارئي"), "status " + r.status);
+  check("T2 TG card + Telegram UA: exactly one /kindle/get link, ZERO tg-only (flagged card gets none)",
+    tgOnlyGetLinks(r.body).all === 1 && tgOnlyGetLinks(r.body).tgOnly === 0);
+  check("T2 TG card + Telegram UA: telegram download note shown (file fetched from Telegram, 10 min / 5 per day)",
+    r.body.includes("يجلب الملف من تيليجرام"));
+  check("T2 TG card + Telegram UA: email + tg-send + Read online still present, flagged card still View-in-bot only",
+    r.body.includes("أرسل لميل قارئي") && r.body.includes("أرسله لي في تيليجرام")
+    && r.body.includes("اقرأ أونلاين") && r.body.includes("View in bot"));
+}
+{
+  tgMode = "ok";
+  const r = await getBook("Everyone in This Bank Is a Thief", "", DESKTOP_UA);
+  check("T3 Desktop UA (no telegram): NO VISIBLE download button (WS1b unchanged; all /kindle/get links tg-only)",
+    tgOnlyGetLinks(r.body).all === tgOnlyGetLinks(r.body).tgOnly
+    && tgOnlyGetLinks(r.body).all > 0
+    && !stripTgOnly(r.body).includes("احصل على الكتاب على جهازك"));
+}
+{
+  check("T4 isTelegramUA unit: Telegram Android/iOS/desktop UAs true; Kobo/desktop/empty false",
+    isTelegramUA(TG_ANDROID_UA) === true && isTelegramUA(TG_IOS_UA) === true
+    && isTelegramUA("Mozilla/5.0 (Windows NT 10.0) Telegram-Desktop/4.9.0") === true
+    && isTelegramUA("Kobo Touch 0390/4.45.23684") === false
+    && isTelegramUA(DESKTOP_UA) === false && isTelegramUA("") === false
+    && isTelegramUA(null) === false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

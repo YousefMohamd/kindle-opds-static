@@ -6,7 +6,10 @@
 //        title, author, library, format, and the four action
 //        buttons in exact order (2026-11-21): (1) Download — a
 //        device download button in its own section above the row,
-//        ONLY for an e-reader User-Agent (Workstream 1b: Kobo
+//        ONLY for an e-reader User-Agent — or a Telegram in-app
+//        browser UA (2026-11-22: a plain bot link opens in
+//        Telegram's in-app browser, not a Mini App, so without this
+//        the page showed no download button at all) (Workstream 1b:
 //        "نزّل الكتاب على جهاز Kobo", PocketBook likewise, generic
 //        "جرّب تنزيل الكتاب على جهازك", Kindle keeps the existing
 //        "احصل على الكتاب على جهازك" — which is NOT a direct
@@ -20,9 +23,9 @@
 //        only); (4) Report LAST, with the copyright criteria text
 //        next to it, wired to the bot's main-menu Report flow.
 //        Plus an "اقرأ أونلاين" reader button (EPUB only) between
-//        Convert and Report. Desktop and mobile browsers see NO
-//        download button at all (email + reader + convert + report
-//        only). The download button always points at the delivery
+//        Convert and Report. Desktop and mobile browsers other than
+//        Telegram's in-app browser see NO download button at all
+//        (email + reader + convert + report only). The download button always points at the delivery
 //        page /kindle/get — a 10-minute short link, max 5
 //        downloads/day — never at a file. No JavaScript, minimal
 //        CSS, tiny page — built for the Kindle experimental browser.
@@ -135,14 +138,19 @@
 //
 // E-reader download button (Workstream 1b,
 // docs/ereader-download-button.md): the download button on a card
-// is gated on the request's User-Agent family (detectEReaderFamily).
+// is gated on the request's User-Agent family (detectEReaderFamily)
+// — or on a Telegram in-app browser UA (isTelegramUA, 2026-11-22:
+// a plain bot link opens there, not in a Mini App, and got no
+// button at all before this carve-out).
 // Kobo/PocketBook get a device-named button, a generic e-reader UA
 // gets a labelled try-direct button, Kindle keeps the existing
 // button (its path is phone → Send to Kindle, never a direct
-// download), and desktop/mobile/no-UA visitors get NO download
-// button — email + reader only. The footer note and the Telegram
-// note describe the download ONLY when a download button was
-// actually rendered on the page, so a desktop visitor is never
+// download), a Telegram UA gets the visible Kindle-flow button
+// ("احصل على الكتاب على جهازك", the delivery page carries the
+// per-device steps), and desktop/mobile/no-UA visitors get NO
+// download button — email + reader only. The footer note and the
+// Telegram note describe the download ONLY when a download button
+// was actually rendered on the page, so a desktop visitor is never
 // promised a button that is not there.
 // HONEST LIMIT: the User-Agent is self-asserted and trivially
 // spoofable — any desktop can send a Kobo UA and see the button
@@ -157,11 +165,13 @@
 // Mini App hub (Workstream 3b): inside Telegram the same /kindle/get
 // button is rendered a second time with class "tg-only" — hidden by
 // default, revealed only when telegram-webapp.js adds html.tg-webapp
-// (i.e. only inside the Telegram Mini App). It renders ONLY when the
-// UA gate above hid the download button, so the two never duplicate.
-// The server cannot detect the Mini App (the webview sends a mobile
-// Telegram UA, so downloadLabel is "" there); the client-side class
-// is the only gate. The label is the generic Kindle-flow one —
+// (i.e. only inside the Telegram Mini App). It renders ONLY when
+// both gates above hid the download button (no e-reader family AND
+// no Telegram UA — a Telegram UA now gets the visible button, Mini
+// App or plain in-app browser alike), so the three never duplicate.
+// The server cannot tell a Mini App webview from the plain in-app
+// browser (both send a Telegram UA); the client-side class is the
+// only Mini-App-only gate. The label is the generic Kindle-flow one —
 // inside Telegram the device family is unknowable without identity
 // (a future step: a validated-initData device lookup).
 //
@@ -217,6 +227,26 @@ export function ereaderDownloadLabel(family) {
   if (family === "generic") return "جرّب تنزيل الكتاب على جهازك";
   if (family === "kindle") return "احصل على الكتاب على جهازك";
   return "";
+}
+
+// Telegram in-app browser (2026-11-22): a plain bot link
+// (https://rlibook.tech/book?q=… — see deliveryUrl in the bot) tapped
+// in a Telegram chat opens in Telegram's in-app browser, NOT as a
+// Mini App — so telegram-webapp.js never sees initData, never adds
+// html.tg-webapp, and the WS3b tg-only button stays CSS-hidden; and
+// the UA carries no e-reader token, so the WS1b gate above hides the
+// visible button too. The page then showed the book with NO download
+// button at all — the reported bug. A UA containing "telegram"
+// (Android / iOS / desktop in-app browser, and the Mini App webview
+// itself) is the signal: the caller renders the same /kindle/get
+// button VISIBLY with the Kindle-flow label — the device family is
+// unknowable from here, and the delivery page carries the per-device
+// steps. The gate stays a deterrent, not a hard block: the 10-minute
+// token + 5/day cap + flagged denylist in /api/dl-token.js still
+// bound abuse, and /kindle/get is reachable by direct URL by design.
+// Exported for tests.
+export function isTelegramUA(ua) {
+  return (ua || "").toLowerCase().includes("telegram");
 }
 
 // "Other ways" note (2026-11-20): clarifies the get/download button
@@ -541,6 +571,11 @@ export async function onRequest(context) {
   // for Kobo / PocketBook / generic UAs, inserted after head() on
   // the user-facing pages below (not on error pages).
   const family = detectEReaderFamily(context.request.headers.get("user-agent") || "");
+  // Telegram in-app browser (2026-11-22): a plain bot link opens in
+  // Telegram's in-app browser, not a Mini App — the WS3b tg-only
+  // button stays hidden there, so a Telegram UA renders the download
+  // button VISIBLY (see the card loops below).
+  const telegramUA = isTelegramUA(context.request.headers.get("user-agent") || "");
   // WS1b download gate: the label is "" for desktop/mobile/no-UA
   // (and for Tolino/Boox — no family yet), so no download button
   // renders for them. See ereaderDownloadLabel above.
@@ -807,6 +842,10 @@ export async function onRequest(context) {
   // WS1b: true once ANY download button was actually rendered on
   // this page — the footer note describes the download only then.
   let anyDownload = false;
+  // Telegram UA (2026-11-22): true once a Telegram-UA button was
+  // rendered visibly — the footer then uses the Kindle-flow wording
+  // (phone → download → sendtokindle), matching its label.
+  let telegramDownload = false;
   for (const {lib, b} of hits) {
     // Send by email only works for the formats Send-to-Kindle accepts
     // (epub/pdf/doc/docx/txt) — and the same set governs the secondary
@@ -858,7 +897,8 @@ export async function onRequest(context) {
     const opdsMeta = formatBookMeta({ size: b.size, pages: b.pages });
     if (opdsMeta) body += "<p class=\"meta\">" + esc(opdsMeta) + "</p>\n";
     // WS1b: the download button renders ONLY when the visitor's
-    // UA is an e-reader family (downloadLabel !== ""). Desktop /
+    // UA is an e-reader family (downloadLabel !== "") or a Telegram
+    // in-app browser UA (telegramUA — 2026-11-22). Desktop /
     // mobile / no-UA visitors see email + reader only — no
     // /kindle/get link anywhere on their page.
     // Action row (2026-11-18): the card's buttons sit side by side
@@ -881,16 +921,30 @@ export async function onRequest(context) {
     if (getUrl && downloadLabel) {
       anyDownload = true;
       otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+    } else if (getUrl && telegramUA) {
+      // Telegram in-app browser (2026-11-22): the WS1b gate hid the
+      // button (no e-reader token in a Telegram UA) and the WS3b
+      // tg-only button below stays CSS-hidden outside a Mini App —
+      // so a plain bot link showed NO download button at all. Render
+      // the same /kindle/get button VISIBLY with the Kindle-flow
+      // label (the device family is unknowable from here; the
+      // delivery page carries the per-device steps). This branch IS
+      // visible, so it sets anyDownload like the e-reader branch.
+      anyDownload = true;
+      telegramDownload = true;
+      otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
     }
     // WS3b (Mini App hub): the SAME /kindle/get button, shown ONLY
     // inside Telegram (class tg-only, revealed by telegram-webapp.js
-    // when it adds html.tg-webapp) and ONLY when the UA gate above
-    // hid the download button — so the two never duplicate. The
-    // server cannot detect the Mini App (no UA/identity signal: the
-    // Mini App webview sends a mobile Telegram UA, so downloadLabel
-    // is "" here); the client-side tg-webapp class is the only gate.
-    // Label is the generic Kindle-flow one: inside Telegram the
-    // device family (Kobo vs Kindle) is unknowable without identity.
+    // when it adds html.tg-webapp) and ONLY when both gates above
+    // hid the download button — so the three never duplicate. The
+    // server CAN detect a Telegram UA (isTelegramUA) but cannot tell
+    // a Mini App webview from the plain in-app browser — both send
+    // a Telegram UA, and both now get the visible button above, so
+    // this branch only survives for non-Telegram visitors, where it
+    // stays hidden until the Mini App class reveals it. Label is the
+    // generic Kindle-flow one: inside Telegram the device family
+    // (Kobo vs Kindle) is unknowable without identity.
     // NOTE: this branch deliberately does NOT set anyDownload — the
     // footer/download notes describe a VISIBLE button (WS1b rule),
     // and this button is CSS-hidden outside Telegram. Inside
@@ -899,7 +953,7 @@ export async function onRequest(context) {
     // The tg-only class goes on the whole download section now
     // (downloadSection), so the label + note never show without
     // their button outside Telegram.
-    if (getUrl && !downloadLabel) {
+    if (getUrl && !downloadLabel && !telegramUA) {
       otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
       otherWaysTgOnly = true;
     }
@@ -1071,8 +1125,8 @@ export async function onRequest(context) {
           actions += "<p><a class=\"btn\" href=\"" + convertUrl + "\">حوّل إلى EPUB</a></p>\n";
         }
         // WS1b: same gate as the OPDS cards — a download button
-        // only for an e-reader family UA. A flagged book has no
-        // get link at all, so it never gets one here either.
+        // only for an e-reader family UA or a Telegram UA. A flagged
+        // book has no get link at all, so it never gets one here either.
         // Download (2026-11-21): the get/download button lives in
         // its own visible section (downloadSection), rendered
         // BEFORE the actions row — same rule as the OPDS cards.
@@ -1083,12 +1137,22 @@ export async function onRequest(context) {
           anyDownload = true;
           tgDownload = true;
           otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">" + downloadLabel + "</a></p>\n";
+        } else if (getUrl && telegramUA) {
+          // Telegram in-app browser (2026-11-22): same fix as the
+          // OPDS cards — a plain bot link showed NO download button
+          // at all (WS1b gate + WS3b tg-only hidden outside a Mini
+          // App). Render the /kindle/get button VISIBLY with the
+          // Kindle-flow label; visible, so it sets both flags.
+          anyDownload = true;
+          tgDownload = true;
+          telegramDownload = true;
+          otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
         }
         // WS3b (Mini App hub): same rule as the OPDS cards — the
-        // tg-only button appears only when the UA gate hid the
-        // download button, so the two never duplicate. The tg-only
+        // tg-only button appears only when both gates above hid the
+        // download button, so the three never duplicate. The tg-only
         // class goes on the whole download section now.
-        if (getUrl && !downloadLabel) {
+        if (getUrl && !downloadLabel && !telegramUA) {
           otherWaysBtn = "<p><a class=\"btn\" href=\"" + getUrl + "\">احصل على الكتاب على جهازك</a></p>\n";
           otherWaysTgOnly = true;
         }
@@ -1131,7 +1195,7 @@ export async function onRequest(context) {
   if (anySend) {
     body += "<p class=\"note\">الإرسال بالإيميل هو الطريقة الأساسية: أرسل الكتاب إلى جهازك، وسيظهر في مكتبتك خلال دقائق. "
       + (anyDownload
-        ? family === "kindle"
+        ? (family === "kindle" || telegramDownload)
           ? "أما زر «احصل على الكتاب على جهازك» فيعطيك رابط تنزيل يعمل 10 دقائق "
             + "(5 كتب في اليوم كحد أقصى): نزّل الكتاب على هاتفك أو حاسوبك ثم ارفعه في "
             + "amazon.com/sendtokindle، فيظهر في مكتبتك خلال دقائق. "

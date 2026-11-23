@@ -698,12 +698,11 @@ async function visibleResults(env, rows, includeUrl, limit) {
   return { results, hiddenCount, flagStatus: state.status };
 }
 
-// D1 final-import target (distinct books). The import finished
-// 2026-11-19 at 323,318 books (7 fewer than the 323,325 plan —
-// removed in author cleanup); `partial` is false once D1 holds
-// that many. This is NOT the catalog manifest total (326,149 books
-// on 2026-11-14, and growing) — never conflate the two.
-const D1_FINAL_TARGET = 323318;
+// D1 final-import target (distinct books). The delta import finished
+// 2026-11-22 at 422,424 books, plus 397 Drive books imported 2026-11-23
+// → 422,821 total; `partial` is false once D1 holds that many.
+// This is NOT the catalog manifest total — never conflate the two.
+const D1_FINAL_TARGET = 422821;
 
 // Coverage cache: the D1 indexed count changes once a day (the daily
 // import), not per request — so it is cached in KV (same RLIBOOK_KV
