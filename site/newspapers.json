@@ -1,14 +1,14 @@
 {
   "version": 2,
   "date": "2026-11-23",
-  "generated_at": "2026-11-23T09:30:58.570632+00:00",
+  "generated_at": "2026-11-23T11:13:59.068527+00:00",
   "sources": [
     {
       "key": "arabJournalism",
       "label": "الصحافة العربية",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 0,
+      "entries": 4,
       "detail": ""
     },
     {
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 12,
+      "entries": 25,
       "detail": ""
     },
     {
@@ -37,13 +37,26 @@
       "region": "egypt",
       "edition": "morning",
       "date": "2026-11-23",
-      "url": "https://t.me/Arabic_News_Papers/135011",
+      "url": "https://t.me/Arabic_News_Papers/135030",
       "handle": "Arabic_News_Papers",
-      "post_id": 135011,
+      "post_id": 135030,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ],
   "other": [
+    {
+      "name": "Saudi Gazette",
+      "country": "SA",
+      "country_name": "السعودية",
+      "flag": "🇸🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135015",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135015,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
     {
       "name": "الأنباء",
       "country": "KW",
@@ -55,6 +68,32 @@
       "url": "https://t.me/Arabic_News_Papers/135002",
       "handle": "Arabic_News_Papers",
       "post_id": 135002,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الجزيرة",
+      "country": "SA",
+      "country_name": "السعودية",
+      "flag": "🇸🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135017",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135017,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الرياض",
+      "country": "SA",
+      "country_name": "السعودية",
+      "flag": "🇸🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135019",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135019,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -82,6 +121,84 @@
       "handle": "Arabic_News_Papers",
       "post_id": 135000,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "المدينة",
+      "country": "SA",
+      "country_name": "السعودية",
+      "flag": "🇸🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135022",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135022,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "عكاظ",
+      "country": "SA",
+      "country_name": "السعودية",
+      "flag": "🇸🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135025",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135025,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشرق الأوسط",
+      "country": "GB",
+      "country_name": "لندن",
+      "flag": "🇬🇧",
+      "region": "london",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/arabJournalism/251981",
+      "handle": "arabJournalism",
+      "post_id": 251981,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "العرب",
+      "country": "GB",
+      "country_name": "لندن",
+      "flag": "🇬🇧",
+      "region": "london",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/arabJournalism/251980",
+      "handle": "arabJournalism",
+      "post_id": 251980,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "العربي الجديد",
+      "country": "GB",
+      "country_name": "لندن",
+      "flag": "🇬🇧",
+      "region": "london",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/arabJournalism/251979",
+      "handle": "arabJournalism",
+      "post_id": 251979,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "القدس العربي",
+      "country": "GB",
+      "country_name": "لندن",
+      "flag": "🇬🇧",
+      "region": "london",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/arabJournalism/251982",
+      "handle": "arabJournalism",
+      "post_id": 251982,
+      "source": "arabJournalism"
     },
     {
       "name": "الرأي",
@@ -117,9 +234,22 @@
       "region": "other",
       "edition": "morning",
       "date": "2026-11-23",
-      "url": "https://t.me/Arabic_News_Papers/135010",
+      "url": "https://t.me/Arabic_News_Papers/135029",
       "handle": "Arabic_News_Papers",
-      "post_id": 135010,
+      "post_id": 135029,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "البلاد",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135016",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135016,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -136,6 +266,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "الرحلة",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135018",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135018,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "الشاهد",
       "country": "XX",
       "country_name": "غير محدد",
@@ -146,6 +289,19 @@
       "url": "https://t.me/Arabic_News_Papers/135001",
       "handle": "Arabic_News_Papers",
       "post_id": 135001,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الكأس",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135021",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135021,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -162,6 +318,32 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "الوطن",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135023",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135023,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "اليوم",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135024",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135024,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "عرب تايمز",
       "country": "XX",
       "country_name": "غير محدد",
@@ -172,6 +354,19 @@
       "url": "https://t.me/Arabic_News_Papers/135008",
       "handle": "Arabic_News_Papers",
       "post_id": 135008,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "كبسولة",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135026",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135026,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -186,6 +381,19 @@
       "handle": "Arabic_News_Papers",
       "post_id": 135007,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "مكة",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135027",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135027,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ],
   "countries": [
@@ -196,10 +404,22 @@
       "count": 1
     },
     {
+      "code": "SA",
+      "name": "السعودية",
+      "flag": "🇸🇦",
+      "count": 5
+    },
+    {
       "code": "KW",
       "name": "الكويت",
       "flag": "🇰🇼",
       "count": 3
+    },
+    {
+      "code": "GB",
+      "name": "لندن",
+      "flag": "🇬🇧",
+      "count": 4
     },
     {
       "code": "LB",
@@ -217,12 +437,19 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 6
+      "count": 13
     }
   ],
   "empty": false,
   "unmatched": [
     "Akhbar",
+    "مكة",
+    "كبسولة",
+    "اليوم",
+    "الوطن",
+    "الكأس",
+    "الرحلة",
+    "البلاد",
     "عرب تايمز",
     "كويت تايمز",
     "الوسط",
@@ -230,6 +457,16 @@
     "الشاهد"
   ],
   "dropped": [
+    {
+      "name": "🇬🇧",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
+    {
+      "name": "23 Nov 2026",
+      "reason": "bare_date",
+      "source": "arabJournalism"
+    },
     {
       "name": "🇪🇬",
       "reason": "flag_or_emoji_only",
@@ -281,11 +518,6 @@
       "source": "arabJournalism"
     },
     {
-      "name": "🇬🇧",
-      "reason": "flag_or_emoji_only",
-      "source": "arabJournalism"
-    },
-    {
       "name": "22 Nov 2026",
       "reason": "bare_date",
       "source": "arabJournalism"
@@ -322,6 +554,11 @@
     },
     {
       "name": "😄😁😄  صحف مصر  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف السعودية  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
@@ -367,11 +604,6 @@
     },
     {
       "name": "😄😁😄  صحف سلطنه عمان  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف السعودية  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
@@ -457,11 +689,6 @@
     },
     {
       "name": "😄😁😄  صحف فلسطين  😄😁😄",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف الاردن  😄😁😄",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
