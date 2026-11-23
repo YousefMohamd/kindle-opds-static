@@ -99,14 +99,20 @@ function normLive(b) {
   return n;
 }
 
-// Read live additions from KV (optional binding). Empty when the
-// binding is missing, the key is absent, or the value is malformed.
+// Bot Worker origin (same constant as functions/api/convert-book.js
+// and functions/api/tg-send.js).
+const WORKER_BASE = "https://rlibook-bot.mohamedyou1357.workers.dev";
+
+// Read live additions from the bot Worker's /api/live-state
+// endpoint (public GET, v4.8.57 — the two live keys moved from KV
+// to the bot's Durable Object after KV's 1,000-writes/day cap broke
+// the realtime runs). Falls back to the legacy KV copy (optional
+// binding) while the DO has no value yet — the migration window
+// only. Empty when both are missing, malformed, or unreachable.
 async function readLive(env) {
-  const kv = env && env.RLIBOOK_KV;
-  if (!kv || typeof kv.get !== "function") return [];
+  const raw = await readLiveRaw(env);
+  if (!raw) return [];
   try {
-    const raw = await kv.get(LIVE_KEY);
-    if (!raw) return [];
     const data = JSON.parse(raw);
     const list = data && Array.isArray(data.books) ? data.books : [];
     const out = [];
@@ -117,6 +123,24 @@ async function readLive(env) {
     return out;
   } catch (e) {
     return [];
+  }
+}
+
+async function readLiveRaw(env) {
+  try {
+    const res = await fetch(
+      WORKER_BASE + "/api/live-state?key=" + encodeURIComponent(LIVE_KEY),
+    );
+    if (res.ok) return await res.text();
+  } catch (e) {
+    // Endpoint unreachable -> fall through to the KV copy.
+  }
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    return await kv.get(LIVE_KEY);
+  } catch (e) {
+    return null;
   }
 }
 
@@ -217,7 +241,8 @@ export async function onRequest(context) {
     books = [];
   }
 
-  // 2. Live additions (empty until the real-time writer is deployed).
+  // 2. Live additions (from the bot's live state; empty until the
+  // first realtime run after the DO move).
   const live = await readLive(env);
   if (live.length > 0) {
     const seen = new Set(books.map((b) => b.url).filter(Boolean));
