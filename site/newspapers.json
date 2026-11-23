@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-23",
-  "generated_at": "2026-11-23T06:00:45.092573+00:00",
+  "generated_at": "2026-11-23T06:23:53.741230+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 10,
+      "entries": 12,
       "detail": ""
     },
     {
@@ -28,7 +28,21 @@
       "detail": "private channel — the owner's join request is pending; this tool never joins"
     }
   ],
-  "egypt": [],
+  "egypt": [
+    {
+      "name": "الجمهوريه",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135011",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135011,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    }
+  ],
   "other": [
     {
       "name": "الأنباء",
@@ -93,6 +107,19 @@
       "url": "https://t.me/Arabic_News_Papers/135004",
       "handle": "Arabic_News_Papers",
       "post_id": 135004,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "Akhbar",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-23",
+      "url": "https://t.me/Arabic_News_Papers/135010",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135010,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -163,6 +190,12 @@
   ],
   "countries": [
     {
+      "code": "EG",
+      "name": "مصر",
+      "flag": "🇪🇬",
+      "count": 1
+    },
+    {
       "code": "KW",
       "name": "الكويت",
       "flag": "🇰🇼",
@@ -184,11 +217,12 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 5
+      "count": 6
     }
   ],
   "empty": false,
   "unmatched": [
+    "Akhbar",
     "عرب تايمز",
     "كويت تايمز",
     "الوسط",
@@ -277,6 +311,21 @@
       "source": "arabJournalism"
     },
     {
+      "name": "1375.pdf",
+      "reason": "empty",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "f907240a-b46b-44d0-a2e2-c782f6c32375.pdf",
+      "reason": "uuid",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف مصر  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف الكويت  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -289,11 +338,6 @@
     {
       "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
       "reason": "url",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف مصر  😄😁😁",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -418,11 +462,6 @@
     },
     {
       "name": "😄😁😄  صحف الاردن  😄😁😄",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف العراق  😄😁😄",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
