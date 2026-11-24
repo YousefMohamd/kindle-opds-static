@@ -491,19 +491,19 @@
       "folder": "added"
     },
     "scincematerialsMH": {
-      "status": "pending",
+      "status": "already_member",
       "joined_at": null,
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "ArabicMagazine": {
-      "status": "pending",
+      "status": "failed",
       "joined_at": null,
-      "fail_reason": null,
+      "fail_reason": "join failed: The authorization key (session file) was used under two different IP addresses simultaneously, and can no longer be used. Use the same session exclusively, or use different sessions (caused by JoinChannelRequest)",
       "flood_wait_seconds": null,
-      "attempts": 0,
+      "attempts": 1,
       "folder": null
     },
     "arabJournalism": {

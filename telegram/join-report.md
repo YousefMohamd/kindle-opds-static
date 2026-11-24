@@ -1,23 +1,25 @@
 # Telegram group-join report (slow join, v0.4.6)
 
-Run at 2026-11-23T23:07:47.947666+00:00 — batch: up to 2 groups per run, every 12 h (~4 groups/day).
+Run at 2026-11-24T07:41:33.445302+00:00 — batch: up to 2 groups per run, every 12 h (~4 groups/day).
 
-Joined: 1 | already a member: 1 | failed: 0
-
-## Newly joined
-
-- @plussheets — folder: added
+Joined: 0 | already a member: 1 | failed: 1
 
 ## Already a member (no join sent)
 
-- @sciencecamp1 — folder: added
+- @scincematerialsMH — folder: added
+
+## Failed (recorded, never retried automatically)
+
+- @ArabicMagazine: join failed: The authorization key (session file) was used under two different IP addresses simultaneously, and can no longer be used. Use the same session exclusively, or use different sessions (caused by JoinChannelRequest)
+
+To retry one, set its `status` back to `pending` in `join-state.json`.
 
 ## Overall progress
 
 - joined: 32
-- already_member: 28
-- pending: 112
-- failed: 0
+- already_member: 29
+- pending: 110
+- failed: 1
 - flood_wait: 0
 - total groups: 172
 
