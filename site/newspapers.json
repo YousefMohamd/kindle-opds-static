@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-24",
-  "generated_at": "2026-11-24T01:57:46.458708+00:00",
+  "generated_at": "2026-11-24T05:14:07.137638+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 10,
+      "entries": 12,
       "detail": ""
     },
     {
@@ -93,6 +93,32 @@
       "url": "https://t.me/Arabic_News_Papers/135085",
       "handle": "Arabic_News_Papers",
       "post_id": 135085,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "Alquds",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-24",
+      "url": "https://t.me/Arabic_News_Papers/135089",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135089,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "sites default files imports qa Fullpaper",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-24",
+      "url": "https://t.me/Arabic_News_Papers/135088",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135088,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -184,11 +210,13 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 5
+      "count": 7
     }
   ],
   "empty": false,
   "unmatched": [
+    "Alquds",
+    "sites default files imports qa Fullpaper",
     "عرب تايمز",
     "كويت تايمز",
     "الوسط",
@@ -277,6 +305,16 @@
       "source": "arabJournalism"
     },
     {
+      "name": "13974.pdf",
+      "reason": "empty",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف لندن  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف الكويت  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -357,11 +395,6 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
-      "name": "😄😁😄  صحف لندن  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
       "name": "😄😁😄  صحف اليوم السبت 21-11-26   😄😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -398,11 +431,6 @@
     },
     {
       "name": "😄😁😄  صحف سلطنه عمان  😄😁😄",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف قطر  😄😁😄",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
