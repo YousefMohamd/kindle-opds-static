@@ -29,6 +29,23 @@ is unchanged and the search covers every book.
 * ``index-report.md`` — a copy of the latest run report, when one
   exists next to the DB (or at ``--report``).
 
+Flag filtering (v4.8.65): with ``--flags-json`` pointing at a
+``flags:all`` blob (``{"flagged": ["handle:post", ...], "hidden":
+[...] }``, the same shape the bot keeps in KV), books whose post
+key appears in either list are EXCLUDED from the manifest and the
+shards — the static search page links straight to the Telegram
+post, so a flagged/hidden book listed there would be one tap away
+from a download that bypasses every delivery gate. Flagged books
+stay visible (with 🚩, no delivery) on the website search and in
+the bot — the static page is a derived snapshot, not the canonical
+surface, so dropping a row here deletes nothing. The manifest
+reports the drop in ``filtered`` (``{"flagged": n, "hidden": m}``)
+and ``totals.books`` is the FILTERED count, matching the list the
+page actually searches. Without ``--flags-json`` the export is
+unchanged (no filtering). Books whose post URL does not parse to
+a public t.me post cannot be matched to a flag key and are kept —
+the live delivery gates still protect them.
+
 The search page itself (``site/telegram/index.html``) is a
 hand-written static file in the repo, not generated — this module
 only regenerates the data it loads. Writes are atomic (temp file +
@@ -88,11 +105,81 @@ def _post_handle_post(obtain_url: str) -> tuple:
     return (m.group(1), m.group(2)) if m else ("", "")
 
 
-def _book_rows(store: Store) -> list:
-    """One dict per distinct book (newest file's data), newest first."""
+def _normalize_flag_keys(blob: dict) -> tuple:
+    """A ``flags:all`` blob -> (flagged keys, hidden keys).
+
+    Each key is ``"handle:post"`` with the handle lowercased:
+    Telegram handles are lowercase in practice, but the bot never
+    lowercases them at write time, so both sides normalize and a
+    mixed-case handle in the blob still matches. Blank entries are
+    ignored. A non-dict blob (or missing lists) yields empty sets
+    rather than raising — the caller decides whether that is an
+    error (load_flags_file raises on a malformed file instead).
+    """
+    def keys(names):
+        out = set()
+        for raw in names or []:
+            s = str(raw).strip().lower()
+            if s:
+                out.add(s)
+        return out
+    if not isinstance(blob, dict):
+        return set(), set()
+    return keys(blob.get("flagged")), keys(blob.get("hidden"))
+
+
+def load_flags_file(path: str | Path) -> tuple:
+    """Load a ``flags:all`` blob from ``path`` (JSON).
+
+    Returns (flagged keys, hidden keys) via _normalize_flag_keys.
+    Raises FileNotFoundError when the file is missing and ValueError
+    when it is not valid JSON or not a JSON object — a broken flags
+    file must fail the export loudly, never silently export the
+    catalog unfiltered.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Flags file not found: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Flags file is not valid JSON: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Flags file is not a JSON object: {path}")
+    return _normalize_flag_keys(data)
+
+
+def _flag_key(handle: str, post: str) -> str:
+    """The flag key for one book row ("" when the post URL did not
+    parse to a public t.me post — such rows can never match)."""
+    if not handle or not post:
+        return ""
+    return f"{handle.lower()}:{post}"
+
+
+def _book_rows(store: Store, flags=None) -> tuple:
+    """One dict per distinct book (newest file's data), newest first.
+
+    Returns (rows, filtered) where ``filtered`` counts the rows
+    dropped by the flag filter: ``{"flagged": n, "hidden": m}``.
+    With ``flags`` None (the default) nothing is filtered and the
+    counts are zero. ``flags`` is the (flagged, hidden) key pair
+    from load_flags_file; a row is dropped when its post key is in
+    either set (flagged first, so a book in both counts once, as
+    flagged).
+    """
+    flagged, hidden = flags if flags is not None else (set(), set())
     rows = []
+    filtered = {"flagged": 0, "hidden": 0}
     for b in store.list_books():
         handle, post = _post_handle_post(b["obtain_url"] or "")
+        key = _flag_key(handle, post)
+        if key and key in flagged:
+            filtered["flagged"] += 1
+            continue
+        if key and key in hidden:
+            filtered["hidden"] += 1
+            continue
         rows.append({
             "title": b["title"] or b["filename"],
             "author": b["author"] or "",
@@ -105,7 +192,7 @@ def _book_rows(store: Store) -> list:
             "handle": handle,
             "post": post,
         })
-    return rows
+    return rows, filtered
 
 
 def _book_array(book: dict) -> list:
@@ -122,13 +209,15 @@ def _array_bytes(book_array: list) -> int:
     return len(json.dumps(book_array, ensure_ascii=False).encode("utf-8")) + 2
 
 
-def build_index_json(store: Store) -> dict:
+def build_index_json(store: Store, flags=None) -> dict:
     """The full index as one dict (distinct books + sources).
 
     Kept for small DBs and for tests that check deduping. The
     deployed site no longer writes this as a single file (see
     ``build_shards``) because at 197k books it is 53 MiB, over
-    Cloudflare Pages' 25 MiB per-file limit.
+    Cloudflare Pages' 25 MiB per-file limit. ``flags`` (see
+    _book_rows) drops flagged/hidden books; ``totals.books`` is
+    the filtered count and ``filtered`` reports the drop.
     """
     totals = store.counts()
     sources = [
@@ -143,21 +232,23 @@ def build_index_json(store: Store) -> dict:
         }
         for s in store.per_source_totals()
     ]
+    books, filtered = _book_rows(store, flags)
     return {
         "generated_at": _now_iso(),
         "tool": f"telegram-book-index {__version__}",
         "totals": {
             "posts": totals["posts"],
             "files": totals["files"],
-            "books": totals["books"],
+            "books": totals["books"] - filtered["flagged"] - filtered["hidden"],
             "sources": totals["sources"],
         },
         "sources": sources,
-        "books": _book_rows(store),
+        "filtered": filtered,
+        "books": books,
     }
 
 
-def build_shards(store: Store, shard_bytes: int = SHARD_BYTES) -> tuple:
+def build_shards(store: Store, flags=None, shard_bytes: int = SHARD_BYTES) -> tuple:
     """Split the book list into a manifest + shard payloads.
 
     Returns ``(manifest, shards)`` where ``manifest`` is the small
@@ -186,7 +277,7 @@ def build_shards(store: Store, shard_bytes: int = SHARD_BYTES) -> tuple:
         }
         for s in store.per_source_totals()
     ]
-    books = _book_rows(store)
+    books, filtered = _book_rows(store, flags)
     formats = sorted({b["ext"] for b in books if b["ext"]})
 
     # Group by source, preserving the store's newest-first order
@@ -253,12 +344,13 @@ def build_shards(store: Store, shard_bytes: int = SHARD_BYTES) -> tuple:
         "totals": {
             "posts": totals["posts"],
             "files": totals["files"],
-            "books": totals["books"],
+            "books": totals["books"] - filtered["flagged"] - filtered["hidden"],
             "sources": totals["sources"],
         },
         "sources": sources,
         "formats": formats,
-        "books": totals["books"],
+        "books": totals["books"] - filtered["flagged"] - filtered["hidden"],
+        "filtered": filtered,
         "shards": [
             {
                 "file": filename,
@@ -286,15 +378,21 @@ def export_static(
     db_path: str | Path,
     out_dir: str | Path,
     report_path: Optional[str | Path] = None,
+    flags_path: Optional[str | Path] = None,
 ) -> dict:
     """Generate the static site data into ``out_dir``.
 
     Writes ``index.json`` (manifest) plus ``index-<n>.json`` shards,
-    and copies the report when present. Returns stats: ``{"books": N,
-    "files": N, "posts": N, "sources": N, "shards": N, "shard_files":
-    [...], "max_shard_bytes": N, "json_bytes": N (manifest),
-    "report_copied": bool}``. Raises FileNotFoundError when the DB
-    (or the explicit report) does not exist.
+    and copies the report when present. ``flags_path`` (a
+    ``flags:all`` JSON blob, see load_flags_file) excludes
+    flagged/hidden books from the manifest and shards. Returns
+    stats: ``{"books": N, "files": N, "posts": N, "sources": N,
+    "shards": N, "shard_files": [...], "max_shard_bytes": N,
+    "json_bytes": N (manifest), "filtered_flagged": N,
+    "filtered_hidden": N, "report_copied": bool}`` — ``books`` is
+    the FILTERED count. Raises FileNotFoundError when the DB (or
+    the explicit report, or the flags file) does not exist, and
+    ValueError when the flags file is malformed.
     """
     db_path = Path(db_path)
     if not db_path.is_file():
@@ -308,10 +406,11 @@ def export_static(
         report_path = Path(report_path)
         if not report_path.is_file():
             raise FileNotFoundError(f"Report not found: {report_path}")
+    flags = load_flags_file(flags_path) if flags_path else None
 
     store = Store(db_path)
     try:
-        manifest, shards = build_shards(store)
+        manifest, shards = build_shards(store, flags)
     finally:
         store.close()
 
@@ -344,5 +443,7 @@ def export_static(
         "shard_files": shard_files,
         "max_shard_bytes": max_shard_bytes,
         "json_bytes": manifest_bytes,
+        "filtered_flagged": manifest["filtered"]["flagged"],
+        "filtered_hidden": manifest["filtered"]["hidden"],
         "report_copied": report_copied,
     }

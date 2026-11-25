@@ -1482,8 +1482,14 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 def cmd_export_static(args: argparse.Namespace) -> int:
     try:
-        stats = export_static(args.db, args.out, args.report)
+        stats = export_static(
+            args.db, args.out, args.report,
+            getattr(args, "flags_json", None),
+        )
     except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     print(
@@ -1495,6 +1501,11 @@ def cmd_export_static(args: argparse.Namespace) -> int:
         f"{stats['shards']} shard(s), "
         f"largest {stats['max_shard_bytes']} bytes"
     )
+    if stats["filtered_flagged"] or stats["filtered_hidden"]:
+        print(
+            f"  flag filter: excluded {stats['filtered_flagged']} flagged, "
+            f"{stats['filtered_hidden']} hidden"
+        )
     if stats["report_copied"]:
         print(f"  report copied to {Path(args.out) / 'index-report.md'}")
     return 0
@@ -1658,6 +1669,12 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument(
         "--report", default=None,
         help="Run report to copy (default: index-report.md next to the DB)",
+    )
+    pe.add_argument(
+        "--flags-json", default=None,
+        help="flags:all JSON blob ({\"flagged\": [...], \"hidden\": [...]}) "
+             "— books whose handle:post key is listed are excluded from "
+             "the manifest and shards (v4.8.65). Without it, no filtering.",
     )
     pe.set_defaults(func=cmd_export_static)
 
