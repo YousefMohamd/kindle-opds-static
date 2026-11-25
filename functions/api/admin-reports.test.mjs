@@ -29,6 +29,11 @@
 //      (503 E_NO_LIST, no flag: key created)
 //   8. the ledger `by` field is "web" (the one deliberate
 //      deviation from the bot, which writes "bot")
+//   9. flags edge-cache purge (v4.8.64): every decision that
+//      rebuilds flags:all also deletes the 1 h edge-cached copy
+//      tg-search.js reads; reject purges nothing; the bot's
+//      purge-flags-cache action is owner-only; a throwing edge
+//      cache never fails the decision; no `caches` global is fine.
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production KV, no deploy.
 // All fingerprints / ids below are FAKE test data.
@@ -36,12 +41,15 @@
 import {
   onRequest,
   OWNER_TG_ID,
+  FLAGS_CACHE_URL,
+  STATIC_REBUILD_MARKER_KEY,
   parseFlagKey,
   parseHiddenKey,
   parseLedgerKey,
   parseReportKey,
   manualHideValue,
   ledgerEntry,
+  purgeFlagsEdgeCache,
   verifyOwner,
 } from "./admin-reports.js";
 
@@ -438,6 +446,162 @@ const OWNER_Q = API + "?fp=" + OWNER_FP;
   check("8 ledgerEntry shape (by is web, not bot)",
     e.action === "flag" && e.reason === "commercial"
     && e.source === "report:a1b2c3d4e5f6" && e.by === "web" && !!e.at);
+}
+
+// --- 9. flags edge-cache purge (v4.8.64) ------------------------------------
+// Every decision that rebuilds flags:all must also delete the 1 h
+// edge-cached copy tg-search.js reads (FLAGS_CACHE_URL), so website
+// search and bot search see the new state on the next request. The
+// purge never fails the decision. Runs with a fake global `caches`
+// installed (same pattern as tg-search.test.mjs §26), removed again
+// in a finally.
+{
+  const deleted = [];
+  let deleteThrows = false;
+  globalThis.caches = {
+    default: {
+      delete: async (url) => {
+        if (deleteThrows) throw new Error("edge down");
+        deleted.push(String(url));
+        return true;
+      },
+    },
+  };
+  try {
+    // 9a approve purges once with the exact tg-search cache key.
+    {
+      const kv = seededKv();
+      const r = await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "approve", rid: RID1 }),
+      });
+      check("9a approve -> 200 ok and edge cache purged once",
+        r.status === 200 && r.body.ok === true
+        && deleted.length === 1 && deleted[0] === FLAGS_CACHE_URL);
+    }
+    // 9b unflag / hide / unhide purge too.
+    {
+      const kv = seededKv();
+      deleted.length = 0;
+      await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "unflag", handle: "flagchan", postId: "50" }),
+      });
+      await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "hide", handle: "chan9", postId: "3" }),
+      });
+      await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "unhide", handle: "hidechan", postId: "7" }),
+      });
+      check("9b unflag + hide + unhide -> 3 purges",
+        deleted.length === 3 && deleted.every((u) => u === FLAGS_CACHE_URL));
+    }
+    // 9c reject changes no flag, so it purges nothing.
+    {
+      const kv = seededKv();
+      deleted.length = 0;
+      const r = await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "reject", rid: RID3 }),
+      });
+      check("9c reject -> 200 ok, no purge (no flag changed)",
+        r.status === 200 && r.body.ok === true && deleted.length === 0);
+    }
+    // 9d the bot's purge-flags-cache action purges and is owner-only.
+    {
+      const kv = seededKv();
+      deleted.length = 0;
+      const r = await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "purge-flags-cache" }),
+      });
+      check("9d purge-flags-cache -> 200 ok, purged true, one delete",
+        r.status === 200 && r.body.ok === true && r.body.purged === true && deleted.length === 1);
+      const other = await call(makeEnv(kv), API + "?fp=" + OTHER_FP, {
+        method: "POST",
+        body: JSON.stringify({ action: "purge-flags-cache" }),
+      });
+      check("9d purge-flags-cache by non-owner -> 403, no delete",
+        other.status === 403 && deleted.length === 1);
+    }
+    // 9e a throwing edge cache never fails the decision.
+    {
+      const kv = seededKv();
+      deleted.length = 0;
+      deleteThrows = true;
+      const r = await call(makeEnv(kv), OWNER_Q, {
+        method: "POST",
+        body: JSON.stringify({ action: "approve", rid: RID1 }),
+      });
+      deleteThrows = false;
+      const blob = JSON.parse(kv.map.get("flags:all"));
+      check("9e approve with a throwing edge cache -> still 200 ok, blob rebuilt",
+        r.status === 200 && r.body.ok === true && blob.flagged.includes("books_p:11692"));
+    }
+  } finally {
+    delete globalThis.caches;
+  }
+  // 9f with no `caches` global at all (plain Node), decisions still succeed.
+  {
+    const kv = seededKv();
+    const r = await call(makeEnv(kv), OWNER_Q, {
+      method: "POST",
+      body: JSON.stringify({ action: "approve", rid: RID1 }),
+    });
+    check("9f approve with no caches global -> 200 ok (purge is a no-op)",
+      r.status === 200 && r.body.ok === true);
+    check("9f purgeFlagsEdgeCache() with no caches global -> false, never throws",
+      (await purgeFlagsEdgeCache()) === false);
+  }
+  // 9g (v4.8.65) every decision that rebuilds flags:all also writes
+  // the static-rebuild marker (ISO timestamp) so the cron can
+  // dispatch the static catalog rebuild; reject writes none.
+  {
+    const kv = seededKv();
+    const r = await call(makeEnv(kv), OWNER_Q, {
+      method: "POST",
+      body: JSON.stringify({ action: "approve", rid: RID1 }),
+    });
+    const marker = kv.map.get(STATIC_REBUILD_MARKER_KEY);
+    check("9g approve -> 200 ok and static-rebuild marker written (ISO timestamp)",
+      r.status === 200 && r.body.ok === true
+      && typeof marker === "string" && !Number.isNaN(Date.parse(marker)));
+    const kv2 = seededKv();
+    await call(makeEnv(kv2), OWNER_Q, {
+      method: "POST",
+      body: JSON.stringify({ action: "hide", handle: "chan9", postId: "3" }),
+    });
+    check("9g hide -> static-rebuild marker written",
+      typeof kv2.map.get(STATIC_REBUILD_MARKER_KEY) === "string");
+    const kv3 = seededKv();
+    const r3 = await call(makeEnv(kv3), OWNER_Q, {
+      method: "POST",
+      body: JSON.stringify({ action: "reject", rid: RID3 }),
+    });
+    check("9g reject -> 200 ok, no marker (no flag changed)",
+      r3.status === 200 && r3.body.ok === true
+      && kv3.map.get(STATIC_REBUILD_MARKER_KEY) === undefined);
+    check("9g marker key is flags:rebuild-requested",
+      STATIC_REBUILD_MARKER_KEY === "flags:rebuild-requested");
+  }
+  // 9h (v4.8.65) a throwing marker put never fails the decision.
+  {
+    const kv = seededKv();
+    const realPut = kv.put.bind(kv);
+    kv.put = async (key, value) => {
+      if (key === STATIC_REBUILD_MARKER_KEY) throw new Error("KV put down");
+      return realPut(key, value);
+    };
+    const r = await call(makeEnv(kv), OWNER_Q, {
+      method: "POST",
+      body: JSON.stringify({ action: "approve", rid: RID1 }),
+    });
+    const blob = JSON.parse(kv.map.get("flags:all"));
+    check("9h approve with a throwing marker put -> still 200 ok, blob rebuilt",
+      r.status === 200 && r.body.ok === true && blob.flagged.includes("books_p:11692"));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

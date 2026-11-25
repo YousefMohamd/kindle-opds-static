@@ -284,6 +284,64 @@ export async function rebuildFlagsAll(kv) {
   return blob;
 }
 
+// The edge-cache key functions/api/tg-search.js reads the flags:all
+// blob from (its FLAGS_CACHE_URL) — the two constants MUST stay
+// identical; a mismatch silently disables the purge below, and a
+// flagged book would keep showing as downloadable on website search
+// (and in bot search, which calls the same endpoint) for up to the
+// 1 h TTL. The delivery gates (dl-token / send-to-kindle / tg-send /
+// read-token) read the per-row `flag:` keys live from KV, so they
+// were never stale — only the search DISPLAY was.
+export const FLAGS_CACHE_URL = "https://rlibook.internal/flags-all";
+
+/** KV key the static-catalog rebuild trigger watches (v4.8.65 —
+ *  same key the bot writes in src/flags-purge.ts). Value: ISO
+ *  timestamp of the latest flag/hide/unhide mutation. */
+export const STATIC_REBUILD_MARKER_KEY = "flags:rebuild-requested";
+
+/** Delete the flags:all edge-cache entry so the next search reads
+ *  the fresh KV blob. Best-effort: returns true when an entry was
+ *  deleted, false when there was none, when the Cache API is absent
+ *  (Node tests), or when the delete threw. NEVER throws — a purge
+ *  failure must not fail the decision that already landed in KV
+ *  (the entry expires on its own within the 1 h TTL, i.e. no worse
+ *  than before this fix). Runs in the Pages runtime, the same
+ *  partition tg-search.js reads from — a Worker on workers.dev
+ *  could NOT purge this entry (different zone), which is why the
+ *  bot calls the `purge-flags-cache` action on this endpoint
+ *  instead of deleting the cache itself. Exported for tests. */
+export async function purgeFlagsEdgeCache() {
+  if (typeof caches === "undefined" || !caches.default) return false;
+  try {
+    return await caches.default.delete(FLAGS_CACHE_URL);
+  } catch (e) {
+    console.warn("[admin-reports] flags edge-cache purge failed:", e && e.message);
+    return false;
+  }
+}
+
+/** Rebuild the flags:all KV blob AND purge its edge-cached copy,
+ *  so website search and bot search see the new state on the next
+ *  request instead of up to 1 h later. The rebuild still throws on
+ *  failure (the existing E_FLAGS_REBUILD handling); the purge never
+ *  throws. Also writes the static-rebuild marker (v4.8.65): the
+ *  static catalog (site/telegram shards) is a daily snapshot, so
+ *  the realtime-trigger cron reads `flags:rebuild-requested` and
+ *  dispatches the static rebuild workflow when it is newer than
+ *  the last dispatch. The marker write is best-effort and never
+ *  throws — a missed marker degrades to the next daily sync.
+ *  Every flag/hide/unhide decision in this file must go through
+ *  this helper, never through rebuildFlagsAll directly. */
+async function rebuildFlagsAllAndPurge(kv) {
+  await rebuildFlagsAll(kv);
+  await purgeFlagsEdgeCache();
+  try {
+    await kv.put(STATIC_REBUILD_MARKER_KEY, new Date().toISOString());
+  } catch (e) {
+    console.warn("[admin-reports] static-rebuild marker failed:", e && e.message);
+  }
+}
+
 /** True when KV list() is available — checked BEFORE any mutation
  *  that must rebuild flags:all, so a mutation is never half-done. */
 export function canList(kv) {
@@ -516,7 +574,7 @@ export async function decideReport(kv, rid, approve) {
       )),
     );
     try {
-      await rebuildFlagsAll(kv);
+      await rebuildFlagsAllAndPurge(kv);
     } catch (e) {
       return { ok: false, error: "E_FLAGS_REBUILD", status: 502, partial: true, report: decided };
     }
@@ -543,7 +601,7 @@ export async function unflagBook(kv, handle, postId) {
     JSON.stringify(ledgerEntry("unflag", "panel unflag", `manual:${OWNER_TG_ID}`)),
   );
   try {
-    await rebuildFlagsAll(kv);
+    await rebuildFlagsAllAndPurge(kv);
   } catch (e) {
     return { ok: false, error: "E_FLAGS_REBUILD", status: 502, partial: true };
   }
@@ -572,7 +630,7 @@ export async function hideBook(kv, handle, postId) {
     JSON.stringify(ledgerEntry("hide", "owner hide", `manual:${OWNER_TG_ID}`)),
   );
   try {
-    await rebuildFlagsAll(kv);
+    await rebuildFlagsAllAndPurge(kv);
   } catch (e) {
     return { ok: false, error: "E_FLAGS_REBUILD", status: 502, partial: true };
   }
@@ -598,7 +656,7 @@ export async function unhideBook(kv, handle, postId) {
     JSON.stringify(ledgerEntry("unhide", "panel unhide", `manual:${OWNER_TG_ID}`)),
   );
   try {
-    await rebuildFlagsAll(kv);
+    await rebuildFlagsAllAndPurge(kv);
   } catch (e) {
     return { ok: false, error: "E_FLAGS_REBUILD", status: 502, partial: true };
   }
@@ -670,6 +728,15 @@ export async function onRequest(context) {
     result = await hideBook(kv, body.handle, body.postId);
   } else if (action === "unhide") {
     result = await unhideBook(kv, body.handle, body.postId);
+  } else if (action === "purge-flags-cache") {
+    // The bot's rebuildFlagsAll calls this after every flag/hide/
+    // unhide decision it makes directly in KV: the bot Worker runs
+    // on workers.dev and cannot purge this zone's edge cache itself,
+    // so it asks this endpoint (owner-fingerprint-gated, same as
+    // every other POST here) to delete the entry in the Pages
+    // runtime. Never fails the caller — a missed purge degrades to
+    // the old ≤1 h staleness, never to a wrong decision.
+    result = { ok: true, purged: await purgeFlagsEdgeCache() };
   } else {
     return json({ ok: false, error: "E_BAD_ACTION" }, 400);
   }
