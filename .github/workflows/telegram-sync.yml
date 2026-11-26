@@ -5,6 +5,14 @@
 # through the _redirects rewrite at the repo root).
 #
 # Schedule: daily at 03:00 UTC, plus manual runs (workflow_dispatch).
+# Flag filter (v4.8.65): the "Build the static site" step fetches the
+# live flags:all blob from KV (repo secrets CLOUDFLARE_API_TOKEN,
+# CLOUDFLARE_ACCOUNT_ID, RLIBOOK_KV_ID — the same token the realtime
+# workflow used for KV before the DO migration) and passes it to
+# `tbi export-static --flags-json`, so flagged/hidden books never
+# reach the static catalog. A failed fetch FAILS the step on purpose:
+# an unfiltered export would re-publish flagged books, and the
+# failure step keeps the last-good site live.
 # The job is --backfill: new posts first, then ONE block of 3000 posts
 # below the oldest indexed post per channel per run, so the deep history
 # beyond the local run's 3000-post cap fills in gradually over successive
@@ -113,8 +121,25 @@ jobs:
         run: tbi index --backfill --backfill-block 3000
 
       - name: Build the static site (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
         run: |
-          tbi export-static --db index.db --out ../site/telegram.new --report index-report.md
+          # Flag filter (v4.8.65): fetch the live flags:all blob from
+          # KV — 3 tries, then FAIL the step rather than export
+          # unfiltered (see the header comment). The blob is the
+          # {"flagged": [...], "hidden": [...]} shape the bot keeps.
+          for i in 1 2 3; do
+            if curl -fsS --max-time 20 \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values/flags:all" \
+              -o flags.json; then break; fi
+            echo "flags:all fetch attempt $i failed — retrying"
+            sleep $((i * 10))
+          done
+          test -s flags.json || { echo "::error::flags:all fetch failed after 3 attempts — refusing an unfiltered export"; exit 1; }
+          tbi export-static --db index.db --out ../site/telegram.new --report index-report.md --flags-json flags.json
           # Job default cwd is telegram/ (see defaults above), so newest
           # needs PYTHONPATH=.. to find the telegram package at repo root.
           # Protection layer for newest.json (the /new page's feed):
