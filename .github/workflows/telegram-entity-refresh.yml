@@ -1,0 +1,91 @@
+# Entity-cache refresh — weekly full sweep (sync-fix v2, 2026-11-24).
+#
+# Re-resolves every STALE entity-cache entry (older than 30 days,
+# oldest first) inside a bounded budget (default 100), using the
+# REALTIME session under the DO lease — so it can never run at the
+# same time as a realtime scan (same session, same account). This is
+# the FULL sweep behind live_sync's opportunistic refresh (a few
+# stale entries per run from its leftover budget); the weekly job
+# catches entries the in-run path never reaches.
+#
+# The workflow commits entity-cache.json ONLY when it changed, and
+# regenerates telegram/sql/entities.sql alongside (the D1 entities
+# table's source; applying it to D1 stays a manual owner step via
+# wrangler). A resolve flood stops the run with exit 1 and keeps
+# the partial refresh — the next week retries the rest.
+#
+# Secrets: TELEGRAM_API_ID, TELEGRAM_API_HASH,
+# TELEGRAM_SESSION_STRING (realtime session — borrowed sequentially,
+# never simultaneously), LIVE_SYNC_TOKEN (DO lease).
+name: telegram-entity-refresh
+
+on:
+  schedule:
+    # Sundays 04:00 UTC — off-peak: after the daily sync's 03:00
+    # start, and the realtime runs that hour are short (the lease
+    # serialises any overlap anyway). This is the ONLY YAML schedule
+    # in the sync family that stays: it is a weekly job, not a
+    # second trigger for the 10-minute realtime loop.
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: "Max fresh resolves this run"
+        required: false
+        default: "100"
+
+concurrency:
+  group: kindle-opds-static-telegram-entity-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: telegram/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh stale entity-cache entries
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+          LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
+        run: python -m tbi.entity_refresh --config channels.yaml --budget "${{ inputs.budget || '100' }}"
+
+      - name: Commit cache + entities SQL when changed
+        if: always()
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cd telegram
+          if [ -f entity-cache.json ]; then
+            python3 -m tbi.d1_entities export --cache entity-cache.json --out sql/entities.sql || echo "::warning::entities.sql regeneration failed — committing the cache without it"
+          fi
+          cd ..
+          git add telegram/entity-cache.json telegram/sql/entities.sql 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "entity-refresh: no change — nothing to commit"
+            exit 0
+          fi
+          git commit -m "[entity-refresh] weekly cache refresh"
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — check the output; do not force-push."; exit 1; }
+          git push
