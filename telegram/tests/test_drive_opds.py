@@ -117,3 +117,93 @@ def test_main_nav_feed_merges_existing_libraries(monkeypatch, tmp_path):
     assert rc2 == 0
     nav = (out / "index.xml").read_text(encoding="utf-8")
     assert "Oriental Music" in nav and "B Library" in nav
+
+
+def _run_all(monkeypatch, tmp_path, registry, batch_files):
+    """Run drive_opds.py --all with the given batch-dir contents.
+
+    batch_files: {filename: text-or-object} under d1-batches-drive/.
+    Returns (rc, out_dir, counts_path).
+    """
+    batch_dir = tmp_path / "d1-batches-drive"
+    batch_dir.mkdir()
+    for name, content in batch_files.items():
+        p = batch_dir / name
+        p.write_text(content if isinstance(content, str)
+                     else json.dumps(content, ensure_ascii=False),
+                     encoding="utf-8")
+    reg_path = tmp_path / "drive-libraries.json"
+    reg_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "drive"
+    counts = tmp_path / "counts.json"
+    monkeypatch.setattr(sys, "argv", [
+        "drive_opds.py", "--all",
+        "--registry", str(reg_path), "--batch-dir", str(batch_dir),
+        "--out", str(out), "--counts-out", str(counts),
+    ])
+    return drive_opds.main(), out, counts
+
+
+def test_all_merges_two_public_libraries_and_excludes_private(monkeypatch, tmp_path):
+    """--all writes ONE combined search index (the single-library
+    path overwrites it with one library) + both feeds, and a private
+    library never appears (Build 2)."""
+    from d1_sync import batch_sql
+
+    other_books = [{
+        "title": "كتاب آخر", "author": "", "source": f"drive:{OTHER}",
+        "kind": "drive", "ext": "pdf", "size": "1 KB", "date": "2025-01-01",
+        "url": "https://drive.google.com/file/d/FILEOTHER12345678/view",
+        "filename": "other.pdf", "file_id": "FILEOTHER12345678"}]
+    sql, _ = batch_sql(other_books, 1)
+    priv_folder = "PRIVLIB12345678901234"
+    priv_books = [dict(BOOKS[0], folder_id=priv_folder,
+                       library_title="Private Lib",
+                       file_id="FILEPRIV1234567890", title="كتاب خاص")]
+    rc, out, counts = _run_all(monkeypatch, tmp_path,
+        {"libraries": [
+            {"folder_id": FOLDER, "title": "Oriental Music", "visibility": "public"},
+            {"folder_id": OTHER, "title": "B Library", "visibility": "public"},
+            {"folder_id": priv_folder, "title": "Private Lib",
+             "visibility": "private"},
+        ]},
+        {f"drive-{FOLDER[:12]}-books.json": BOOKS,
+         f"drive-{OTHER[:12]}.sql": sql,
+         f"drive-{priv_folder[:12]}-books.json": priv_books})
+    assert rc == 0
+    index = json.loads((out / "search-index.json").read_text(encoding="utf-8"))
+    titles = [r["t"] for r in index]
+    assert "نزهة الزمان" in titles and "كتاب آخر" in titles
+    assert "كتاب خاص" not in titles
+    nav = (out / "index.xml").read_text(encoding="utf-8")
+    assert "Oriental Music" in nav and "B Library" in nav
+    assert "Private Lib" not in nav
+    assert "كتاب آخر" in (out / OTHER / "index.xml").read_text(encoding="utf-8")
+    assert not (out / priv_folder).exists()
+    counts_data = json.loads(counts.read_text(encoding="utf-8"))
+    assert counts_data == {FOLDER: 1, OTHER: 1}
+
+
+def test_all_skips_library_without_artifacts(monkeypatch, tmp_path):
+    """A public library with no books JSON / batch SQL is warned
+    about and skipped — the other libraries still publish."""
+    rc, out, _ = _run_all(monkeypatch, tmp_path,
+        {"libraries": [
+            {"folder_id": FOLDER, "title": "Oriental Music", "visibility": "public"},
+            {"folder_id": OTHER, "title": "Ghost Lib", "visibility": "public"},
+        ]},
+        {f"drive-{FOLDER[:12]}-books.json": BOOKS})
+    assert rc == 0
+    index = json.loads((out / "search-index.json").read_text(encoding="utf-8"))
+    assert len(index) == 1 and index[0]["t"] == "نزهة الزمان"
+    assert "Ghost Lib" not in (out / "index.xml").read_text(encoding="utf-8")
+
+
+def test_all_no_public_books_exits_2(monkeypatch, tmp_path):
+    rc, out, _ = _run_all(monkeypatch, tmp_path,
+        {"libraries": [
+            {"folder_id": FOLDER, "title": "Oriental Music", "visibility": "private"},
+        ]},
+        {f"drive-{FOLDER[:12]}-books.json": BOOKS})
+    assert rc == 2
+    assert not (out / "search-index.json").exists()

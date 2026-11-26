@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tbi"))
 
 from drive_health import check_library, load_state, sql_escape  # noqa: E402
 from drive_index import (  # noqa: E402
-    BOOK_EXTS, FOLDER_MIME, list_recursive, parse_drive_folder_id, to_book,
+    BOOK_EXTS, FOLDER_MIME, list_recursive, parse_drive_folder_id,
+    strip_transaction_statements, to_book,
 )
 
 
@@ -132,3 +133,77 @@ def test_load_state_dedups(tmp_path):
 def test_sql_escape():
     assert sql_escape("o'clock") == "'o''clock'"
     assert "pdf" in BOOK_EXTS and "exe" not in BOOK_EXTS
+
+
+def test_strip_transaction_statements():
+    sql = ("BEGIN TRANSACTION;\n"
+           "INSERT INTO books VALUES (1,'BEGIN TRANSACTION; inside a title','x');\n"
+           "SAVEPOINT sp1;\n"
+           "COMMIT;\n")
+    out = strip_transaction_statements(sql)
+    lines = out.splitlines()
+    # Whole transaction lines are dropped; the INSERT survives ...
+    assert len(lines) == 1 and lines[0].startswith("INSERT INTO books")
+    # ... including a title that merely CONTAINS the words.
+    assert "BEGIN TRANSACTION; inside a title" in out
+    assert not any(l.strip().upper().startswith(("SAVEPOINT ", "RELEASE "))
+                   for l in lines)
+
+
+def test_main_no_transaction_writes_wrangler_ready_sql(monkeypatch, tmp_path):
+    """--no-transaction: the emitted batch has no BEGIN/COMMIT, so
+    `wrangler d1 execute` accepts it (Build 1 import path)."""
+    import json
+    import sys
+    import drive_index
+
+    folder = "ROOTFOLDER1234567890"
+    tree = {folder: [
+        {"id": "F1", "name": "كتاب واحد.pdf", "mimeType": "application/pdf",
+         "size": "1000", "modifiedTime": "2024-01-02T00:00:00.000Z"},
+    ]}
+    monkeypatch.setattr(drive_index, "HttpDriveClient",
+                        lambda **kw: FakeDrive(tree))
+    out_dir = tmp_path / "batches"
+    reg = tmp_path / "drive-libraries.json"
+    monkeypatch.setattr(sys, "argv", ["drive_index.py",
+        "--client", "http", "--folder", folder,
+        "--out-dir", str(out_dir), "--state-file", str(tmp_path / "s.jsonl"),
+        "--start-id", "100", "--submitter-tg-id", "111",
+        "--visibility", "private", "--registry-json", str(reg),
+        "--no-transaction"])
+    assert drive_index.main() == 0
+    sql = (out_dir / f"drive-{folder[:12]}.sql").read_text(encoding="utf-8")
+    assert "BEGIN TRANSACTION" not in sql and "COMMIT;" not in sql
+    assert "INSERT OR IGNORE INTO books" in sql
+    books = json.loads((out_dir / f"drive-{folder[:12]}-books.json")
+                       .read_text(encoding="utf-8"))
+    assert len(books) == 1 and books[0]["title"] == "كتاب واحد"
+    reg_data = json.loads(reg.read_text(encoding="utf-8"))
+    assert reg_data["libraries"][0]["visibility"] == "private"
+    assert reg_data["libraries"][0]["submitted_by"] == 111
+
+
+def test_main_max_books_refuses_without_writing(monkeypatch, tmp_path):
+    """--max-books: an oversized folder writes nothing (exit 4)."""
+    import sys
+    import drive_index
+
+    folder = "ROOTFOLDER1234567890"
+    tree = {folder: [
+        {"id": "F1", "name": "a.pdf", "mimeType": "application/pdf",
+         "size": "1", "modifiedTime": "2024-01-02T00:00:00.000Z"},
+        {"id": "F2", "name": "b.pdf", "mimeType": "application/pdf",
+         "size": "1", "modifiedTime": "2024-01-02T00:00:00.000Z"},
+        {"id": "F3", "name": "c.pdf", "mimeType": "application/pdf",
+         "size": "1", "modifiedTime": "2024-01-02T00:00:00.000Z"},
+    ]}
+    monkeypatch.setattr(drive_index, "HttpDriveClient",
+                        lambda **kw: FakeDrive(tree))
+    out_dir = tmp_path / "batches"
+    monkeypatch.setattr(sys, "argv", ["drive_index.py",
+        "--client", "http", "--folder", folder,
+        "--out-dir", str(out_dir), "--start-id", "100",
+        "--max-books", "2"])
+    assert drive_index.main() == 4
+    assert not out_dir.exists() or not list(out_dir.iterdir())

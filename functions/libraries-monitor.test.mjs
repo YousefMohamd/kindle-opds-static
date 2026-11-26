@@ -91,7 +91,12 @@ function mockD1(sqlite) {
 }
 function mockKV(entries = {}) {
   const m = new Map(Object.entries(entries));
-  return { get: async (k) => (m.has(k) ? m.get(k) : null) };
+  const kv = {
+    get: async (k) => (m.has(k) ? m.get(k) : null),
+    put: async (k, v) => { m.set(k, v); },
+  };
+  kv._map = m;
+  return kv;
 }
 const KV = mockKV({
   ["fp:" + FP_SUB]: JSON.stringify({ tg_id: 111, created_at: "2026-11-26" }),
@@ -175,6 +180,49 @@ const env = (db, extra = {}) => ({
   check("6c unknown folder -> 400", s2 === 400, `status=${s2}`);
   const { status: s3 } = await call(env(db), "/libraries/monitor", "POST", { action: "explode", folder_id: F_PEND, fp: FP_OWNER });
   check("6d unknown action -> 400", s3 === 400, `status=${s3}`);
+}
+
+// 7. Build 2: approve/reject writes the drive:surfaces-stale KV
+// marker (the telegram-drive sweep consumes it to regenerate the
+// public surfaces); a KV failure never fails the approve itself.
+{
+  const db = buildDb();
+  const kv = mockKV({
+    ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
+  });
+  const e = env(db, { RLIBOOK_KV: kv });
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_OWNER });
+  check("7a approve POST -> 303", status === 303, `status=${status}`);
+  const raw = kv._map.get("drive:surfaces-stale");
+  check("7b marker written", typeof raw === "string", `marker=${raw}`);
+  const marker = JSON.parse(raw || "{}");
+  check("7c marker carries folder + new visibility + title",
+    marker.folder_id === F_PEND && marker.visibility === "public" && marker.title === "مكتبة بانتظار",
+    JSON.stringify(marker));
+  check("7d marker carries the submitter", marker.submitter_tg_id === 111, JSON.stringify(marker));
+}
+{
+  const db = buildDb();
+  const kv = mockKV({
+    ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
+  });
+  const e = env(db, { RLIBOOK_KV: kv });
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "reject", folder_id: F_PEND, fp: FP_OWNER });
+  check("7e reject POST -> 303", status === 303, `status=${status}`);
+  const marker = JSON.parse(kv._map.get("drive:surfaces-stale") || "{}");
+  check("7f reject marker says private", marker.visibility === "private", JSON.stringify(marker));
+}
+{
+  const db = buildDb();
+  const kv = {
+    get: async (k) => (k === "fp:" + FP_OWNER ? JSON.stringify({ tg_id: OWNER_ID }) : null),
+    put: async () => { throw new Error("kv down"); },
+  };
+  const e = env(db, { RLIBOOK_KV: kv });
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_OWNER });
+  check("7g KV-down approve still 303s", status === 303, `status=${status}`);
+  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
+  check("7h KV-down approve still updates D1", row.visibility === "public", JSON.stringify(row));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

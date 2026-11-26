@@ -13,6 +13,17 @@
 //        to its submitter (never deleted, never hidden from them).
 //        The submitter sees the new status in the bot (/mylibraries,
 //        which reads /api/drive-libraries live).
+//        Build 2 (approve -> visible EVERYWHERE): the D1-backed
+//        surfaces (search, /api/drive-libraries, /mylibraries) update
+//        the moment this POST lands. The COMMITTED static surfaces
+//        (libraries page, OPDS feeds, drive/search-index.json) cannot
+//        be written from this Function, so the POST also writes a
+//        `drive:surfaces-stale` KV marker {folder_id, title,
+//        visibility, submitter_tg_id, at} — the telegram-drive sweep
+//        consumes it (re-syncs drive-libraries.json from D1, or
+//        applies this payload when the D1 read fails), regenerates
+//        the public surfaces and commits them. Best-effort: a KV
+//        failure never fails the approve itself — D1 is the truth.
 //
 // Auth (either — the owner already has both):
 //   * ?fp= — the owner's catalog fingerprint, verified against KV
@@ -126,7 +137,7 @@ export async function onRequest(context) {
     // The UPDATE affects 0 rows for an unknown folder — check first so
     // a typo does not silently "succeed" (WAVE 4, WS8 monitor test 6c).
     const existing = await db.prepare(
-      "SELECT folder_id FROM drive_libraries WHERE folder_id = ?",
+      "SELECT folder_id, title, submitter_tg_id FROM drive_libraries WHERE folder_id = ?",
     ).bind(folderId).first();
     if (!existing) return new Response("unknown folder_id", { status: 400 });
     try {
@@ -136,6 +147,22 @@ export async function onRequest(context) {
     } catch (e) {
       return new Response("registry update failed — is the drive_libraries table applied?", { status: 500 });
     }
+    // Build 2: tell the telegram-drive sweep the static surfaces
+    // are stale. Best-effort — the D1 update above already landed,
+    // and the sweep re-syncs from D1 anyway; a KV failure here must
+    // never turn a successful approve into an error.
+    try {
+      const kv = env && env.RLIBOOK_KV;
+      if (kv && typeof kv.put === "function") {
+        await kv.put("drive:surfaces-stale", JSON.stringify({
+          folder_id: folderId,
+          title: existing.title || "",
+          visibility,
+          submitter_tg_id: existing.submitter_tg_id ?? null,
+          at: now,
+        }));
+      }
+    } catch (e) { /* marker is best-effort; D1 is the truth */ }
     // POST-redirect-GET: back to the list, keeping the same auth.
     const back = new URL("/libraries/monitor", url.origin);
     if (get("fp")) back.searchParams.set("fp", get("fp"));

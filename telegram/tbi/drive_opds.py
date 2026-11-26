@@ -36,6 +36,9 @@ Usage:
   python3 telegram/tbi/drive_opds.py --batch-sql d1-batches-drive/drive-1EFegWouzH4C.sql \
       --library-title "Oriental Music" --folder 1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP \
       --visibility public --out drive
+  # Rebuild ALL public libraries at once (sweep + approve flow):
+  python3 telegram/tbi/drive_opds.py --all --registry drive-libraries.json \
+      --batch-dir d1-batches-drive --out drive --counts-out /tmp/drive-counts.json
 """
 
 from __future__ import annotations
@@ -146,6 +149,74 @@ def registry_visibility(registry: dict, folder_id: str) -> str:
     return "public"
 
 
+def public_libraries(registry: dict) -> list[dict]:
+    """Registry entries that may enter the static surfaces (public + active)."""
+    out = []
+    for e in registry.get("libraries", []):
+        if (e.get("visibility") or "public").strip().lower() != "public":
+            continue
+        if e.get("status", "active") != "active":
+            continue
+        out.append(e)
+    return out
+
+
+def load_library_books(folder_id: str, batch_dir: Path) -> list[dict] | None:
+    """Books for one library from its committed artifacts.
+
+    Prefers the books JSON drive_index.py writes; falls back to
+    parsing the D1 batch SQL back (the Oriental Music backfill path).
+    Returns None when neither artifact exists (caller warns + skips
+    the library rather than failing the whole regeneration).
+    """
+    books_json = batch_dir / f"drive-{folder_id[:12]}-books.json"
+    if books_json.exists():
+        books = json.loads(books_json.read_text(encoding="utf-8"))
+        for b in books:
+            b.setdefault("folder_id", folder_id)
+        return books
+    batch_sql = batch_dir / f"drive-{folder_id[:12]}.sql"
+    if batch_sql.exists():
+        books = parse_drive_books_sql(batch_sql)
+        for b in books:
+            b["folder_id"] = folder_id
+        return books
+    return None
+
+
+def write_all_public(out_dir: Path, libs: list[dict]) -> dict:
+    """Write the full public surface set for the given libraries.
+
+    ``libs`` is [{folder_id, title, books}] — public only. Writes the
+    COMBINED search-index.json (every public book — the single-library
+    path overwrites this file with one library, so a multi-library
+    catalog must go through here), one acquisition feed per library,
+    and the navigation feed listing all of them. Returns
+    {folder_id: book count} for the libraries page.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    all_rows: list[dict] = []
+    counts: dict[str, int] = {}
+    nav_libs: list[dict] = []
+    for lib in sorted(libs, key=lambda l: (l["title"] or l["folder_id"]).lower()):
+        folder_id = lib["folder_id"]
+        books = lib["books"]
+        rows = search_index_entries(books)
+        all_rows.extend(rows)
+        counts[folder_id] = len(rows)
+        lib_dir = out_dir / folder_id
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        (lib_dir / "index.xml").write_text(
+            acquisition_feed(folder_id, lib["title"], books), encoding="utf-8")
+        nav_libs.append({"folder_id": folder_id, "title": lib["title"],
+                         "count": len(rows)})
+    (out_dir / "search-index.json").write_text(
+        json.dumps(all_rows, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "index.xml").write_text(
+        navigation_feed(nav_libs), encoding="utf-8")
+    return counts
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--books", default="",
@@ -160,7 +231,51 @@ def main() -> int:
                     choices=["", "public", "private", "pending_public"],
                     help="override the registry visibility for this library")
     ap.add_argument("--out", default="drive")
+    # --all (Drive sweep / approve flow, Build 2): rebuild EVERY
+    # public library's surfaces at once from the committed artifacts
+    # in --batch-dir, instead of one library's. A single-library run
+    # overwrites drive/search-index.json with that library alone, so
+    # it silently drops every other public library from the combined
+    # search index — --all is the only correct multi-library path.
+    ap.add_argument("--all", action="store_true",
+                    help="rebuild all PUBLIC libraries' surfaces from "
+                         "--batch-dir (books JSONs, else batch SQL)")
+    ap.add_argument("--batch-dir", default="d1-batches-drive",
+                    help="dir holding drive-<folder12>-books.json / .sql "
+                         "(with --all)")
+    ap.add_argument("--counts-out", default="",
+                    help="also write {folder_id: book count} JSON here "
+                         "(for generate-libraries.py --drive-counts)")
     args = ap.parse_args()
+
+    if args.all:
+        registry = load_registry(Path(args.registry)) if Path(args.registry).exists() else {"libraries": []}
+        libs = []
+        for entry in public_libraries(registry):
+            folder_id = entry.get("folder_id") or ""
+            books = load_library_books(folder_id, Path(args.batch_dir))
+            if books is None:
+                print(f"WARNING: no books JSON or batch SQL for public library "
+                      f"{folder_id} in {args.batch_dir} — skipping it.",
+                      file=sys.stderr)
+                continue
+            title = entry.get("title") or (books[0].get("library_title") if books else "") or folder_id
+            for b in books:
+                b.setdefault("library_title", title)
+            libs.append({"folder_id": folder_id, "title": title, "books": books})
+        if not libs:
+            print("ERROR: no public library with books found — nothing written.",
+                  file=sys.stderr)
+            return 2
+        counts = write_all_public(Path(args.out), libs)
+        if args.counts_out:
+            Path(args.counts_out).write_text(
+                json.dumps(counts, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"Wrote {args.counts_out} ({len(counts)} libraries)")
+        total = sum(counts.values())
+        print(f"Wrote {args.out}/search-index.json ({total} books, "
+              f"{len(libs)} libraries), feeds + {args.out}/index.xml")
+        return 0
 
     if args.books:
         books = json.loads(Path(args.books).read_text(encoding="utf-8"))

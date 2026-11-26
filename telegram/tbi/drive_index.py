@@ -106,6 +106,32 @@ def human_size(n: int) -> str:
     return f"{n:.1f} TB"
 
 
+def strip_transaction_statements(sql: str) -> str:
+    """Drop explicit transaction statements from emitted batch SQL.
+
+    ``batch_sql`` wraps every batch in ``BEGIN TRANSACTION;`` ...
+    ``COMMIT;`` (correct for local SQLite / the one-shot delta), but
+    ``wrangler d1 execute --remote`` REJECTS explicit transaction
+    statements — observed live 2026-11-26 (telegram-d1-incremental
+    run 45821910503, wrangler 4.168.0): the whole file is refused
+    before any statement runs. Same semantics as
+    ``d1_incremental.strip_transaction`` (the canonical twin — keep
+    the two in sync): only whole lines that ARE a transaction
+    statement are dropped, so a title containing the words inside an
+    INSERT line is untouched. The Drive sweep (telegram-drive.yml)
+    imports batches with wrangler, so it passes --no-transaction.
+    """
+    drop = ("BEGIN TRANSACTION;", "COMMIT;")
+    kept = []
+    for line in sql.splitlines():
+        s = line.strip().upper()
+        if s in drop or s.startswith("SAVEPOINT ") or s.startswith("RELEASE "):
+            continue
+        kept.append(line)
+    out = "\n".join(kept)
+    return out + "\n" if sql.endswith("\n") else out
+
+
 class DriveError(Exception):
     pass
 
@@ -291,6 +317,20 @@ def main() -> int:
     ap.add_argument("--registry-json", default="",
                     help="also upsert this library into a drive-libraries.json "
                          "file (default: skip — pass the repo file to update it)")
+    # Drive sweep (telegram-drive.yml, Build 1): the sweep imports the
+    # batch with `wrangler d1 execute --remote`, which refuses explicit
+    # transaction statements — --no-transaction strips them from the
+    # emitted file (see strip_transaction_statements). --max-books
+    # refuses an oversized library BEFORE writing anything, so a
+    # giant folder never eats the shared D1 daily write budget
+    # (100k rows/day) in one unattended run; the sweep defers it for
+    # a manual import instead.
+    ap.add_argument("--no-transaction", action="store_true",
+                    help="strip BEGIN TRANSACTION;/COMMIT; from the batch "
+                         "SQL so wrangler d1 execute accepts it")
+    ap.add_argument("--max-books", type=int, default=0,
+                    help="refuse (exit 4, write nothing) when the folder "
+                         "holds more than this many book files (0 = no cap)")
     args = ap.parse_args()
 
     folder_id = parse_drive_folder_id(args.folder)
@@ -348,7 +388,15 @@ def main() -> int:
         print(f"Books that would be indexed: {len(books)}")
         return 0
 
+    if args.max_books and len(books) > args.max_books:
+        print(f"ERROR: folder holds {len(books)} book files, over --max-books "
+              f"{args.max_books} — refusing to write; import manually.",
+              file=sys.stderr)
+        return 4
+
     sql, _ = batch_sql(books, args.start_id)
+    if args.no_transaction:
+        sql = strip_transaction_statements(sql)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / f"drive-{folder_id[:12]}.sql"
