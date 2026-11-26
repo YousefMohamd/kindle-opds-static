@@ -112,7 +112,7 @@
 
 <div class="card">
   <h2>المكتبات</h2>
-  <p id="tgcount">223 مكتبة — 408,541 كتاب مميز، 601,739 ملف — من قنوات
+  <p id="tgcount">223 مكتبة — 408,536 كتاب مميز، 601,739 ملف — من قنوات
   وجروبات تيليجرام العامة.</p>
   <a class="btn" href="/telegram/libraries.html">تصفّح المكتبات ←</a>
   <a class="btn" href="/telegram/">🔍 ابحث في الكتب</a>
@@ -666,7 +666,7 @@ qEl.addEventListener("input", function () {
 // from site/telegram/index.json by scripts/refresh-counts.py — run
 // it after each manifest regeneration (the daily telegram-sync
 // workflow runs it with the new staging manifest). Never edit the
-// numbers by hand. Manifest used here: generated 2026-11-25T12:06:22.394280+00:00.
+// numbers by hand. Manifest used here: generated 2026-11-26T07:07:32.229450+00:00.
 fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(function (d) {
   var t = d.totals || {};
   if (t.sources && t.books) {
