@@ -1,0 +1,191 @@
+# Static catalog rebuild on flag change (v4.8.65).
+#
+# Trigger: the realtime-trigger cron dispatches this workflow
+# (workflow_dispatch) when the `flags:rebuild-requested` KV marker —
+# written by the bot (src/flags-purge.ts) and by the website admin
+# endpoint (functions/api/admin-reports.js) on every flag/hide/unhide
+# decision — is newer than the last dispatch. It re-runs ONLY the
+# static export (no re-indexing), so a flagged/hidden book leaves
+# the static catalog (site/telegram shards + newest.json) within
+# ~15 minutes instead of waiting for the 03:00 UTC daily sync.
+#
+# Shares telegram-sync's concurrency group so it never overlaps the
+# daily sync: both write site/telegram/ and the seed, and an overlap
+# would corrupt the publish. cancel-in-progress is false, so a
+# rebuild waits for a running sync (and vice versa) instead of
+# killing it.
+#
+# Safety: the export is flag-filtered (see the fetch step — a failed
+# flags fetch FAILS the run rather than exporting unfiltered), the
+# site is built in staging and validated before publish, and the
+# last-good site stays live on any failure. On success the marker
+# is deleted (best-effort: if the delete fails the marker stays and
+# the cron dispatches another, idempotent rebuild next run).
+#
+# Upload: this file goes to .github/workflows/ via the GitHub web UI
+# (workflow files cannot be pushed by any token). After it lands,
+# add step 11 to the rlibook-realtime-trigger cron (see the cron
+# step text in the flags-fix report).
+name: telegram-static-rebuild
+
+on:
+  workflow_dispatch:
+
+# Never overlap telegram-sync: both publish site/telegram + the seed.
+concurrency:
+  group: kindle-opds-static-telegram-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decompress the seed DB
+        run: |
+          if ls index.db.gz.part-* 1>/dev/null 2>&1; then
+            # v0.6.0: the seed is split into 20 MB parts (each under
+            # Cloudflare Pages' 25 MB per-file limit); reassemble them
+            # first, then decompress as before. The glob expands in
+            # sorted order (part-aa, part-ab, ...), which is the
+            # correct order for `split` output.
+            cat index.db.gz.part-* > index.db.gz
+            gunzip -f index.db.gz
+          elif [ -f index.db.gz ]; then
+            gunzip -f index.db.gz
+          elif [ -f index.db ]; then
+            echo "No index.db.gz — using the raw index.db (transition; it will be compressed on publish)."
+          else
+            echo "::error::telegram/index.db.gz is missing — the scheduled job cannot start without the seed index (push it first, see telegram/PUSH_GUIDE.md)."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the indexer
+        run: pip install -e .
+
+      - name: Seed check
+        run: |
+          if [ ! -f index.db ]; then
+            echo "::error::telegram/index.db is missing (expected telegram/index.db.gz in the repo, decompressed above) — the scheduled job cannot start without the seed index (push it first, see telegram/PUSH_GUIDE.md)."
+            exit 1
+          fi
+
+      - name: Fetch flags + build the static site (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: |
+          # Flag filter (v4.8.65): fetch the live flags:all blob from
+          # KV — 3 tries, then FAIL the run rather than export
+          # unfiltered (an unfiltered export would re-publish the
+          # flagged books this rebuild exists to remove).
+          for i in 1 2 3; do
+            if curl -fsS --max-time 20 \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values/flags:all" \
+              -o flags.json; then break; fi
+            echo "flags:all fetch attempt $i failed — retrying"
+            sleep $((i * 10))
+          done
+          test -s flags.json || { echo "::error::flags:all fetch failed after 3 attempts — refusing an unfiltered export"; exit 1; }
+          tbi export-static --db index.db --out ../site/telegram.new --report index-report.md --flags-json flags.json
+          # Job default cwd is telegram/ (see defaults above), so newest
+          # needs PYTHONPATH=.. to find the telegram package at repo root.
+          # Same newest.json protection layer as telegram-sync: RETRY
+          # twice, VALIDATE (valid JSON, non-empty books, generated
+          # TODAY), FALLBACK to the previous newest.json — never publish
+          # a broken feed. Non-blocking throughout: a newest.json
+          # failure must never kill the rebuild.
+          PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
+            || PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
+            || echo "newest.json regeneration failed twice — keeping the previous newest.json"
+          python3 - <<'PYEOF' || true
+          import json, shutil
+          from datetime import datetime, timezone
+          from pathlib import Path
+          new = Path("../site/telegram.new/newest.json")
+          prev = Path("../site/telegram/newest.json")
+          today = datetime.now(timezone.utc).date().isoformat()
+          ok = False
+          try:
+              data = json.loads(new.read_text(encoding="utf-8"))
+              books = data.get("books")
+              gen = str(data.get("generated_at", ""))[:10]
+              n = len(books) if isinstance(books, list) else -1
+              ok = isinstance(books, list) and len(books) > 0 and gen == today
+              print(f"newest.json check: books={n}, generated_at={gen!r}, today={today}, valid={ok}")
+          except Exception as exc:
+              print(f"newest.json check FAILED ({exc}) — treating as invalid")
+          if not ok:
+              if prev.is_file():
+                  shutil.copyfile(prev, new)
+                  print("newest.json invalid — restored the previous newest.json into staging")
+              elif new.is_file():
+                  new.unlink()
+                  print("newest.json invalid and no previous file exists — removed the bad file so nothing broken is published")
+              else:
+                  print("newest.json missing and no previous file exists — /new will show its honest empty message")
+          PYEOF
+          cp ../site/telegram/index.html ../site/telegram.new/index.html
+          # Refresh the static fallback counts on the home page from
+          # the NEW staging manifest (not the old live one), and
+          # regenerate the libraries list from it too (same as
+          # telegram-sync).
+          python3 ../scripts/refresh-counts.py --manifest ../site/telegram.new/index.json
+          python3 ../scripts/generate-libraries.py --manifest ../site/telegram.new/index.json --out ../site/telegram.new/libraries.html
+          ls -la ../site/telegram.new
+
+      - name: Validate before publish
+        run: tbi validate --db index.db --json ../site/telegram.new/index.json
+
+      - name: Publish atomically
+        working-directory: .
+        run: |
+          rm -rf site/telegram
+          mv site/telegram.new site/telegram
+          # Compress the seed before committing: the repo stores ONLY
+          # the split parts (see telegram-sync). Re-compress + re-split
+          # even though the DB is unchanged — the publish must leave
+          # the seed exactly as it found it.
+          gzip -f telegram/index.db
+          rm -f telegram/index.db.gz.part-*
+          split -b 20M telegram/index.db.gz telegram/index.db.gz.part-
+          rm -f telegram/index.db.gz
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add telegram/index.db.gz.part-* telegram/index-report.md site/telegram/ index.html
+          git rm --cached telegram/index.db 2>/dev/null || true
+          git rm --cached telegram/index.db.gz 2>/dev/null || true
+          git commit -m "[telegram-static-rebuild] rebuild after flag change" || echo "nothing to commit"
+          # Rebase before pushing (same as telegram-sync, v0.4.7):
+          # never force-push; a conflicting rebase fails loudly.
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the publish cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
+          git push
+
+      - name: Clear the rebuild marker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: |
+          # Best-effort: if the DELETE fails the marker stays and the
+          # cron dispatches another (idempotent) rebuild next run.
+          # Runs only when Publish succeeded (default step condition).
+          curl -fsS --max-time 20 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values/flags:rebuild-requested" \
+            && echo "rebuild marker cleared" \
+            || echo "::warning::marker delete failed — the cron will retry the rebuild"
