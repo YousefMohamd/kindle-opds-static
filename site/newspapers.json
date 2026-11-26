@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T08:43:48.179930+00:00",
+  "generated_at": "2026-11-26T08:53:56.430015+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 20,
+      "entries": 25,
       "detail": ""
     },
     {
@@ -28,7 +28,47 @@
       "detail": "private channel — the owner's join request is pending; this tool never joins"
     }
   ],
-  "egypt": [],
+  "egypt": [
+    {
+      "name": "الأهرام++",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135223",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135223,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الجمهورية",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135221",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135221,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "المصرى اليوم",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135222",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135222,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    }
+  ],
   "other": [
     {
       "name": "الأنباء",
@@ -145,6 +185,19 @@
       "url": "https://t.me/Arabic_News_Papers/135214",
       "handle": "Arabic_News_Papers",
       "post_id": 135214,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الاخبار",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135220",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135220,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -265,6 +318,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "تقرير حادث الدائري",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135224",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135224,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "عرب تايمز",
       "country": "XX",
       "country_name": "غير محدد",
@@ -293,6 +359,12 @@
   ],
   "countries": [
     {
+      "code": "EG",
+      "name": "مصر",
+      "flag": "🇪🇬",
+      "count": 3
+    },
+    {
       "code": "KW",
       "name": "الكويت",
       "flag": "🇰🇼",
@@ -320,11 +392,13 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 14
+      "count": 16
     }
   ],
   "empty": false,
   "unmatched": [
+    "تقرير حادث الدائري",
+    "الاخبار",
     "العرب",
     "العربى الجديد",
     "Dt",
