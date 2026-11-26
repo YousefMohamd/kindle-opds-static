@@ -67,16 +67,21 @@ Success (200):
   NOT the catalog manifest total (326,149 books on 2026-11-14, and
   growing) — the two numbers must never be conflated. Present on
   every `ok: true` reply; omitted (not guessed) if the count fails.
-  **Caching (P0-2, 2026-11-15):** `indexed` comes from a KV cache
-  (`RLIBOOK_KV`, key `tg-search:coverage`, 1 h TTL), not from a
-  `COUNT(*)` on every request — a bare `COUNT(*)` scans ~150k rows
-  and ~30 searches/day would exhaust the 5M rows/day free tier. On
-  a cache miss (or a KV error / malformed value) the endpoint runs
-  the live `COUNT(*)` once and best-effort repopulates the cache.
-  The count changes once a day (the daily import), so a 1 h TTL is
-  at most 1 h stale. Without the `RLIBOOK_KV` binding the endpoint
-  simply runs the live count on every request (same as before).
-  The same key is also read by `/api/stats`
+  **Caching (P0-2, 2026-11-15; MAX(id) refresh, 2026-11-26):**
+  `indexed` comes from a KV cache (`RLIBOOK_KV`, key
+  `tg-search:coverage`, 6 h TTL), not from a live count on every
+  request. The refresh is `SELECT MAX(id) FROM books` — the PK
+  b-tree tip (~1 row), not a full-table `COUNT(*)` (~422k rows):
+  `books.id` is sequential, so MAX(id) tracks the row count within
+  the id gaps (live: 422,821 books at MAX(id) 422,850, gap 0.007%).
+  `indexed` is therefore an estimate, overstated by the gap. On a
+  cache miss (or a KV error / malformed value) the endpoint runs
+  the live `MAX(id)` once — only when the `d1:guard` flag and the
+  4-refreshes/day budget allow it — and best-effort repopulates the
+  cache. The count changes once a day (the daily import), so a 6 h
+  TTL is at most 6 h stale. Without the `RLIBOOK_KV` binding the
+  endpoint simply runs the live estimate on every request (same as
+  before). The same key is also read by `/api/stats`
   (functions/api/stats.js) for `books_d1.count`, so one cached
   count serves both endpoints.
 
@@ -124,11 +129,13 @@ primary flag gate.
 | **D1 + FTS5** | **Yes.** One small indexed query, ~10–100 rows read (5M/day free). Storage ~81 MB for 321k books (500 MB/database cap). The indexer already uses SQLite FTS5, so semantics match. |
 
 Free-tier numbers (Workers Free, verified 2026-11-12):
-- D1 reads: 5,000,000 rows/day — a search reads ~10–100 rows
-  (FTS MATCH + paged SELECT). The coverage `COUNT(*)` is a
-  full-table scan (~150k rows) and therefore does NOT run per
-  request: it is cached in KV for 1 h (see `coverage` above) and
-  runs at most 24 times/day.
+- D1 reads: 5,000,000 rows/day — a search reads ~2x its winning
+  tier's match set (one ranked FTS query + one COUNT only when the
+  page is full; small-result searches skip the COUNT — see
+  `d1Search` in tg-search.js). A common single word costs ~2x its
+  match set ("رواية" ~7,000 matches live -> ~14,000 rows/search).
+  The coverage refresh is `MAX(id)` (~1 row), cached in KV for
+  6 h (see `coverage` above), at most 4 times/day.
 - D1 writes: 100,000 rows/day — the **only** constraint, and only
   for the initial population (see below). Incremental sync is a few
   thousand rows/day and fits easily.

@@ -31,6 +31,14 @@
 //      match); mintTokenForBook own skips the flag gate + the mint
 //      caps but keeps the hidden check; /api/dl-token end-to-end
 //      with fp+t proving own.
+//  10. Service-key exemption (E_LIMIT Option A, 2026-11-26): a
+//      request with the right `Authorization: Bearer
+//      <DL_TOKEN_SERVICE_KEY>` skips the per-IP counter (a second
+//      fingerprint from the same IP still mints after the first
+//      spent its 5) while the per-fingerprint cap still binds
+//      (6th mint for one fp -> 429 mint_cap_user); a wrong key or
+//      an unset secret falls through to the normal IP-counted
+//      path; flag/hidden gates still refuse service mints.
 // Exit 0 = all pass; non-zero = failure. No network, no production
 // KV, no deploy. The signing key below is FAKE test data.
 
@@ -55,6 +63,8 @@ import {
   isPersonalBook,
   mintTokenForBook,
   READER_TOKEN_TTL_SECONDS,
+  timingSafeEqual,
+  isServiceKeyRequest,
 } from "./dl-token.js";
 
 let pass = 0;
@@ -102,15 +112,18 @@ function verifyHmac(token, key) {
   return JSON.parse(b64urlDecode(parts[1]));
 }
 
-async function call(params, env, ip = "1.2.3.4") {
+async function call(params, env, ip = "1.2.3.4", extraHeaders = {}) {
   const url = "https://rlibook.tech/api/dl-token?" + new URLSearchParams(params).toString();
   const res = await onRequest({
-    request: new Request(url, { method: "GET", headers: { "cf-connecting-ip": ip } }),
+    request: new Request(url, { method: "GET", headers: { "cf-connecting-ip": ip, ...extraHeaders } }),
     env,
   });
   const body = await res.json().catch(() => null);
   return { status: res.status, body, cache: res.headers.get("cache-control") };
 }
+
+const SVC_KEY = "svc-test-key-0123456789abcdef";
+const svcAuth = { Authorization: "Bearer " + SVC_KEY };
 
 // ================= 1. makeToken round-trip ===========================
 console.log("1. makeToken round-trip:");
@@ -542,6 +555,127 @@ console.log("9. Personal books (own flag + isPersonalBook):");
   check("9o GET with fp + wrong title -> 403 flagged (claim alone is not proof)",
     wrong.status === 403 && wrong.body && wrong.body.error === "flagged",
     "status " + wrong.status);
+}
+
+// ================= 10. Service-key exemption (E_LIMIT Option A) ======
+// A request with the right Bearer key skips the per-IP counter;
+// the per-fingerprint cap still binds; wrong key / unset secret
+// fall through to the normal path; flag + hidden gates still refuse.
+console.log("10. Service-key exemption (E_LIMIT Option A):");
+{
+  // timingSafeEqual units.
+  check("10a timingSafeEqual: equal strings -> true",
+    timingSafeEqual("abc123", "abc123") === true);
+  check("10a timingSafeEqual: different strings -> false",
+    timingSafeEqual("abc123", "abc124") === false);
+  check("10a timingSafeEqual: different lengths -> false",
+    timingSafeEqual("abc", "abcd") === false);
+  check("10a timingSafeEqual: non-strings -> false",
+    timingSafeEqual(null, "abc") === false && timingSafeEqual("abc", undefined) === false);
+  // isServiceKeyRequest units (a Request with headers only).
+  const req = (auth) => new Request("https://rlibook.tech/api/dl-token",
+    { headers: auth ? { Authorization: auth } : {} });
+  check("10b isServiceKeyRequest: right key -> true",
+    isServiceKeyRequest(req("Bearer " + SVC_KEY), { DL_TOKEN_SERVICE_KEY: SVC_KEY }) === true);
+  check("10b isServiceKeyRequest: wrong key -> false",
+    isServiceKeyRequest(req("Bearer wrong-key"), { DL_TOKEN_SERVICE_KEY: SVC_KEY }) === false);
+  check("10b isServiceKeyRequest: no header -> false",
+    isServiceKeyRequest(req(null), { DL_TOKEN_SERVICE_KEY: SVC_KEY }) === false);
+  check("10b isServiceKeyRequest: secret unset -> false (fail closed)",
+    isServiceKeyRequest(req("Bearer " + SVC_KEY), {}) === false);
+  check("10b isServiceKeyRequest: non-Bearer scheme -> false",
+    isServiceKeyRequest(req("Basic " + SVC_KEY), { DL_TOKEN_SERVICE_KEY: SVC_KEY }) === false);
+}
+{
+  // One fp, one IP, service key: 5 mints ok, 6th -> 429
+  // mint_cap_user (the fp cap still binds).
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, DL_TOKEN_SERVICE_KEY: SVC_KEY };
+  let statuses = [];
+  let errors = [];
+  for (let i = 0; i < 6; i++) {
+    const r = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: "fp_svc_user_1" }, env, "10.0.5.1", svcAuth);
+    statuses.push(r.status);
+    errors.push(r.body && r.body.error);
+  }
+  check("10c service key: 5 fingerprinted mints ok, 6th -> 429 mint_cap_user (fp cap still enforced)",
+    JSON.stringify(statuses) === JSON.stringify([200, 200, 200, 200, 200, 429]) && errors[5] === "mint_cap_user",
+    JSON.stringify({ statuses, errors }));
+  check("10c service mints wrote NO per-IP counter for that IP",
+    ![...kv.map.keys()].some((k) => k.startsWith("dlt:ip:10.0.5.1")),
+    [...kv.map.keys()].join(","));
+  check("10c service mints WERE counted in the svc observability counter (6 attempts incl. the fp-refused one)",
+    Number(kv.map.get("dlt:svc:" + new Date().toISOString().slice(0, 10)) || "0") === 6,
+    [...kv.map.keys()].join(","));
+  // A DIFFERENT fp from the SAME IP still mints (the IP counter
+  // never bound) — this is the whole point of Option A.
+  const other = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: "fp_svc_user_2" }, env, "10.0.5.1", svcAuth);
+  check("10d service key: a second fp from the same IP still mints after the first spent its 5",
+    other.status === 200 && other.body.ok === true, "status " + other.status);
+}
+{
+  // Anonymous service mint (no fp): still capped at 5/day via the
+  // anon counter — the exemption never means unbounded.
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, DL_TOKEN_SERVICE_KEY: SVC_KEY };
+  let statuses = [];
+  for (let i = 0; i < 6; i++) {
+    const r = await call({ lib: "hindawi", id: "13028368", f: "epub" }, env, "10.0.5.2", svcAuth);
+    statuses.push(r.status);
+  }
+  check("10e anonymous service mint: 5 ok, 6th -> 429 (anon cap still binds)",
+    JSON.stringify(statuses) === JSON.stringify([200, 200, 200, 200, 200, 429]),
+    JSON.stringify(statuses));
+  check("10e anonymous service mints wrote NO per-IP counter",
+    ![...kv.map.keys()].some((k) => k.startsWith("dlt:ip:")),
+    [...kv.map.keys()].join(","));
+}
+{
+  // WRONG key: the normal IP-counted path runs (fail closed).
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, DL_TOKEN_SERVICE_KEY: SVC_KEY };
+  let statuses = [];
+  let errors = [];
+  for (let i = 0; i < 6; i++) {
+    const r = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: "fp_wrong_key_1" }, env, "10.0.5.3", { Authorization: "Bearer wrong-key" });
+    statuses.push(r.status);
+    errors.push(r.body && r.body.error);
+  }
+  check("10f wrong key: 5 mints ok, 6th -> 429 mint_cap_ip (normal path, IP counter binds first)",
+    JSON.stringify(statuses) === JSON.stringify([200, 200, 200, 200, 200, 429]) && errors[5] === "mint_cap_ip",
+    JSON.stringify({ statuses, errors }));
+  check("10f wrong-key mints wrote NO svc counter (no exemption happened)",
+    ![...kv.map.keys()].some((k) => k.startsWith("dlt:svc:")),
+    [...kv.map.keys()].join(","));
+}
+{
+  // Secret UNSET on the website: a Bearer header is ignored, the
+  // normal path runs (the website code alone is safe to ship).
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  let statuses = [];
+  for (let i = 0; i < 6; i++) {
+    const r = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: "fp_no_secret_1" }, env, "10.0.5.4", svcAuth);
+    statuses.push(r.status);
+  }
+  check("10g secret unset: Bearer header ignored, 5 ok then 429 (normal path)",
+    JSON.stringify(statuses) === JSON.stringify([200, 200, 200, 200, 200, 429]),
+    JSON.stringify(statuses));
+}
+{
+  // Flag + hidden gates still refuse service-key mints, and the
+  // refusal burns no quota (no svc count, no fp count).
+  const kv = makeKv({ "flag:kotobkhana:7559": "1", "hidden:kotobkhana:7558": "owner" });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, DL_TOKEN_SERVICE_KEY: SVC_KEY };
+  const flagged = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub", fp: "fp_svc_flag_1" }, env, "10.0.5.5", svcAuth);
+  check("10h flagged book + service key -> 403 flagged (gate untouched)",
+    flagged.status === 403 && flagged.body.error === "flagged", "status " + flagged.status);
+  const hidden = await call({ lib: "tg", h: "kotobkhana", p: "7558", f: "epub", fp: "fp_svc_flag_1" }, env, "10.0.5.5", svcAuth);
+  check("10h hidden book + service key -> 403 hidden (gate untouched)",
+    hidden.status === 403 && hidden.body.error === "hidden", "status " + hidden.status);
+  check("10h refused service mints burned no quota (no dlt:* counter at all)",
+    ![...kv.map.keys()].some((k) => k.startsWith("dlt:")),
+    [...kv.map.keys()].join(","));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

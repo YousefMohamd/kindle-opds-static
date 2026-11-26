@@ -15,11 +15,17 @@
 //     from the SAME KV cache /api/tg-search uses (RLIBOOK_KV key
 //     `tg-search:coverage`, 1 h TTL — see d1CountCached below), not
 //     from a bare SELECT COUNT(*) on every request: a bare COUNT(*)
-//     scans ~150k rows and would burn the 5M rows/day free tier.
-//     On a cache miss (or a KV error / malformed value / no
-//     RLIBOOK_KV binding) it falls back to the live COUNT(*) once
-//     and best-effort repopulates the cache. D1 is a snapshot import
-//     of the manifest, not the live catalog: it is still partial
+//     scans ~422k rows and would burn the 5M rows/day free tier.
+//     D1 READ-BUDGET FIX (2026-11-26, wave 4 workstream 7): the live
+//     refresh is SELECT MAX(id) FROM books (the PK b-tree tip, ~1
+//     row) instead of COUNT(*) — `books.id` is assigned sequentially
+//     by the importer, so MAX(id) tracks the row count within the id
+//     gaps (live: 422,821 books at MAX(id) 422,850, gap 29 rows,
+//     0.007%). `books_d1.count` is therefore an estimate, overstated
+//     by the gap — fine for a completeness indicator. On a cache miss
+//     (or a KV error / malformed value / no RLIBOOK_KV binding) it
+//     falls back to the live MAX(id) once and best-effort repopulates
+//     the cache. D1 is a snapshot import of the manifest, not the live catalog: it is still partial
 //     (finishing Thu 2026-11-19 at 323,325 books) and the manifest
 //     keeps growing daily, so the D1 count stays below the manifest
 //     total. Both numbers are reported side by side with their
@@ -57,9 +63,9 @@
 //
 // Free-tier friendly: one cached JSON per hour; a rebuild is a few
 // small static fetches + a KV read for the D1 count (one live
-// COUNT(*) at most once an hour, when the cache is cold and D1 is
-// bound). No book file bytes are ever returned or stored — metadata
-// + counts only.
+// MAX(id) at most once an hour, when the cache is cold and D1 is
+// bound — ~1 row read, not a full-table scan). No book file bytes
+// are ever returned or stored — metadata + counts only.
 
 // The five OPDS libraries: key, display name, site path, and the
 // published search index the count is read from. Names and paths are
@@ -110,7 +116,7 @@ function countIndexArray(parsed) {
 //   newest:     parsed /site/telegram/newest.json (or null)
 //   newspapers: parsed /site/newspapers.json (or null)
 //   opdsCounts: { khazendar: 6392 | null, ... } — null = unreadable
-//   d1Count:    COUNT(*) FROM books, or null when D1 is not bound/read
+//   d1Count:    MAX(id) FROM books (row-count estimate), or null when D1 is not bound/read
 export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
   const now = new Date().toISOString();
   const t = (manifest && manifest.totals) || {};
@@ -192,7 +198,7 @@ export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
     },
     books_d1: {
       count: num(d1Count),
-      source: "D1 database (TG_D1) — SELECT COUNT(*) FROM books",
+      source: "D1 database (TG_D1) — SELECT MAX(id) FROM books (row-count estimate; ids are sequential, gap <0.01%)",
       note:
         d1Count === null
           ? "D1 is not bound or not readable — the manifest count above is the live total."
@@ -251,14 +257,19 @@ export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
 // functions/api/tg-search.js: `tg-search:coverage`, 1 h TTL).
 // The D1 indexed count changes once a day (the daily import), not
 // per request, so it is cached in KV (the RLIBOOK_KV binding) instead
-// of running a full-table COUNT(*) on every stats request. A bare
-// COUNT(*) scans ~150k rows; at the 5M rows/day free-tier budget a
-// handful of uncached stats rebuilds a day would already hurt. With
-// a 1 h TTL the count is refreshed at most 24 times/day and is at
-// most 1 h stale — fine for a "how complete is D1" indicator. On a
-// cache miss, a KV error, or a malformed cached value, the code falls
-// back to the live COUNT(*) (and best-effort repopulates the cache),
-// so a missing or broken cache can never break the stats response.
+// of running a live query on every stats request. The live refresh
+// used to be SELECT COUNT(*) FROM books — a full-table scan of
+// ~422k rows, with NO guard or daily cap here (unlike tg-search's
+// 4/day counter), so every cold stats rebuild burned another
+// 422,821 rows. D1 READ-BUDGET FIX (2026-11-26, wave 4 workstream
+// 7): the refresh is SELECT MAX(id) FROM books (the PK b-tree tip,
+// ~1 row) — same estimator as tg-search.js d1Coverage (sequential
+// ids, gap <0.01%). With a 1 h TTL the estimate is refreshed at most
+// 24 times/day and is at most 1 h stale — fine for a "how complete
+// is D1" indicator. On a cache miss, a KV error, or a malformed
+// cached value, the code falls back to the live MAX(id) (and
+// best-effort repopulates the cache), so a missing or broken cache
+// can never break the stats response.
 const COVERAGE_CACHE_KEY = "tg-search:coverage";
 const COVERAGE_CACHE_TTL_SECONDS = 3600; // 1 h
 
@@ -290,7 +301,7 @@ async function coverageCachePut(env, indexed) {
   }
 }
 
-// D1 book count, read-through: KV cache first, live COUNT(*) on a
+// D1 book count, read-through: KV cache first, live MAX(id) on a
 // miss/error, best-effort repopulate. Never throws: on any failure
 // returns null and the caller reports books_d1.count null with the
 // manifest count standing. Returns null when D1 is not bound.
@@ -299,7 +310,7 @@ async function d1CountCached(db, env) {
   const cached = await coverageCacheGet(env);
   if (cached !== null) return cached;
   try {
-    const row = await db.prepare("SELECT COUNT(*) AS n FROM books").first();
+    const row = await db.prepare("SELECT MAX(id) AS n FROM books").first();
     if (row && typeof row.n === "number") {
       const n = row.n;
       await coverageCachePut(env, n);
@@ -379,8 +390,8 @@ export async function onRequest(context) {
   }
 
   // D1 count via the shared KV coverage cache (see d1CountCached):
-  // a KV hit avoids the full-table COUNT(*); a miss/error falls back
-  // to the live count once. Never fails the response.
+  // a KV hit avoids the live MAX(id) refresh; a miss/error falls back
+  // to the live estimate once. Never fails the response.
   const d1Count = await d1CountCached(env && env.TG_D1 ? env.TG_D1 : null, env);
 
   const body = buildStats(manifest, newest, newspapers, opdsCounts, d1Count);

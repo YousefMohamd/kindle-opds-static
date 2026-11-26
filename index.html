@@ -630,13 +630,18 @@ function runSearch(q) {
       words = words.slice(0, 3);
       if (words.length) {
         // Related recommendations: re-search each word (longest first)
-        // across both halves, in parallel; merge in word order, dedupe,
-        // cap at 5. A newer keystroke already started another search —
-        // never append stale recommendations to it.
+        // across the OPDS libraries only, in parallel; merge in word
+        // order, dedupe, cap at 5. The Telegram half is deliberately
+        // NOT re-searched here (D1 read-budget fix, 2026-11-26): each
+        // related word would be a full single-word D1 search, and a
+        // common word costs ~2x its match set ("رواية" ~11,500 rows
+        // on the 324k snapshot) — up to 3 extra D1 searches per
+        // no-result search, about half its total cost. A newer
+        // keystroke already started another search — never append
+        // stale recommendations to it.
         var jobs = [];
         for (var wi = 0; wi < words.length; wi++) {
           var relEnc = encodeURIComponent(words[wi]);
-          jobs.push(fetch("/api/tg-search?q=" + relEnc + "&limit=5").then(function (r) { return r.json(); }));
           jobs.push(fetch("/opds/search?q=" + relEnc).then(function (r) { return r.text(); }).then(parseOpds));
         }
         Promise.allSettled(jobs).then(function (rout) {
@@ -648,12 +653,9 @@ function runSearch(q) {
             seen[k] = 1;
             rel.push({ title: t, author: a || "" });
           }
-          for (var j = 0; j < rout.length; j += 2) {
-            if (rout[j].status === "fulfilled" && rout[j].value && rout[j].value.ok) {
-              (rout[j].value.results || []).forEach(function (b) { pushRel(b.title, b.author); });
-            }
-            if (rout[j + 1].status === "fulfilled") {
-              (rout[j + 1].value || []).forEach(function (b) { pushRel(b.title, b.author); });
+          for (var j = 0; j < rout.length; j += 1) {
+            if (rout[j].status === "fulfilled") {
+              (rout[j].value || []).forEach(function (b) { pushRel(b.title, b.author); });
             }
           }
           if (rel.length) {

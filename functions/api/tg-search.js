@@ -254,24 +254,33 @@
 // { indexed, target, partial } — the D1 indexed count right now, the
 // D1 final-import target (323,325), and whether D1 is still a partial
 // snapshot (indexed < target). `indexed` comes from a KV cache
-// (key `tg-search:coverage`, 6 h TTL; refreshed by a live COUNT(*)
-// on a cache miss — see d1Coverage), so the full-table count runs at
-// most 4 times/day instead of on every search. The live COUNT(*) is
-// additionally barred by the `d1:guard` KV flag (set by the watchdog
-// when D1 errors) and by a 4-refreshes/day KV counter — on guard the
-// endpoint returns the last cached coverage or omits the field, and
-// a KV failure never triggers a live count (that compound failure
-// killed search on 2026-11-19). Callers (e.g. /book)
+// (key `tg-search:coverage`, 6 h TTL; refreshed by a live MAX(id)
+// on a cache miss — see d1Coverage), so the refresh runs at most
+// 4 times/day instead of on every search. MAX(id) is an ESTIMATE of
+// the row count, not an exact count: `books.id` is assigned
+// sequentially by the importer, so the estimate overshoots by the
+// id gaps only (live: 422,821 books at MAX(id) 422,850 — 29 rows,
+// 0.007%). The live refresh is additionally barred by the `d1:guard`
+// KV flag (set by the watchdog when D1 errors) and by a
+// 4-refreshes/day KV counter — on guard the endpoint returns the
+// last cached coverage or omits the field, and a KV failure never
+// triggers a live refresh (that compound failure killed search on
+// 2026-11-19). Callers (e.g. /book)
 // show the partial note only while partial is true, so it disappears
 // on its own when the import finishes.
 //
-// Free-tier friendly: one D1 query (FTS MATCH, reads ~10-100 rows;
-// 5M rows read/day on Workers Free) + ONE KV get for the denylist
-// blob (`flags:all`, edge-cached 1 h) + one KV get for the coverage
-// cache. The coverage COUNT(*) (a full-table scan, ~323k rows) runs
-// only on a cache miss, at most 4 times/day, never under `d1:guard`.
-// No catalog fetch, no heavy work. D1 writes happen only in the
-// population script, never here.
+// Free-tier friendly (D1 read-budget fix, 2026-11-26): one ranked
+// FTS query per ladder tier (ORDER BY bm25 must rank the tier's
+// match set — a common word like "رواية" matches ~7,000 books live,
+// so one such search reads ~7k rows, not ~10-100) + ONE KV get for
+// the denylist blob (`flags:all`, edge-cached 1 h) + one KV get for
+// the coverage cache. The exact `total` costs a second full match-set
+// enumeration ONLY when the returned page is full; small-result
+// searches skip the COUNT entirely (see d1Search), and the COUNT
+// that still runs is a direct-FTS count, not the old books-join
+// COUNT. The coverage refresh is MAX(id) (~1 row), at most
+// 4 times/day, never under `d1:guard`. No catalog fetch, no heavy
+// work. D1 writes happen only in the population script, never here.
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -864,28 +873,33 @@ const D1_FINAL_TARGET = 422821;
 // Coverage cache: the D1 indexed count changes once a day (the daily
 // import), not per request — so it is cached in KV (same RLIBOOK_KV
 // binding the flag check already uses, same read-through pattern as
-// functions/api/ratings.js) instead of running a full-table COUNT(*)
-// on every search. A bare COUNT(*) scans ~323k rows, and at the 5M
-// rows/day free-tier budget ~15 searches/day would exhaust it and
-// site search would die with 500 for the rest of the day. With a
-// 6 h TTL the count is refreshed at most 4 times/day and is at most
-// 6 h stale — fine for a "how complete is D1" indicator. On a cache
-// miss the code runs the live COUNT(*) ONLY when the guard allows it
-// (see d1Coverage): a missing or broken cache can never break a
-// search, and a KV failure can never TRIGGER a live count either —
-// that compound failure killed search on 2026-11-19.
-//
-// 2026-11-20: the 1 h TTL broke live search — the coverage COUNT(*)
-// refreshes up to 24×/day × 323,318 rows = 7.76M rows/day against the
-// D1 free 5M rows/day budget (error 7500), so search died with HTTP
-// 500 for the rest of each day. TTL is now 6 h: at most 4 refreshes/
-// day (~1.29M rows/day), well inside the budget. The count is at most
-// 6 h stale — fine for a completeness indicator.
+// functions/api/ratings.js) instead of running a full-table scan on
+// every search. The live refresh used to be SELECT COUNT(*) FROM
+// books — a full-table scan of ~422k rows, up to 4 times/day
+// (~1.69M rows/day, a third of the 5M rows/day free budget) plus
+// unguarded refreshes from /api/stats, which shares the same KV key
+// with a 1 h TTL. That fixed cost is what the 2026-11-20 1 h TTL
+// incident and the 2026-11-26 77%-by-11:13-UTC alert were made of.
+// D1 READ-BUDGET FIX (2026-11-26, wave 4 workstream 7): the refresh
+// is now SELECT MAX(id) FROM books — the PK b-tree tip, ~1 row read
+// instead of ~422k. `books.id` is assigned sequentially by the
+// importer, so MAX(id) tracks the row count within the id gaps:
+// live D1 holds 422,821 books at MAX(id) 422,850 (gap 29 rows,
+// 0.007%); on the 324,409-book measurement snapshot the gap is 7
+// rows (0.002%). `indexed` is therefore an ESTIMATE, overstated by
+// the gap — fine for a completeness indicator, and `partial` flips
+// at the same point for practical purposes. The 6 h TTL, the
+// 4-refreshes/day counter and the `d1:guard` kill-switch stay: they
+// now bound an already-cheap query and keep the "KV failure never
+// triggers a live count" guarantee (that compound failure killed
+// search on 2026-11-19). /api/stats reads the same value from the
+// same KV key and uses the same MAX(id) refresh (see stats.js
+// d1CountCached).
 const COVERAGE_CACHE_KEY = "tg-search:coverage";
 const COVERAGE_CACHE_TTL_SECONDS = 21600; // 6 h
 
-// Coverage guard (resilience batch, 2026-11-20): the live COUNT(*)
-// is barred while the `d1:guard` KV flag is set (the watchdog sets
+// Coverage guard (resilience batch, 2026-11-20): the live MAX(id)
+// refresh is barred while the `d1:guard` KV flag is set (the watchdog sets
 // it — value = a reason string, any non-null value counts — when
 // the search canary reports D1 errors; delete the key to clear it),
 // and barred after 4 refreshes in one UTC day (the D1 budget
@@ -903,10 +917,10 @@ function coverageRefreshCounterKey(now = new Date()) {
   return `tg-search:coverage:refreshes:${now.toISOString().slice(0, 10)}`;
 }
 
-// True when the live COUNT(*) is barred right now: the guard flag
+// True when the live MAX(id) refresh is barred right now: the guard flag
 // is set, today's refresh budget is spent, or KV itself cannot be
 // read (the guard state is unknown, so the count is barred — a KV
-// failure must never trigger a live COUNT(*)). Never throws. No KV
+// failure must never trigger a live refresh). Never throws. No KV
 // binding -> false (no guard to read; the count is the only source,
 // the pre-existing behaviour for an unbound KV).
 async function coverageRefreshBarred(env) {
@@ -969,7 +983,7 @@ async function coverageCachePut(env, indexed) {
 
 // Coverage of the D1 snapshot: how many books D1 holds right now vs
 // the final-import target. Served from the KV cache when present
-// (see above); otherwise a direct COUNT(*) — the same count
+// (see above); otherwise a direct MAX(id) — the same estimate
 // /api/stats uses for books_d1.count — but ONLY when the guard
 // allows it (see coverageRefreshBarred). On guard, returns null and
 // the caller omits the field, so a failed or barred count can never
@@ -983,7 +997,7 @@ async function d1Coverage(db, env) {
     return null;
   }
   try {
-    const row = await db.prepare("SELECT COUNT(*) AS n FROM books").bind().first();
+    const row = await db.prepare("SELECT MAX(id) AS n FROM books").bind().first();
     const indexed = row ? Number(row.n) || 0 : 0;
     await coverageCachePut(env, indexed);
     await coverageRefreshCount(env);
@@ -1018,8 +1032,42 @@ function driveVisibility(vis) {
   };
 }
 
-async function d1Search(db, match, limit, offset, source, format, vis) {
-  const hasSource = !!(source && source.trim());
+//
+// D1 READ-BUDGET FIX (2026-11-26, wave 4 workstream 7): this used to
+// run a COUNT(*) FIRST on every tier, then the rows query — two full
+// enumerations of the match set per tier, because COUNT(*) must walk
+// every match and ORDER BY bm25 must rank every match before LIMIT.
+// Measured on the real 324,409-book snapshot (live: 422,821): a common
+// single word costs ~2x its match set per search ("رواية" 5,780
+// matches -> 11,560 rows; "كتاب" 6,887 -> 13,774), and the OR tier's
+// union runs 1,920 rows for "فن الخرطوم". That is what burned the
+// 5M rows/day free budget (77% by 11:13 UTC 2026-11-26; exceeded
+// 3x before). The shape below keeps `total` EXACT and the ladder,
+// ranking and results byte-identical, while cutting the statements:
+//   1. Rows FIRST. A tier with 0 rows misses — no COUNT is spent
+//      deciding that, and the ladder moves on after ONE statement.
+//   2. COUNT only when the page is full (rows.length === limit): the
+//      full count may exceed the page, so it must be counted. When
+//      the page is NOT full, every match is on it, so
+//      total = offset + rows.length EXACTLY — no COUNT at all. That
+//      covers most searches (exact multi-word hits, rare words).
+//   3. The one COUNT that still runs is a DIRECT FTS count
+//      (SELECT COUNT(*) FROM books_fts WHERE MATCH ?) whenever no
+//      source/format filter applies — the old join form
+//      (books b WHERE b.id IN (SELECT rowid FROM books_fts ...))
+//      probed `books` by PK once per match (EXPLAIN: SEARCH b USING
+//      INTEGER PRIMARY KEY per rowid); the direct form stays inside
+//      the FTS index (~9x faster locally for a 354-row match set).
+//      The join form stays ONLY when a filter applies, because the
+//      filter lives on `books` and the count must agree with the page.
+//   4. Empty page + offset > 0 is the one ambiguous case: it means
+//      "no matches" OR "offset past the end" (total < offset). The
+//      COUNT runs there too, so the returned total stays exact and
+//      the ladder's tier choice is unchanged. (offset === 0 + empty
+//      page means total 0 — no COUNT needed.)
+// No new index can help: the FTS5 index already serves MATCH; the
+// waste was the second full enumeration (COUNT), not a missing index.
+async function d1Search(db, match, limit, offset, source, format, vis) {  const hasSource = !!(source && source.trim());
   const srcClause = hasSource ? " AND b.source = ?" : "";
   const srcParams = hasSource ? [source.trim()] : [];
   // Format filter (see parseFormatToken): constrain to one ext, in
@@ -1029,17 +1077,38 @@ async function d1Search(db, match, limit, offset, source, format, vis) {
   const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
   const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
   const dv = driveVisibility(vis);
+  // The exact total, counted only when the page cannot prove it
+  // (see the header above): the page is full, or it is empty past
+  // an offset. Direct-FTS count when no filter applies (same count
+  // as the join form — rowid 1:1 with books.id — without the
+  // per-match `books` probe); join form when a filter applies.
+  // Drive note (merged 2026-11-26): the join form also carries
+  // the driveVisibility join/clause, so the count agrees with the
+  // rows when a private/pending Drive library exists. The direct
+  // form has no visibility filter — it can overcount by the
+  // invisible Drive matches ONLY on an unfiltered full page while
+  // a restricted Drive library exists (bounded by that library's
+  // matching books; today every Drive library is public, so the
+  // direct count is exact).
+  async function countTotal(matchExpr) {
+    if (!hasSource && !hasFormat) {
+      const row = await db
+        .prepare("SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?")
+        .bind(matchExpr)
+        .first();
+      return row ? Number(row.n) || 0 : 0;
+    }
+    const row = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE b.id IN " +
+          "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause + fmtClause + dv.clause,
+      )
+      .bind(matchExpr, ...srcParams, ...fmtParams, ...dv.params)
+      .first();
+    return row ? Number(row.n) || 0 : 0;
+  }
   if (!match) {
     // Empty query + source: plain browse of one library.
-    const countRes = await db
-      .prepare(
-        "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE 1=1" +
-          (hasSource ? " AND b.source = ?" : "") + fmtClause + dv.clause,
-      )
-      .bind(...srcParams, ...fmtParams, ...dv.params)
-      .first();
-    const total = countRes ? Number(countRes.n) || 0 : 0;
-    if (total === 0) return { total: 0, rows: [] };
     const { results } = await db
       .prepare(
         "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
@@ -1047,17 +1116,23 @@ async function d1Search(db, match, limit, offset, source, format, vis) {
       )
       .bind(...srcParams, ...fmtParams, ...dv.params, limit, offset)
       .all();
-    return { total, rows: results || [] };
+    const rows = results || [];
+    if (rows.length === 0 && offset === 0) return { total: 0, rows: [] };
+    // Empty page past an offset must NOT return offset as the total
+    // (true total < offset) — fall through to the COUNT below.
+    if (rows.length > 0 && rows.length < limit) return { total: offset + rows.length, rows };
+    // Page full (or empty past an offset): count the true total.
+    // Browse has no FTS expression, so the count is the plain
+    // source/format count on `books` (idx_books_source serves it).
+    const countRes = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE 1=1" +
+          (hasSource ? " AND b.source = ?" : "") + fmtClause + dv.clause,
+      )
+      .bind(...srcParams, ...fmtParams, ...dv.params)
+      .first();
+    return { total: countRes ? Number(countRes.n) || 0 : 0, rows };
   }
-  const countRes = await db
-    .prepare(
-      "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE b.id IN " +
-        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause + fmtClause + dv.clause,
-    )
-    .bind(match, ...srcParams, ...fmtParams, ...dv.params)
-    .first();
-  const total = countRes ? Number(countRes.n) || 0 : 0;
-  if (total === 0) return { total: 0, rows: [] };
   const { results } = await db
     .prepare(
       "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
@@ -1066,7 +1141,10 @@ async function d1Search(db, match, limit, offset, source, format, vis) {
     )
     .bind(match, ...srcParams, ...fmtParams, ...dv.params, limit, offset)
     .all();
-  return { total, rows: results || [] };
+  const rows = results || [];
+  if (rows.length === 0 && offset === 0) return { total: 0, rows: [] };
+  if (rows.length > 0 && rows.length < limit) return { total: offset + rows.length, rows };
+  return { total: await countTotal(match), rows };
 }
 
 // Run the search ladder (see ladderQueries): each tier runs ONLY
@@ -1076,9 +1154,10 @@ async function d1Search(db, match, limit, offset, source, format, vis) {
 // Rows are over-fetched (up to 3x `limit`, capped at MAX_LIMIT) so
 // visibleResults can collapse same-title reposts and still return
 // `limit` distinct books; `total` is the full match count, not the
-// fetched page. Exported for tests.
-export async function d1SearchLadder(db, words, limit, offset, source, format, vis) {
-  const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
+// fetched page. Each tier costs ONE rows query plus a COUNT only
+// when its page is full (see d1Search) — the ladder never pays a
+// COUNT to decide a tier misses. Exported for tests.
+export async function d1SearchLadder(db, words, limit, offset, source, format, vis) {  const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
   for (const tier of ladderQueries(words)) {
     const found = await d1Search(db, tier.expr, fetchLimit, offset, source, format, vis);
     if (found.total > 0) return { ...found, match: tier.match };
@@ -1249,25 +1328,23 @@ export function isSmartSearch(request, env) {
 
 /** One trigram search: OR of the query words against books_trigram
  *  (substring match), rank order, bounded. Same row shape as
- *  d1Search. Returns { total, rows }. */
-async function d1SearchTrigram(db, words, limit, offset, source, format, vis) {
-  const match = words.map(ftsPhrase).join(" OR ");
+ *  d1Search. Returns { total, rows }.
+ *
+ *  D1 READ-BUDGET FIX (2026-11-26, wave 4 workstream 7): NO COUNT
+ *  here at all. The only caller (applySmartSearch) re-scores the
+ *  rows by trigram overlap and REPLACES total with the kept count
+ *  (`total: kept.length`) — the raw COUNT was always discarded, so
+ *  counting the trigram-OR match set (character trigrams of common
+ *  words match very broadly) was pure waste. `total` here is the
+ *  fetched-page count; the caller only uses it as a >0 check before
+ *  re-counting. */
+async function d1SearchTrigram(db, words, limit, offset, source, format, vis) {  const match = words.map(ftsPhrase).join(" OR ");
   const hasSource = !!(source && source.trim());
   const srcClause = hasSource ? " AND b.source = ?" : "";
   const srcParams = hasSource ? [source.trim()] : [];
   const hasFormat = !!(format && typeof format === "string" && format.trim());
   const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
   const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
-  const dv = driveVisibility(vis);
-  const countRes = await db
-    .prepare(
-      "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE b.id IN " +
-        "(SELECT rowid FROM books_trigram WHERE books_trigram MATCH ?)" + srcClause + fmtClause + dv.clause,
-    )
-    .bind(match, ...srcParams, ...fmtParams, ...dv.params)
-    .first();
-  const total = countRes ? Number(countRes.n) || 0 : 0;
-  if (total === 0) return { total: 0, rows: [] };
   const { results } = await db
     .prepare(
       "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
@@ -1276,7 +1353,8 @@ async function d1SearchTrigram(db, words, limit, offset, source, format, vis) {
     )
     .bind(match, ...srcParams, ...fmtParams, ...dv.params, limit, offset)
     .all();
-  return { total, rows: results || [] };
+  const rows = results || [];
+  return { total: rows.length, rows };
 }
 
 /** Small Levenshtein distance (query word vs vocab candidate). */
@@ -1628,7 +1706,7 @@ export async function onRequest(context) {
   // Coverage is computed once per request and attached to every ok:true
   // reply below (spread as `...cov`); a failed or barred count yields
   // no field rather than a broken search. The count comes from the KV
-  // cache when present (see d1Coverage) — the live COUNT(*) runs only
+  // cache when present (see d1Coverage) — the live MAX(id) refresh runs only
   // on a cache miss, at most 4 times/day, never under `d1:guard`.
   const coverage = await d1Coverage(db, env);
   const cov = coverage ? { coverage } : {};

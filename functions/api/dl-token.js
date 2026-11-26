@@ -80,6 +80,22 @@
 //     that state is bounded by the 10-minute token life and the
 //     proxy's own 30/min per-IP limit.
 //
+// Service-key exemption (E_LIMIT Option A, 2026-11-26): the bot
+//   Worker mints from ONE shared egress IP, so the per-IP counter
+//   above caps ALL bot deliveries at 5/day total across all users
+//   (the per-fingerprint cap can never bind first for bot traffic).
+//   A request carrying `Authorization: Bearer <DL_TOKEN_SERVICE_KEY>`
+//   that matches the Pages secret EXACTLY (constant-time compare)
+//   skips the per-IP counter only and is still counted against the
+//   acting user's fingerprint cap (5/day) — the flag and hidden
+//   gates still run first, unchanged. A wrong or missing key, or
+//   an unset secret, falls through to the normal IP-counted path
+//   (fail closed, no bypass, no error leak). Service-key mints are
+//   counted best-effort in `dlt:svc:<YYYY-MM-DD>` for observability
+//   only — that counter never refuses a mint. The bot is the only
+//   caller that sends the header; browser / Mini App mints never
+//   carry it and are unaffected.
+//
 // Short links: a minted token also writes `k:<code>` in KV (10-min
 // TTL) pointing at the download target, and the response carries
 // `short: "/k/<code>"`. The delivery page (/kindle/get) shows that
@@ -104,6 +120,15 @@
 //                         Unset -> Telegram minting is 503;
 //                         OPDS minting is unaffected (its target is
 //                         the public acquisition URL).
+//   DL_TOKEN_SERVICE_KEY (optional — E_LIMIT Option A, 2026-11-26)
+//                         the shared service secret the bot Worker
+//                         sends as `Authorization: Bearer <key>` on
+//                         dl-token mints. Same value must be set as
+//                         the bot Worker secret. Unset = the
+//                         exemption never triggers (normal IP-counted
+//                         path for every caller). Generate once
+//                         (openssl rand -hex 32); never in the repo,
+//                         never in chat.
 //   PROXY_TOKEN_TTL_SECONDS (optional, default 600, clamped 60..3600)
 // KV binding (optional, same namespace the bot + OPDS feed use):
 //   RLIBOOK_KV — flag denylist keys `flag:<handle>:<post_id>`,
@@ -474,6 +499,32 @@ export async function isHiddenBook(env, handle, postId) {
   }
 }
 
+/** Constant-time string equality (E_LIMIT Option A): the compare
+ *  runs over every character so a wrong key does not fail faster
+ *  than a nearly-right one. A length mismatch returns false (the
+ *  key length is not itself secret). Never throws. */
+export function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Is this request an authenticated bot-service mint (E_LIMIT
+ *  Option A)? True only when env.DL_TOKEN_SERVICE_KEY is set AND
+ *  the request carries `Authorization: Bearer <key>` matching it
+ *  exactly. Anything else — missing secret, missing header, wrong
+ *  scheme, wrong key — is false: the caller falls through to the
+ *  normal IP-counted path. The header value is never logged. */
+export function isServiceKeyRequest(request, env) {
+  const expected = (env.DL_TOKEN_SERVICE_KEY || "").trim();
+  if (!expected) return false;
+  const header = request.headers.get("authorization") || "";
+  if (!header.toLowerCase().startsWith("bearer ")) return false;
+  return timingSafeEqual(header.slice(7).trim(), expected);
+}
+
 /** Mint a download token for one parsed book. The single minting
  *  implementation shared by GET /api/dl-token and the delivery page
  *  (/kindle/get). Order matters: config, flag and hidden refusals happen
@@ -481,6 +532,14 @@ export async function isHiddenBook(env, handle, postId) {
  *  `opts.ip` is the client IP (cf-connecting-ip); `opts.fp` is the
  *  catalog fingerprint when present. Every user gets 5 downloads/day
  *  (per IP and per fingerprint — the same 5/day budget either way).
+ *  `opts.service` (E_LIMIT Option A, 2026-11-26): when true the
+ *  request authenticated with DL_TOKEN_SERVICE_KEY (checked in
+ *  onRequest via isServiceKeyRequest, never trusted from the
+ *  caller) — the per-IP counter is SKIPPED (the bot Worker's single
+ *  egress IP must not cap all bot deliveries) while the
+ *  fingerprint/anonymous user cap below STILL applies, and the
+ *  flag/hidden gates above still run first. A service mint is
+ *  counted best-effort in `dlt:svc:<date>` for observability only.
  *  `opts.own` (personal books, 2026-11-16): when true the book is
  *  the caller's own file (server-verified via isPersonalBook, never
  *  a client claim) — the flag check and the mint counters are
@@ -517,17 +576,26 @@ export async function mintTokenForBook(env, book, opts = {}) {
   // count nothing). The IP cap is checked first; if the user cap
   // then refuses, the IP count is refunded. SKIPPED entirely for
   // own books (opts.own): your own file costs no quota.
+  // E_LIMIT Option A: a service-key mint (opts.service) skips the
+  // IP counter only — the per-user cap below still binds, so one
+  // identity can never mint unboundedly. The svc observability
+  // counter is best-effort and never refuses.
+  const service = opts.service === true;
   let ipKey = null;
   let ipCounted = false;
   if (!own && env.RLIBOOK_KV) {
     const ip = sanitizeIp(opts.ip);
-    ipKey = "ip:" + ip;
     try {
-      const ipCheck = await takeCounter(env.RLIBOOK_KV, ipKey, MINT_CAP_PER_IP);
-      if (ipCheck.over) {
-        return { ok: false, status: 429, error: "mint_cap_ip" };
+      if (!service) {
+        ipKey = "ip:" + ip;
+        const ipCheck = await takeCounter(env.RLIBOOK_KV, ipKey, MINT_CAP_PER_IP);
+        if (ipCheck.over) {
+          return { ok: false, status: 429, error: "mint_cap_ip" };
+        }
+        ipCounted = ipCheck.counted;
+      } else {
+        await takeCounter(env.RLIBOOK_KV, "svc", Number.MAX_SAFE_INTEGER);
       }
-      ipCounted = ipCheck.counted;
       const fp = (opts.fp || "").trim().slice(0, 128);
       const userKey = fp ? "fp:" + fp : "anon:" + ip;
       const userLimit = fp ? MINT_CAP_FINGERPRINTED : MINT_CAP_ANONYMOUS;
@@ -665,7 +733,11 @@ export async function onRequest(context) {
   // the claim alone. Own books skip the flag gate and the mint caps
   // in mintTokenForBook (the hidden check still applies).
   const own = await isPersonalBook(env, fp, url.searchParams.get("t") || "");
-  const result = await mintTokenForBook(env, book, { ip, fp, own });
+  // E_LIMIT Option A: the service key is verified here, server-side,
+  // and passed to mintTokenForBook as a boolean — the caller can
+  // never claim it. Wrong/missing key = normal IP-counted path.
+  const service = isServiceKeyRequest(request, env);
+  const result = await mintTokenForBook(env, book, { ip, fp, own, service });
   if (!result.ok) {
     return json(result.status, { ok: false, error: result.error });
   }

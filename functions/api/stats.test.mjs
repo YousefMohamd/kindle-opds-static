@@ -17,12 +17,12 @@
 //      newest list matches newest.json, views/downloads/bot are null
 //      (honest "not measured yet", not invented zeros).
 //   3. onRequest() with a mocked TG_D1 binding: books_d1.count is
-//      the mocked COUNT(*) and the manifest count is unchanged.
+//      the mocked MAX(id) and the manifest count is unchanged.
 //   4. Missing manifest -> 503, ok:false, no numbers returned.
 //   5. Non-GET -> 405.
 //   6. D1 count via the shared KV coverage cache (`tg-search:coverage`,
 //      same key as /api/tg-search): a KV hit is used with NO live
-//      COUNT(*) (the D1 mock records prepare() calls); a KV miss /
+//      MAX(id) (the D1 mock records prepare() calls); a KV miss /
 //      error / malformed value falls back to the live count once and
 //      repopulates the cache; the response shape (source + note) is
 //      identical to the live-count path.
@@ -179,7 +179,7 @@ const resD1 = await onRequest({
   },
 });
 const bodyD1 = await resD1.json();
-check("3a D1 bound -> books_d1.count is the D1 COUNT(*)",
+check("3a D1 bound -> books_d1.count is the D1 MAX(id)",
   bodyD1.books_d1.count === 99996, String(bodyD1.books_d1.count));
 check("3b D1 bound -> manifest count unchanged",
   bodyD1.books.telegram === t.books);
@@ -204,7 +204,7 @@ check("5a POST -> 405", resPost.status === 405, "HTTP " + resPost.status);
 
 // --- 6. D1 count via the shared KV coverage cache ----------------------
 // The KV mock records gets/puts; the D1 mock records prepare() calls,
-// so the tests prove a KV hit runs NO full-table COUNT(*).
+// so the tests prove a KV hit runs NO live MAX(id) refresh.
 function mockKvStore(initial, opts = {}) {
   const store = new Map();
   if (initial !== undefined) store.set("tg-search:coverage", initial);
@@ -249,7 +249,7 @@ const resKvHit = await onRequest({
 const bodyKvHit = await resKvHit.json();
 check("6a KV hit -> books_d1.count is the KV indexed value",
   bodyKvHit.books_d1.count === 149996, String(bodyKvHit.books_d1.count));
-check("6b KV hit -> NO live COUNT(*) ran (prepare not called)",
+check("6b KV hit -> NO live MAX(id) ran (prepare not called)",
   d1Hit.calls.prepares === 0, "prepares=" + d1Hit.calls.prepares);
 check("6c KV hit -> cache not rewritten (no put)",
   kvHit.calls.puts.length === 0, "puts=" + kvHit.calls.puts.length);
@@ -259,7 +259,7 @@ check("6d KV hit -> response shape identical to live-count path",
     Object.keys(bodyKvHit.books_d1).sort().join(",") === "count,note,source",
   JSON.stringify(bodyKvHit.books_d1));
 
-// 6e: KV miss -> live COUNT(*) once, then the cache is repopulated.
+// 6e: KV miss -> live MAX(id) once, then the cache is repopulated.
 const kvMiss = mockKvStore();
 const d1Miss = mockD1(99996);
 const resKvMiss = await onRequest({
@@ -267,7 +267,7 @@ const resKvMiss = await onRequest({
   env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvMiss.kv, TG_D1: d1Miss.db },
 });
 const bodyKvMiss = await resKvMiss.json();
-check("6e KV miss -> falls back to live COUNT(*)",
+check("6e KV miss -> falls back to live MAX(id)",
   bodyKvMiss.books_d1.count === 99996 && d1Miss.calls.prepares === 1,
   String(bodyKvMiss.books_d1.count) + " prepares=" + d1Miss.calls.prepares);
 check("6f KV miss -> cache repopulated with same key + 1 h TTL",
@@ -285,7 +285,7 @@ const resKvErr = await onRequest({
   env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvErr.kv, TG_D1: d1Err.db },
 });
 const bodyKvErr = await resKvErr.json();
-check("6g KV get throws -> live COUNT(*) fallback, still 200",
+check("6g KV get throws -> live MAX(id) fallback, still 200",
   resKvErr.status === 200 && bodyKvErr.books_d1.count === 99996 &&
     d1Err.calls.prepares === 1,
   "HTTP " + resKvErr.status + " count=" + bodyKvErr.books_d1.count);
@@ -299,7 +299,7 @@ for (const bad of ['{"indexed":', '{"indexed":"abc"}', '{"indexed":-5}']) {
     env: { ASSETS: mockAssets(FILE_FOR_PATH), RLIBOOK_KV: kvBad.kv, TG_D1: d1Bad.db },
   });
   const bodyBad = await resBad.json();
-  check("6h KV malformed " + bad + " -> live COUNT(*) fallback",
+  check("6h KV malformed " + bad + " -> live MAX(id) fallback",
     bodyBad.books_d1.count === 99996 && d1Bad.calls.prepares === 1,
     String(bodyBad.books_d1.count));
 }

@@ -220,20 +220,20 @@ function countingKV(entries = {}) {
     put: async (k, v, opts) => { m.set(k, v); writes.push({ key: k, value: v, opts }); },
   };
 }
-// D1 mock that counts executions of the coverage COUNT(*) only
-// (exact SQL "SELECT COUNT(*) AS n FROM books") — the FTS and browse
+// D1 mock that counts executions of the coverage refresh only
+// (exact SQL "SELECT MAX(id) AS n FROM books") — the FTS and browse
 // counts are different statements and must still run.
 function countingD1(sqlite) {
   const base = mockD1(sqlite);
-  let coverageCountQueries = 0;
+  let coverageRefreshQueries = 0;
   return {
     db: {
       prepare(sql) {
-        if (sql === "SELECT COUNT(*) AS n FROM books") coverageCountQueries++;
+        if (sql === "SELECT MAX(id) AS n FROM books") coverageRefreshQueries++;
         return base.prepare(sql);
       },
     },
-    get coverageCountQueries() { return coverageCountQueries; },
+    get coverageRefreshQueries() { return coverageRefreshQueries; },
   };
 }
 
@@ -423,56 +423,66 @@ const D1 = mockD1(db);
 }
 
 // 9. coverage: every ok:true reply reports the D1 snapshot honestly.
-// The test DB holds SAMPLE rows (5000 by default), so indexed must be
-// exactly that — a direct COUNT(*), never the manifest total — and
-// partial must be true while indexed < target (422,821).
+// `indexed` is the MAX(id) ESTIMATE (2026-11-26 read-budget fix),
+// not an exact COUNT(*) — `books.id` is sequential in production,
+// so the estimate overshoots by the id gaps only (live: 422,821
+// books at MAX(id) 422,850). In THIS test DB the fixtures use sparse
+// ids (900001+), so MAX(id) is 900022 while the DB holds only
+// TOTAL_ROWS rows — that gap is the fixture layout, not a bug: the
+// test asserts the endpoint returns the MAX(id) estimate, and §17i
+// proves MAX(id) === COUNT(*) on dense (production-shaped) ids.
+// `partial` is indexed < target, so it reads false here (900022 >
+// 422,821); partial-true is still covered via a cached value (§10d).
 {
+  const MAX_ID = db.prepare("SELECT MAX(id) AS n FROM books").get().n;
   const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("9a search reply carries coverage", !!body.coverage, JSON.stringify(body.coverage));
-  check("9b coverage.indexed is the D1 COUNT(*)",
-    body.coverage && body.coverage.indexed === TOTAL_ROWS,
-    `indexed=${body.coverage && body.coverage.indexed} rows=${TOTAL_ROWS}`);
+  check("9b coverage.indexed is the D1 MAX(id) estimate",
+    body.coverage && body.coverage.indexed === MAX_ID,
+    `indexed=${body.coverage && body.coverage.indexed} maxId=${MAX_ID} rows=${TOTAL_ROWS}`);
   check("9c coverage.target is the D1 final-import target (422,821)",
     body.coverage && body.coverage.target === 422821,
     JSON.stringify(body.coverage));
-  check("9d coverage.partial true while D1 is incomplete",
-    body.coverage && body.coverage.partial === true, JSON.stringify(body.coverage));
+  check("9d coverage.partial is indexed < target (false here: sparse fixture ids push MAX(id) past target)",
+    body.coverage && body.coverage.partial === (MAX_ID < 422821), JSON.stringify(body.coverage));
   check("9e coverage never claims the manifest total as the D1 total",
     body.coverage && body.coverage.indexed !== 326149
     && body.coverage.target !== 326149, JSON.stringify(body.coverage));
   const { body: bodyEmpty } = await call({ TG_D1: D1 }, "/api/tg-search?q=");
   check("9f empty-q reply carries coverage too",
-    bodyEmpty.coverage && bodyEmpty.coverage.indexed === TOTAL_ROWS
-    && bodyEmpty.coverage.partial === true, JSON.stringify(bodyEmpty.coverage));
+    bodyEmpty.coverage && bodyEmpty.coverage.indexed === MAX_ID
+    && bodyEmpty.coverage.partial === (MAX_ID < 422821), JSON.stringify(bodyEmpty.coverage));
   const { body: bodyNo } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("zzzqqqxxyy"));
   check("9g no-match reply carries coverage too",
-    bodyNo.coverage && bodyNo.coverage.indexed === TOTAL_ROWS
-    && bodyNo.coverage.partial === true, JSON.stringify(bodyNo.coverage));
+    bodyNo.coverage && bodyNo.coverage.indexed === MAX_ID
+    && bodyNo.coverage.partial === (MAX_ID < 422821), JSON.stringify(bodyNo.coverage));
   const { body: bodyBrowse } = await call({ TG_D1: D1 }, "/api/tg-search?source=kotobkhana&limit=5");
   check("9h source-browse reply carries coverage too",
-    bodyBrowse.coverage && bodyBrowse.coverage.indexed === TOTAL_ROWS,
+    bodyBrowse.coverage && bodyBrowse.coverage.indexed === MAX_ID,
     JSON.stringify(bodyBrowse.coverage));
   const noD1 = await call({}, "/api/tg-search?q=test");
   check("9i 503 (no D1) carries no coverage field",
     noD1.body.coverage === undefined, JSON.stringify(noD1.body));
 }
 
-// 10. coverage cache (P0-2 D1 read-budget fix): the coverage COUNT(*)
-// is a full-table scan (~150k rows), so it is cached in KV for 6 h
-// (key `tg-search:coverage`) and the live COUNT(*) runs only on a
-// cache miss. The response shape is identical either way.
+// 10. coverage cache (P0-2 D1 read-budget fix): the coverage refresh
+// (MAX(id) since 2026-11-26 — before that a full-table COUNT(*))
+// is cached in KV for 6 h (key `tg-search:coverage`) and the live
+// refresh runs only on a cache miss. The response shape is identical
+// either way.
 {
-  // 10a: cache hit — the cached value is used (123456 != TOTAL_ROWS)
-  // and the coverage COUNT(*) is NOT executed at all.
+  const MAX_ID = db.prepare("SELECT MAX(id) AS n FROM books").get().n;
+  // 10a: cache hit — the cached value is used (123456 != MAX_ID)
+  // and the coverage refresh is NOT executed at all.
   const counted = countingD1(db);
   const kvHit = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 123456, at: Date.now() }) });
   const { body: bodyHit } = await call({ TG_D1: counted.db, RLIBOOK_KV: kvHit }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("10a cache hit uses the cached indexed value",
     bodyHit.coverage && bodyHit.coverage.indexed === 123456,
     JSON.stringify(bodyHit.coverage));
-  check("10b cache hit runs ZERO coverage COUNT(*)",
-    counted.coverageCountQueries === 0,
-    `coverage COUNT(*) ran ${counted.coverageCountQueries} times`);
+  check("10b cache hit runs ZERO coverage refreshes",
+    counted.coverageRefreshQueries === 0,
+    `coverage MAX(id) ran ${counted.coverageRefreshQueries} times`);
   check("10c cache hit still returns search results",
     bodyHit.total >= 1 && (bodyHit.results || []).length >= 1, `total=${bodyHit.total}`);
   check("10d cache-hit coverage shape is unchanged",
@@ -480,39 +490,39 @@ const D1 = mockD1(db);
     && bodyHit.coverage.target === 422821 && bodyHit.coverage.partial === true,
     JSON.stringify(bodyHit.coverage));
 
-  // 10e: cache miss — the live COUNT(*) runs exactly once and the
+  // 10e: cache miss — the live MAX(id) runs exactly once and the
   // value is written back to KV (so the next request is a hit).
   const counted2 = countingD1(db);
   const kvMiss = mockKVStore();
   const { body: bodyMiss } = await call({ TG_D1: counted2.db, RLIBOOK_KV: kvMiss }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("10e cache miss falls back to the live COUNT(*)",
-    bodyMiss.coverage && bodyMiss.coverage.indexed === TOTAL_ROWS,
+  check("10e cache miss falls back to the live MAX(id)",
+    bodyMiss.coverage && bodyMiss.coverage.indexed === MAX_ID,
     JSON.stringify(bodyMiss.coverage));
-  check("10f cache miss runs the coverage COUNT(*) exactly once",
-    counted2.coverageCountQueries === 1,
-    `ran ${counted2.coverageCountQueries} times`);
+  check("10f cache miss runs the coverage MAX(id) exactly once",
+    counted2.coverageRefreshQueries === 1,
+    `ran ${counted2.coverageRefreshQueries} times`);
   const written = kvMiss.writes.find((w) => w.key === "tg-search:coverage");
-  check("10g cache miss populates KV with the live count",
-    !!written && JSON.parse(written.value).indexed === TOTAL_ROWS,
+  check("10g cache miss populates KV with the live estimate",
+    !!written && JSON.parse(written.value).indexed === MAX_ID,
     JSON.stringify(written && written.value));
   check("10h cache write carries a 6 h TTL",
     !!written && written.opts && written.opts.expirationTtl === 21600,
     JSON.stringify(written && written.opts));
 
-  // 10i: malformed cached value -> fall back to the live COUNT(*).
+  // 10i: malformed cached value -> fall back to the live MAX(id).
   const counted3 = countingD1(db);
   const kvBad = mockKVStore({ "tg-search:coverage": "not-json{{" });
   const { body: bodyBad } = await call({ TG_D1: counted3.db, RLIBOOK_KV: kvBad }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("10i malformed cache falls back to the live COUNT(*)",
-    bodyBad.coverage && bodyBad.coverage.indexed === TOTAL_ROWS
-    && counted3.coverageCountQueries === 1, JSON.stringify(bodyBad.coverage));
+  check("10i malformed cache falls back to the live MAX(id)",
+    bodyBad.coverage && bodyBad.coverage.indexed === MAX_ID
+    && counted3.coverageRefreshQueries === 1, JSON.stringify(bodyBad.coverage));
   const kvBad2 = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: "abc" }) });
   const { body: bodyBad2 } = await call({ TG_D1: D1, RLIBOOK_KV: kvBad2 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("10j non-numeric cached indexed falls back to the live COUNT(*)",
-    bodyBad2.coverage && bodyBad2.coverage.indexed === TOTAL_ROWS,
+  check("10j non-numeric cached indexed falls back to the live MAX(id)",
+    bodyBad2.coverage && bodyBad2.coverage.indexed === MAX_ID,
     JSON.stringify(bodyBad2.coverage));
 
-  // 10k: KV failure NEVER triggers a live COUNT(*) any more
+  // 10k: KV failure NEVER triggers a live refresh any more
   // (resilience batch, 2026-11-20): a KV error + a live count
   // compounded and killed search on 2026-11-19. The coverage field
   // is omitted instead and the search itself still works.
@@ -521,9 +531,9 @@ const D1 = mockD1(db);
   const { body: bodyThrow } = await call({ TG_D1: counted4.db, RLIBOOK_KV: kvThrow }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("10k KV failure omits coverage (no field, not a stale count)",
     bodyThrow.coverage === undefined, JSON.stringify(bodyThrow.coverage));
-  check("10k2 KV failure runs ZERO coverage COUNT(*)",
-    counted4.coverageCountQueries === 0,
-    `coverage COUNT(*) ran ${counted4.coverageCountQueries} times`);
+  check("10k2 KV failure runs ZERO coverage refreshes",
+    counted4.coverageRefreshQueries === 0,
+    `coverage MAX(id) ran ${counted4.coverageRefreshQueries} times`);
   check("10k3 KV failure still returns search results",
     bodyThrow.total >= 1 && (bodyThrow.results || []).length >= 1, `total=${bodyThrow.total}`);
   check("10k4 KV failure degrades the flag check too (links disabled, never fail-open)",
@@ -736,8 +746,8 @@ ZEBRA.forEach((f, j) => {
   const { body: other } = await call({ TG_D1: D1 }, "/api/tg-search?h=otherchan&p=777");
   check("15f lookup of the no-size book has no size/pages keys",
     other.book && !("size" in other.book) && !("pages" in other.book), JSON.stringify(other.book));
-  check("15g lookup coverage counts the Zebra fixtures too",
-    body.coverage && body.coverage.indexed === TOTAL_ROWS + 3, JSON.stringify(body.coverage));
+  check("15g lookup coverage is the MAX(id) estimate (Zebra fixtures push it past the row count)",
+    body.coverage && body.coverage.indexed === db.prepare("SELECT MAX(id) AS n FROM books").get().n, JSON.stringify(body.coverage));
   const bad11 = await call({ TG_D1: D1 }, "/api/tg-search?h=testchannel&p=12345678901");
   check("15h 11-digit post id -> 400", bad11.status === 400, `status=${bad11.status}`);
 }
@@ -806,7 +816,7 @@ ZEBRA.forEach((f, j) => {
 }
 
 // 17. d1:guard (resilience batch): while the guard flag is set,
-// the live COUNT(*) NEVER runs — the coverage field is omitted and
+// the live MAX(id) refresh NEVER runs — the coverage field is omitted and
 // the search itself is unaffected.
 {
   const today = new Date().toISOString().slice(0, 10);
@@ -815,13 +825,13 @@ ZEBRA.forEach((f, j) => {
   const kvGuard = mockKVStore({ "d1:guard": "D1 exhausted 2026-11-20 (watchdog)" });
   const { body } = await call({ TG_D1: counted.db, RLIBOOK_KV: kvGuard }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("17a guard set -> coverage omitted", body.coverage === undefined, JSON.stringify(body.coverage));
-  check("17b guard set -> ZERO coverage COUNT(*)", counted.coverageCountQueries === 0, `ran ${counted.coverageCountQueries} times`);
+  check("17b guard set -> ZERO coverage refreshes", counted.coverageRefreshQueries === 0, `ran ${counted.coverageRefreshQueries} times`);
   check("17c guard set -> search results still returned", body.total >= 1 && (body.results || []).length >= 1, `total=${body.total}`);
   check("17d guard set -> no refresh counter written", !kvGuard.writes.some((w) => w.key === counterKey), JSON.stringify(kvGuard.writes.map((w) => w.key)));
 }
 
-// 18. Coverage refresh budget: at most 4 live COUNT(*) per UTC day
-// (one KV counter write per refresh). At 4 the count is barred;
+// 18. Coverage refresh budget: at most 4 live MAX(id) refreshes per UTC day
+// (one KV counter write per refresh). At 4 the refresh is barred;
 // below 4 it runs once and the counter increments.
 {
   const today = new Date().toISOString().slice(0, 10);
@@ -831,15 +841,15 @@ ZEBRA.forEach((f, j) => {
   const kvFull = mockKVStore({ [counterKey]: "4" });
   const { body: bodyFull } = await call({ TG_D1: countedFull.db, RLIBOOK_KV: kvFull }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("18a counter at 4 -> coverage omitted", bodyFull.coverage === undefined, JSON.stringify(bodyFull.coverage));
-  check("18b counter at 4 -> ZERO coverage COUNT(*)", countedFull.coverageCountQueries === 0, `ran ${countedFull.coverageCountQueries} times`);
+  check("18b counter at 4 -> ZERO coverage refreshes", countedFull.coverageRefreshQueries === 0, `ran ${countedFull.coverageRefreshQueries} times`);
   check("18c counter at 4 -> search still works", bodyFull.total >= 1, `total=${bodyFull.total}`);
   // 18d: counter at 3 -> the count runs exactly once, the counter
   // is incremented to 4 (48 h TTL), and the cache is populated.
   const counted3 = countingD1(db);
   const kv3 = mockKVStore({ [counterKey]: "3" });
   const { body: body3 } = await call({ TG_D1: counted3.db, RLIBOOK_KV: kv3 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("18d counter at 3 -> live COUNT(*) runs once",
-    body3.coverage && body3.coverage.indexed === TOTAL_ROWS + 3 && counted3.coverageCountQueries === 1,
+  check("18d counter at 3 -> live MAX(id) runs once",
+    body3.coverage && body3.coverage.indexed === db.prepare("SELECT MAX(id) AS n FROM books").get().n && counted3.coverageRefreshQueries === 1,
     JSON.stringify(body3.coverage));
   const counterWrite = kv3.writes.find((w) => w.key === counterKey);
   check("18e counter at 3 -> counter incremented to 4",
@@ -852,8 +862,8 @@ ZEBRA.forEach((f, j) => {
   const counted0 = countingD1(db);
   const kv0 = mockKVStore();
   const { body: body0 } = await call({ TG_D1: counted0.db, RLIBOOK_KV: kv0 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
-  check("18g no counter key -> live COUNT(*) runs once",
-    body0.coverage && body0.coverage.indexed === TOTAL_ROWS + 3 && counted0.coverageCountQueries === 1,
+  check("18g no counter key -> live MAX(id) runs once",
+    body0.coverage && body0.coverage.indexed === db.prepare("SELECT MAX(id) AS n FROM books").get().n && counted0.coverageRefreshQueries === 1,
     JSON.stringify(body0.coverage));
   const counterWrite0 = kv0.writes.find((w) => w.key === counterKey);
   check("18h no counter key -> counter written as 1",
@@ -1354,6 +1364,126 @@ const driveTitles = (body) => (body.results || []).map((r) => r.title);
   // 31j bad Drive source: a folder id under 10 chars is a 400.
   const { status: badStatus } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:short"));
   check("31j source=drive:short -> 400", badStatus === 400, `status=${badStatus}`);
+}
+
+// 32. D1 read-budget fix (2026-11-26, wave 4 workstream 7):
+// rows-first + conditional COUNT. d1Search used to run a COUNT(*)
+// FIRST on every tier and then the rows query — two full
+// enumerations of the match set per tier. Now the rows query runs
+// first and the COUNT runs only when the returned page is full
+// (rows.length === limit: the total may exceed the page) or empty
+// past an offset (total < offset is the only other case an empty
+// page can mean). When the page is NOT full, total = offset +
+// rows.length exactly. The COUNT that still runs is a direct-FTS
+// count when no source/format filter applies, and the join form
+// only when a filter applies. These checks count the actual
+// SELECT COUNT(*) statements executed per request (coverage is a
+// MAX(id) refresh, not a COUNT, so it never pollutes the count)
+// and assert the totals stay exact.
+const ZZCOUNT = [];
+for (let i = 1; i <= 40; i++) {
+  // Two-letter suffix (A1..A40): a 1-char suffix would be dropped by
+  // queryWords (len>=2) and dedupeTitleKey would collapse all 40
+  // fixtures to one tile — the page must hold 40 DISTINCT titles.
+  ZZCOUNT.push([`ZZCount A${i}`, "ZZCount Author", "zzchan", "channel", "epub", "1.0 MB", "2026-11-20", `https://t.me/zzchan/${1000 + i}`, `ZZCount A${i}.epub`]);
+}
+ZZCOUNT.forEach((f, j) => {
+  const id = 900201 + j;
+  insBook.run(id, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
+  insFts.run(id, norm(f[0]), norm(f[1]));
+});
+function recordingD1(sqlite) {
+  const base = mockD1(sqlite);
+  const statements = [];
+  return {
+    db: {
+      prepare(sql) {
+        statements.push(sql);
+        return base.prepare(sql);
+      },
+    },
+    statements,
+    counts() { return statements.filter((s) => s.startsWith("SELECT COUNT(*)")); },
+  };
+}
+{
+  // Coverage is a KV hit here (indexed 422821), so d1Coverage runs
+  // no D1 statement and only the search COUNTs are counted.
+  const kvCov = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 422821, at: Date.now() }) });
+  const rec = recordingD1(db);
+  const env = { TG_D1: rec.db, RLIBOOK_KV: kvCov };
+  const countStmts = () => rec.counts();
+  // 32a: small result — ZERO COUNT, exact total. (The Nov 13 shard
+  // sample holds a second copy of the fixture title, so the exact
+  // total is the tier-0 FTS count from the DB, not 1.)
+  let before = countStmts().length;
+  const expectedSmall = db.prepare("SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?")
+    .get(ladderQueries(queryWords("Everyone in This Bank Is a Thief"))[0].expr).n;
+  const { body: small } = await call(env, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
+  check("32a small result: ZERO COUNT statements, total still exact",
+    countStmts().length - before === 0 && small.total === expectedSmall && expectedSmall >= 1,
+    `counts=${countStmts().length - before} total=${small.total} expected=${expectedSmall}`);
+  // 32b: full page (40 matches, fetchLimit 30) — exactly ONE COUNT,
+  // direct-FTS form (no books join: no filter applies).
+  before = countStmts().length;
+  const { body: full } = await call(env, "/api/tg-search?q=zzcount&limit=10");
+  const newCounts = countStmts().slice(before);
+  check("32b full page: exactly ONE COUNT, direct-FTS form, total exact (40)",
+    newCounts.length === 1
+    && newCounts[0] === "SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?"
+    && full.total === 40 && (full.results || []).length === 10,
+    `counts=${JSON.stringify(newCounts)} total=${full.total} results=${(full.results || []).length}`);
+  // 32c: wide page (limit 50 -> fetchLimit 50 > 40) — ZERO COUNT, total exact.
+  before = countStmts().length;
+  const { body: wide } = await call(env, "/api/tg-search?q=zzcount&limit=50");
+  check("32c wide page (all 40 fit): ZERO COUNT, total exact (40)",
+    countStmts().length - before === 0 && wide.total === 40 && (wide.results || []).length === 40,
+    `counts=${countStmts().length - before} total=${wide.total}`);
+  // 32d: partial last page (offset 30 -> 10 rows < fetchLimit) — ZERO COUNT.
+  before = countStmts().length;
+  const { body: last } = await call(env, "/api/tg-search?q=zzcount&limit=10&offset=30");
+  check("32d partial last page: ZERO COUNT, total exact (40)",
+    countStmts().length - before === 0 && last.total === 40 && (last.results || []).length === 10,
+    `counts=${countStmts().length - before} total=${last.total}`);
+  // 32e: empty page past the end (offset 45 > total 40) — ONE COUNT,
+  // total stays 40 (not offset, not 0).
+  before = countStmts().length;
+  const { body: past } = await call(env, "/api/tg-search?q=zzcount&limit=10&offset=45");
+  check("32e empty page past the end: ONE COUNT, total exact (40), no rows",
+    countStmts().length - before === 1 && past.total === 40 && (past.results || []).length === 0,
+    `counts=${countStmts().length - before} total=${past.total}`);
+  // 32f: no-match query — all tiers miss on the rows query alone, ZERO COUNT.
+  before = countStmts().length;
+  const { body: none } = await call(env, "/api/tg-search?q=" + encodeURIComponent("zzzqqqxxyy"));
+  check("32f no-match: ZERO COUNT statements, total 0",
+    countStmts().length - before === 0 && none.total === 0 && none.match === null,
+    `counts=${countStmts().length - before} total=${none.total}`);
+  // 32g: source browse, small library (1 row < fetchLimit) — ZERO COUNT.
+  before = countStmts().length;
+  const { body: browse } = await call(env, "/api/tg-search?source=dupchanD&limit=5");
+  check("32g small browse: ZERO COUNT, total exact (1)",
+    countStmts().length - before === 0 && browse.total === 1 && (browse.results || []).length === 1,
+    `counts=${countStmts().length - before} total=${browse.total}`);
+  // 32h: filtered search (source present) with a full page — ONE COUNT,
+  // JOIN form (the filter lives on `books`, so the count must join).
+  before = countStmts().length;
+  const { body: filt } = await call(env, "/api/tg-search?q=zzcount&source=zzchan&limit=10");
+  const filtCounts = countStmts().slice(before);
+  check("32h filtered full page: exactly ONE COUNT, JOIN form, total exact (40)",
+    filtCounts.length === 1
+    && filtCounts[0].startsWith("SELECT COUNT(*) AS n FROM books b")
+    && filtCounts[0].includes("WHERE b.id IN (SELECT rowid FROM books_fts")
+    && filt.total === 40,
+    `counts=${JSON.stringify(filtCounts)} total=${filt.total}`);
+  // 32i: MAX(id) premise — on dense (production-shaped) ids the
+  // estimate IS the count.
+  const dense = new DatabaseSync(":memory:");
+  dense.exec("CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT)");
+  const insDense = dense.prepare("INSERT INTO books(id,title) VALUES (?,?)");
+  for (let i = 1; i <= 100; i++) insDense.run(i, `Book ${i}`);
+  check("32i dense ids: MAX(id) === COUNT(*) (the estimator's premise)",
+    dense.prepare("SELECT MAX(id) AS n FROM books").get().n === 100
+    && dense.prepare("SELECT COUNT(*) AS n FROM books").get().n === 100);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
