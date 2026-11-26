@@ -37,6 +37,17 @@ on:
         required: false
         default: "422454"
         type: string
+      submitter_tg_id:
+        description: "Telegram user id of the submitter (0 = owner/unknown)"
+        required: false
+        default: "0"
+        type: string
+      visibility:
+        description: "Registry visibility: private (default, submitter only) or public (owner-approved)"
+        required: false
+        default: "private"
+        type: choice
+        options: [private, public, pending_public]
   schedule:
     # Daily link-health check (04:00 UTC) — marks dead Drive links
     # "unavailable" without deleting metadata.
@@ -66,7 +77,20 @@ jobs:
             --folder "${{ inputs.folder_url }}" \
             --out-dir d1-batches-drive \
             --state-file drive-state.jsonl \
-            --start-id "${{ inputs.start_id }}"
+            --start-id "${{ inputs.start_id }}" \
+            --submitter-tg-id "${{ inputs.submitter_tg_id }}" \
+            --visibility "${{ inputs.visibility }}" \
+            --registry-json drive-libraries.json
+          # Static surfaces for PUBLIC libraries only (drive_opds.py
+          # skips private/pending): OPDS feeds + combined search index.
+          # NOTE: commit drive/ + site/telegram/libraries.html to the
+          # repo after this run — the next run merges the navigation
+          # feed with the committed one, so a second library keeps the
+          # first. (D1 import stays manual, as before.)
+          BOOKS_JSON=$(ls d1-batches-drive/drive-*-books.json | head -n 1)
+          python3 telegram/tbi/drive_opds.py \
+            --books "$BOOKS_JSON" --registry drive-libraries.json --out drive || true
+          python3 scripts/generate-libraries.py --drive-registry drive-libraries.json || true
 
       - name: Health check (all libraries)
         if: ${{ inputs.mode == 'health' || github.event_name == 'schedule' }}
