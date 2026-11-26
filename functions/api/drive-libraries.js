@@ -10,6 +10,14 @@
 //        libraries (mine: true). A pending_public library is also
 //        listed for the owner (mine: false, visibility shown).
 //
+//   Cookie fallback (WAVE 7, A3, 2026-11-26): with no ?fp= in the
+//   URL, the rlb_fp cookie set by /api/identify is read server-side
+//   (HttpOnly — page JS cannot read it; same pattern as
+//   functions/book.js). ?fp= wins when present. A missing/invalid/
+//   unknown cookie resolves to anonymous (public-only) — fail
+//   closed, no new trust: the cookie holds the same fp the user
+//   arrived with, verified through the same KV lookup as ?fp=.
+//
 // This is the read side of the two-type model (user decision
 // 2026-11-26): a newly submitted Drive library is PRIVATE to its
 // submitter until the owner approves it public from the monitor
@@ -33,7 +41,20 @@
 //   RLIBOOK_OWNER_ID (var, optional) — the owner's Telegram id, for
 //                            listing pending_public libraries to them.
 
+import { parseCookies, COOKIE_NAME } from "./identify.js";
+
 const FP_RE = /^[A-Za-z0-9_-]{22}$/;
+
+// rlb_fp cookie -> fingerprint token ("" when absent/malformed).
+// Never throws: a malformed Cookie header must resolve to anonymous,
+// never a 500.
+function cookieFp(request) {
+  try {
+    return (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
 
 async function verifyFingerprint(env, fp) {
   if (!FP_RE.test(fp || "")) return null;
@@ -74,7 +95,8 @@ export async function onRequest(context) {
   if (!db) {
     return json({ ok: false, error: "search unavailable (TG_D1 not bound)" }, 503);
   }
-  const viewerTgId = await verifyFingerprint(env, (url.searchParams.get("fp") || "").trim());
+  const viewerTgId = await verifyFingerprint(env,
+    (url.searchParams.get("fp") || "").trim() || cookieFp(request));
   const ownerRaw = Number((env && (env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID)) || 0);
   const ownerTgId = Number.isSafeInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : 0;
   const isOwner = !!(viewerTgId && ownerTgId && viewerTgId === ownerTgId);

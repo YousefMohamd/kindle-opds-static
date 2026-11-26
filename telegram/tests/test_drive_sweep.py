@@ -240,3 +240,143 @@ def test_run_records_failures_and_defers_over_max(monkeypatch, tmp_path):
     assert data["failed"][0]["reason"] == "not_shared_or_missing"
     assert [d["folder_id"] for d in data["deferred"]] == [F_B]
     assert [i["folder_id"] for i in data["indexed"]] == [F_C]
+
+
+# --- WAVE 7: make-public backstop (SWEEP_SPEC_pubreq.md) ------------
+
+def test_parse_pending_to_publish_indexed_private():
+    # Indexed library, registry still private, newest record asks
+    # for publication -> the backstop list, not the index list.
+    recs = [_sub(F_A, "pending_public")]
+    plan = parse_pending(recs, {F_A}, set(),
+                         {F_A.lower(): "private"})
+    assert [t["folder_id"] for t in plan["to_publish"]] == [F_A]
+    assert plan["to_publish"][0]["submitter_tg_id"] == 111
+    assert plan["to_index"] == []
+
+
+def test_parse_pending_to_publish_skipped_when_already_pending():
+    # Already pending_public in the registry: the endpoint already
+    # applied it — neither action list (fail closed).
+    recs = [_sub(F_A, "pending_public")]
+    plan = parse_pending(recs, {F_A}, set(),
+                         {F_A.lower(): "pending_public"})
+    assert plan["to_publish"] == [] and plan["to_index"] == []
+
+
+def test_parse_pending_to_publish_unknown_visibility_is_neither():
+    # Missing visibility value must not trigger a write.
+    recs = [_sub(F_A, "pending_public")]
+    plan = parse_pending(recs, {F_A}, set(), {})
+    assert plan["to_publish"] == [] and plan["to_index"] == []
+
+
+def test_parse_pending_pubreq_unindexed_still_indexes():
+    # Not indexed yet: the folder still needs indexing (the publish
+    # SQL is emitted by --run once it is indexed); to_publish stays
+    # empty because there is no registry row to UPDATE.
+    recs = [_sub(F_A, "pending_public")]
+    plan = parse_pending(recs, set(), set(),
+                         {F_A.lower(): "private"})
+    assert [t["folder_id"] for t in plan["to_index"]] == [F_A]
+    assert plan["to_publish"] == []
+
+
+def test_parse_pending_rejection_after_pubreq_is_neither():
+    # Newest-wins: an owner rejection after the request supersedes
+    # it — the folder appears in neither action list.
+    recs = [_sub(F_A, "rejected", ts="2026-11-26T12:00:00Z"),
+            _sub(F_A, "pending_public", ts="2026-11-26T11:00:00Z")]
+    plan = parse_pending(recs, {F_A}, set(),
+                         {F_A.lower(): "private"})
+    assert plan["to_publish"] == [] and plan["to_index"] == []
+
+
+def test_publish_sql_for_is_guarded():
+    from drive_sweep import publish_sql_for
+    sql = publish_sql_for(F_A, "2026-11-26T12:00:00Z")
+    assert sql == ("UPDATE drive_libraries SET visibility = 'pending_public', "
+                   "requested_at = '2026-11-26T12:00:00Z' "
+                   f"WHERE folder_id = '{F_A}' AND visibility = 'private';")
+    import pytest
+    with pytest.raises(ValueError):
+        publish_sql_for("bad id!", "2026-11-26T12:00:00Z")
+
+
+def test_run_emits_publish_sql_for_pubreq_trigger(monkeypatch, tmp_path):
+    # A folder indexed in this run from a pending_public trigger
+    # carries publish_sql (guard + requested_at); a plain
+    # pending_index folder carries none.
+    import sys
+    subs = tmp_path / "subs.json"
+    subs.write_text(json.dumps([
+        _sub(F_A, "pending_public"), _sub(F_B, "pending_index"),
+    ]), encoding="utf-8")
+    reg = tmp_path / "drive-libraries.json"
+    reg.write_text(json.dumps({"libraries": []}), encoding="utf-8")
+    fake = _FakeRun({F_A: (0, 1), F_B: (0, 1)})
+    monkeypatch.setattr(drive_sweep.subprocess, "run", fake)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", ["drive_sweep.py", "--run",
+        "--submissions", str(subs), "--registry", str(reg),
+        "--out-dir", str(tmp_path / "batches"),
+        "--state-file", str(tmp_path / "s.jsonl"),
+        "--start-id", "100", "--manifest", str(manifest)])
+    assert drive_sweep.main() == 0
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    by_id = {e["folder_id"]: e for e in data["indexed"]}
+    assert "publish_sql" in by_id[F_A]
+    assert "AND visibility = 'private'" in by_id[F_A]["publish_sql"]
+    assert "requested_at = '20" in by_id[F_A]["publish_sql"]
+    assert f"folder_id = '{F_A}'" in by_id[F_A]["publish_sql"]
+    assert "publish_sql" not in by_id[F_B]
+    assert data["to_publish"] == []
+
+
+def test_run_to_publish_manifest_for_indexed_private(monkeypatch, tmp_path):
+    # Indexed private library + pending_public record: no indexing
+    # happens, but the manifest carries the backstop UPDATE.
+    import sys
+    subs = tmp_path / "subs.json"
+    subs.write_text(json.dumps([_sub(F_A, "pending_public")]),
+                    encoding="utf-8")
+    reg = tmp_path / "drive-libraries.json"
+    reg.write_text(json.dumps({"libraries": [
+        {"folder_id": F_A, "title": "Priv", "visibility": "private"}]}),
+        encoding="utf-8")
+    fake = _FakeRun({})
+    monkeypatch.setattr(drive_sweep.subprocess, "run", fake)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", ["drive_sweep.py", "--run",
+        "--submissions", str(subs), "--registry", str(reg),
+        "--out-dir", str(tmp_path / "batches"),
+        "--state-file", str(tmp_path / "s.jsonl"),
+        "--start-id", "100", "--manifest", str(manifest)])
+    assert drive_sweep.main() == 0
+    assert fake.calls == []  # nothing to index
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["indexed"] == []
+    assert len(data["to_publish"]) == 1
+    pub = data["to_publish"][0]
+    assert pub["folder_id"] == F_A and pub["submitter_tg_id"] == 111
+    assert "AND visibility = 'private'" in pub["publish_sql"]
+    assert f"folder_id = '{F_A}'" in pub["publish_sql"]
+
+
+def test_plan_cli_lists_to_publish(monkeypatch, tmp_path):
+    import sys
+    subs = tmp_path / "subs.json"
+    subs.write_text(json.dumps([_sub(F_A, "pending_public")]),
+                    encoding="utf-8")
+    reg = tmp_path / "drive-libraries.json"
+    reg.write_text(json.dumps({"libraries": [
+        {"folder_id": F_A, "title": "Priv", "visibility": "private"}]}),
+        encoding="utf-8")
+    out = tmp_path / "plan.json"
+    monkeypatch.setattr(sys, "argv", ["drive_sweep.py", "--plan",
+        "--submissions", str(subs), "--registry", str(reg),
+        "--out", str(out)])
+    assert drive_sweep.main() == 0
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [t["folder_id"] for t in plan["to_publish"]] == [F_A]
+    assert plan["to_index"] == []

@@ -151,3 +151,53 @@ def test_parse_drive_books_sql_handles_multiline_titles(tmp_path):
     assert books[0]["title"] == "عنوان\nمتعدد الأسطر"
     assert books[0]["file_id"] == "FILEA1234567890"
     assert books[1]["ext"] == "EPUB"
+
+
+def test_cli_visibility_defaults_private(monkeypatch, tmp_path):
+    """WAVE 7: the CLI default is private — a newly submitted library
+    is visible only to its submitter until the owner approves it
+    public (the two-type model; --visibility public stays explicit)."""
+    import json
+
+    import drive_registry
+
+    reg_path = tmp_path / "drive-libraries.json"
+    out_dir = tmp_path / "d1-batches-drive"
+    monkeypatch.setattr(sys, "argv", [
+        "drive_registry.py",
+        "--registry", str(reg_path),
+        "--folder", FOLDER,
+        "--title", "New Library",
+        "--submitter", "777",
+        "--out-dir", str(out_dir),
+    ])
+    assert drive_registry.main() == 0
+    sql_text = (out_dir / f"drive-{FOLDER[:12]}-registry.sql").read_text(encoding="utf-8")
+    assert "'private'" in sql_text
+    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    entry = registry["libraries"][0]
+    assert entry["visibility"] == "private"
+    assert entry["submitted_by"] == 777
+
+
+def test_cli_visibility_public_stays_explicit(monkeypatch, tmp_path):
+    """--visibility public still works when the owner passes it
+    explicitly (e.g. the Oriental Music backfill)."""
+    import json
+
+    import drive_registry
+
+    reg_path = tmp_path / "drive-libraries.json"
+    out_dir = tmp_path / "d1-batches-drive"
+    monkeypatch.setattr(sys, "argv", [
+        "drive_registry.py",
+        "--registry", str(reg_path),
+        "--folder", FOLDER,
+        "--title", "Oriental Music",
+        "--submitter", "0",
+        "--visibility", "public",
+        "--out-dir", str(out_dir),
+    ])
+    assert drive_registry.main() == 0
+    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    assert registry["libraries"][0]["visibility"] == "public"

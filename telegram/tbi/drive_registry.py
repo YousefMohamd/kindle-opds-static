@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS drive_libraries (
   added_by TEXT NOT NULL DEFAULT '', added_at TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
   submitter_tg_id INTEGER,
-  visibility TEXT NOT NULL DEFAULT 'public',
+  visibility TEXT NOT NULL DEFAULT 'private',
   requested_at TEXT,
   reviewed_at TEXT);
 """
@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS drive_libraries (
 # ADD COLUMN IF NOT EXISTS, so each is added only when missing.
 MIGRATION_COLUMNS = [
     ("submitter_tg_id", "INTEGER"),
+    # 'public' here is LEGACY preservation, not a fail-open default:
+    # ADD COLUMN backfills every EXISTING row with the default, and
+    # rows that predate the visibility column are libraries indexed
+    # before the registry existed — all public by the old model.
+    # New rows never take this path: registry_upsert_sql defaults
+    # an omitted visibility to 'private' (fail closed).
     ("visibility", "TEXT NOT NULL DEFAULT 'public'"),
     ("requested_at", "TEXT"),
     ("reviewed_at", "TEXT"),
@@ -122,7 +128,7 @@ def registry_upsert_sql(lib: dict) -> str:
     status = lib.get("status", "active")
     submitter = lib.get("submitter_tg_id")
     submitter_sql = "NULL" if submitter in (None, "", 0) else str(int(submitter))
-    visibility = validate_visibility(lib.get("visibility", "public"))
+    visibility = validate_visibility(lib.get("visibility", "private"))
     return (
         "INSERT INTO drive_libraries(folder_id, title, added_by, added_at, status,"
         " submitter_tg_id, visibility) VALUES ("
@@ -184,7 +190,7 @@ def upsert_registry_json(registry: dict, lib: dict) -> dict:
         "added_by": lib.get("added_by", ""),
         "added_at": lib.get("added_at", ""),
         "status": lib.get("status", "active"),
-        "visibility": lib.get("visibility", "public"),
+        "visibility": lib.get("visibility", "private"),
         **({"submitted_by": int(lib["submitter_tg_id"])}
            if lib.get("submitter_tg_id") not in (None, "", 0) else {}),
     })
@@ -241,8 +247,12 @@ def main() -> int:
     ap.add_argument("--added-by", default="owner")
     ap.add_argument("--submitter", type=int, default=0,
                     help="Telegram user id of the submitter (0 = owner/unknown)")
-    ap.add_argument("--visibility", default="public",
-                    choices=sorted(VISIBILITIES))
+    ap.add_argument("--visibility", default="private",
+                    choices=sorted(VISIBILITIES),
+                    help="registry visibility for this library "
+                         "(default: private — a newly submitted library "
+                         "is visible only to its submitter until the "
+                         "owner approves it public)")
     ap.add_argument("--out-dir", default="d1-batches-drive")
     args = ap.parse_args()
 

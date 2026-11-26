@@ -32,6 +32,15 @@
 //   screenshotted or copied by hand. Selection is a feature, not a
 //   hole: see below.
 //
+// Drive visibility (WAVE 7): a private/pending Drive library's book
+// reads here ONLY for its submitter (pending: + the owner) — the gate
+// in onRequest, via driveBookLibrary (same D1 registry lookup as
+// /api/send-to-kindle). Honest limit: this closes the SERVER-side
+// /read path only. The site reader (site/reader) fetches a Drive
+// EPUB's uc URL directly in the browser, outside this function —
+// that path needs a token-gated proxy to close, which does not exist
+// for OPDS books yet. "Private" stays unlisted, not access-controlled.
+//
 // Selection, notes & highlights (v2): the chapter page carries one
 // small inline script (ES5, defensive — the page still reads with
 // JS off). It gives: native text selection (mouse + touch
@@ -62,8 +71,9 @@
 // a 1102. Zero D1 writes, no KV writes (one flag read for Telegram
 // books, plus the token HMAC).
 
-import { parseBookParams, isFlaggedBook, isHiddenBook, resolveOpdsAcquisitionUrl, verifyReaderToken, readerTokenOwn, makeReaderToken, READER_TOKEN_TTL_SECONDS } from "./api/dl-token.js";
+import { parseBookParams, isFlaggedBook, isHiddenBook, resolveOpdsAcquisitionUrl, verifyReaderToken, readerTokenOwn, makeReaderToken, READER_TOKEN_TTL_SECONDS, OPDS_LIBS, driveBookLibrary, driveLibraryAllows } from "./api/dl-token.js";
 import { magicBytesOk, proxyDownloadUrl } from "./api/send-to-kindle.js";
+import { parseCookies, COOKIE_NAME } from "./api/identify.js";
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 // One rendered unit (chapter / PDF page / text page) is never
@@ -1622,6 +1632,43 @@ export async function onRequest(context) {
       "<p>رابط القراءة هذا منتهٍ أو غير صالح — روابط القراءة تعمل لمدة ساعة واحدة ولكتاب واحد فقط.</p>\n"
       + "<p>عُد إلى <a href=\"" + deliveryLink + "\">صفحة «احصل على الكتاب على جهازك»</a> واضغط «اقرأ الآن في المتصفح» مجدداً.</p>\n"
       + "<p><a href=\"" + esc(backToBook) + "\">← رجوع</a></p>\n", 403);
+  }
+
+  // ---- Drive visibility gate (WAVE 7) ------------------------------
+  // Same rule as /api/send-to-kindle: a private/pending Drive
+  // library's book reads here ONLY for its submitter (pending: +
+  // the owner). The reader token proves the link is fresh, not who
+  // holds it — so identity comes from the fingerprint (?fp=, carried
+  // by the reader link, or the rlb_fp cookie), resolved to a
+  // Telegram id via KV. A reader with no fingerprint has no identity
+  // and is refused a private book. Placed AFTER the token gate (no
+  // token, no chapter anyway) and BEFORE the renewal + fetch, so a
+  // refused reader gets no fresh token and no chapter. The kind
+  // check reads OPDS_LIBS (dl-token.js): if lib=drive is ever added
+  // there, this gate engages for it automatically — today
+  // parseBookParams still rejects lib=drive, so the live cases are
+  // khazendar / sahwa / electronic. Public / legacy / unindexed ids
+  // pass through unchanged; see driveBookLibrary / driveLibraryAllows.
+  if (book.kind === "opds" && OPDS_LIBS[book.lib] && OPDS_LIBS[book.lib].kind === "drive") {
+    const rfp = (url.searchParams.get("fp") || "").trim()
+      || (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
+    let viewerTgId = null;
+    if (rfp && env.RLIBOOK_KV) {
+      try {
+        const rec = rfp.length <= 128 ? await env.RLIBOOK_KV.get("fp:" + rfp, "json") : null;
+        viewerTgId = rec && Number.isSafeInteger(rec.tg_id) ? rec.tg_id : null;
+      } catch { viewerTgId = null; }
+    }
+    const ownerRaw = Number((env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID) || 0);
+    const ownerTgId = Number.isSafeInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : 0;
+    const libInfo = await driveBookLibrary(env.TG_D1, book.id);
+    if (!driveLibraryAllows(libInfo, viewerTgId, ownerTgId)) {
+      return page("📁 مكتبة خاصة",
+        "<p>📁 هذا الكتاب من مكتبة Drive خاصة — القراءة هنا متاحة لصاحب المكتبة فقط.</p>\n"
+        + "<p>إن كنت صاحب المكتبة، افتح الكتاب من كتالوجك أو من البوت "
+        + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> (ببصمتك).</p>\n"
+        + "<p><a href=\"" + esc(backToBook) + "\">← رجوع</a></p>\n", 403);
+    }
   }
 
   // ---- token renewal: no time limit for reading -------------------

@@ -45,6 +45,12 @@
 //     A hidden post (owner /hide) returns { ok: true, book: null },
 //     the same as an unknown post — the title must not leak through
 //     a "removed" notice.
+//   GET /api/tg-search?h=drive&p=<Drive file id>
+//     -> same shape, for a Drive book (WAVE 7, wave-7 child A).
+//     Both lookup forms honor the viewer's ?fp= fingerprint: a
+//     private/pending Drive book reads as { book: null } for anyone
+//     but its submitter (pending: + owner), exactly like a hidden
+//     post — no title leak.
 //
 // Hidden books (owner-only /hide, Workstream 2b): DIFFERENT from
 // flagged. A flagged book is still SHOWN (🚩 badge
@@ -76,6 +82,9 @@
 //     holds one file, so formats has exactly one entry; flagged
 //     comes from the same KV denylist as search. Takes precedence
 //     over q when both are given (a lookup is not a search).
+//     ?h=drive&p=<fileId> is the Drive form of the same lookup
+//     (WAVE 7): the one Drive book for that file id, subject to
+//     the viewer's ?fp= fingerprint like every other Drive row.
 //
 // What it searches: the Telegram catalog (321k distinct books from 51
 // channels + 168 groups), held in a Cloudflare D1 database (SQLite +
@@ -160,9 +169,10 @@
 // Drive books have no t.me URL, so they use `flag:drive:<fileId>`
 // instead of `flag:<handle>:<post_id>` (the flags:all blob may also
 // carry `drive:<fileId>` entries); without it a flagged Drive book
-// could never be flagged at all. Delivery for Drive rows is
-// send-by-email + read-online only (`send` / `read` gated links);
-// there is no /kindle/get delivery page for Drive books and no bot
+// could never be flagged at all. Delivery for Drive rows is the
+// /kindle/get delivery page (`get`, lib=drive&id=<fileId> — WAVE 7,
+// unlocked by the `drive` entry in dl-token.js OPDS_LIBS) +
+// send-by-email (`send`) + read-online (`read`); there is no bot
 // deep link for a flagged Drive book (the bot has no dl_drive_ link).
 //
 // Flagged books: the endpoint IDENTIFIES them, it does not
@@ -281,6 +291,8 @@
 // COUNT. The coverage refresh is MAX(id) (~1 row), at most
 // 4 times/day, never under `d1:guard`. No catalog fetch, no heavy
 // work. D1 writes happen only in the population script, never here.
+
+import { parseCookies, COOKIE_NAME } from "./identify.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -538,6 +550,26 @@ export function driveFlagKey(url) {
 // same KV lookup as functions/opds/[[fp]].js — fp:<token> ->
 // { tg_id, created_at }. No fp (or an unknown/revoked one) means an
 // anonymous viewer (null). Never throws.
+//
+// Cookie fallback (WAVE 7, A3, 2026-11-26): when no ?fp= is in the
+// URL, the rlb_fp cookie set by /api/identify on the first catalog
+// visit is read server-side (the cookie is HttpOnly, so page JS
+// cannot read it — same pattern as functions/book.js). A reader who
+// hops homepage -> telegram page -> homepage without fp in the URL
+// keeps seeing their own private Drive libraries. ?fp= wins when
+// present. A missing/invalid/unknown cookie resolves to anonymous
+// (public-only) — fail closed, no new trust: the cookie holds the
+// same fp the user arrived with, verified through the same KV
+// lookup as ?fp=.
+function cookieFp(request) {
+  try {
+    return (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
+  } catch (e) {
+    // A malformed Cookie header (e.g. a stray % breaking
+    // decodeURIComponent) must never 500 the search — anonymous.
+    return "";
+  }
+}
 async function verifyFingerprint(env, fp) {
   if (!FP_RE.test(fp || "")) return null;
   const kv = env && env.RLIBOOK_KV;
@@ -827,13 +859,13 @@ const DEDUP_OVERFETCH = 3;
 // returned with delivery links disabled and flagCheck: "degraded",
 // the raw post URL is withheld even from the bot, and the caller
 // must surface flagStatus. A degraded page never fails open.)
-async function visibleResults(env, rows, includeUrl, limit) {
+async function visibleResults(env, rows, includeUrl, limit, fp = "") {
   const state = await flagStateForRows(env, rows);
   const cap = Number.isFinite(limit) && limit > 0 ? limit : (rows || []).length;
   if (state.status === "degraded") {
     const kept = dedupeKept((rows || []).map((r) => ({ row: r, flagged: false })));
     const results = kept.slice(0, cap).map(({ row }) => {
-      const out = toResult(row, false, false);
+      const out = toResult(row, false, false, fp);
       out.get = null;
       out.send = null;
       out.read = null;
@@ -860,7 +892,7 @@ async function visibleResults(env, rows, includeUrl, limit) {
   // page is then cut to the requested limit of DISTINCT books.
   const results = dedupeKept(kept)
     .slice(0, cap)
-    .map(({ row, flagged }) => toResult(row, flagged, includeUrl));
+    .map(({ row, flagged }) => toResult(row, flagged, includeUrl, fp));
   return { results, hiddenCount, flagStatus: state.status };
 }
 
@@ -1014,11 +1046,17 @@ async function d1Coverage(db, env) {
 // on books.source). With no query words (empty q) and a source, it lists
 // that library's books by id order instead of FTS rank.
 // Drive-visibility clause (WAVE 4, WS8 — see the header docs). `vis`
-// is { hasRegistry, viewerTgId, isOwner } (built in onRequest). When
-// the registry is absent the join/clause are empty strings — the
-// legacy no-filter queries, so search can never 500 on an older D1.
+// is { hasRegistry, hasRestrictedDrive, viewerTgId, isOwner } (built
+// in onRequest). When the registry is absent the join/clause are
+// empty strings — the legacy no-filter queries, so search can never
+// 500 on an older D1. `needsFilter` is true only when a RESTRICTED
+// (private / pending_public) Drive library exists: with no restricted
+// library every Drive row is visible to everyone, so the fast
+// direct-FTS count (which cannot carry a books-table filter) stays
+// exact; with one, the count must use the join form below (see
+// countTotal in d1Search).
 function driveVisibility(vis) {
-  if (!vis || !vis.hasRegistry) return { join: "", clause: "", params: [], libCol: "" };
+  if (!vis || !vis.hasRegistry) return { join: "", clause: "", params: [], libCol: "", needsFilter: false };
   return {
     join:
       " LEFT JOIN drive_libraries dl ON b.kind = 'drive' " +
@@ -1029,6 +1067,7 @@ function driveVisibility(vis) {
       " OR (dl.visibility = 'pending_public' AND ? = 1))",
     params: [vis.viewerTgId || -1, vis.isOwner ? 1 : 0],
     libCol: ", dl.title AS library_title",
+    needsFilter: !!vis.hasRestrictedDrive,
   };
 }
 
@@ -1082,16 +1121,19 @@ async function d1Search(db, match, limit, offset, source, format, vis) {  const 
   // an offset. Direct-FTS count when no filter applies (same count
   // as the join form — rowid 1:1 with books.id — without the
   // per-match `books` probe); join form when a filter applies.
-  // Drive note (merged 2026-11-26): the join form also carries
-  // the driveVisibility join/clause, so the count agrees with the
-  // rows when a private/pending Drive library exists. The direct
-  // form has no visibility filter — it can overcount by the
-  // invisible Drive matches ONLY on an unfiltered full page while
-  // a restricted Drive library exists (bounded by that library's
-  // matching books; today every Drive library is public, so the
-  // direct count is exact).
+  // Drive note (WAVE 7, wave-7 child A — fixes the deb17a71
+  // caveat): the join form carries the driveVisibility
+  // join/clause, so the count agrees with the rows when a
+  // private/pending Drive library exists. The direct form has no
+  // visibility filter, so it runs ONLY when no restricted Drive
+  // library exists at all (dv.needsFilter, from the one-row probe
+  // in onRequest): with a restricted library present the count
+  // uses the join form even on an unfiltered page, so the
+  // full-page total can never overcount invisible Drive matches.
+  // With no restricted library every Drive row is public/legacy,
+  // so the direct count stays exact — and stays fast.
   async function countTotal(matchExpr) {
-    if (!hasSource && !hasFormat) {
+    if (!hasSource && !hasFormat && !dv.needsFilter) {
       const row = await db
         .prepare("SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?")
         .bind(matchExpr)
@@ -1165,10 +1207,10 @@ export async function d1SearchLadder(db, words, limit, offset, source, format, v
   return { total: 0, rows: [], match: null };
 }
 
-function toResult(row, flagged, includeUrl) {
+function toResult(row, flagged, includeUrl, fp = "") {
   const author = row.author && String(row.author).trim() ? row.author : null;
   const ext = (row.ext || "").trim().toUpperCase();
-  const links = gatedLinks(row, !!flagged);
+  const links = gatedLinks(row, !!flagged, fp);
   const out = {
     title: row.title,
     author,
@@ -1230,14 +1272,24 @@ const SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
  *  no links at all (website rule: flagged = shown, never readable or
  *  downloadable here — the bot is the flagged path). A private-group
  *  post (t.me/c/...) has no public handle, so it gets no links either:
- *  the delivery page could not fetch it. Exported for tests. */
-export function gatedLinks(row, flagged) {
+ *  the delivery page could not fetch it. `fp` (optional, WAVE 7):
+ *  the viewer's VERIFIED fingerprint — when present it rides on the
+ *  `get` + `send` links, because /kindle/get and /api/send-to-kindle
+ *  resolve identity from ?fp= OR the rlb_fp cookie, and a search
+ *  visitor may carry ?fp= with no cookie set yet (without it, a
+ *  submitter's own private Drive book would 403 on the direct
+ *  download/email link). The `read` link carries no fp — the site
+ *  reader has no server gate to satisfy. Exported for tests. */
+export function gatedLinks(row, flagged, fp = "") {
   const none = { get: null, send: null, read: null };
   if (flagged) return none;
-  // Drive rows: send-by-email + read-online only. There is NO
-  // /kindle/get delivery page for Drive books (kindle/get.js knows
-  // only lib=tg), so `get` stays null — the website falls back to
-  // the direct send link for them (book.js), never to /kindle/get.
+  const fpQ = fp ? `&fp=${encodeURIComponent(fp)}` : "";
+  // Drive rows: `get` is the /kindle/get delivery page
+  // (lib=drive&id=<fileId> — unlocked by the `drive` entry in
+  // dl-token.js OPDS_LIBS, which /kindle/get resolves via
+  // parseBookParams), plus send-by-email + read-online. The
+  // website falls back to the direct send link for them only when
+  // the format is not get/sendable (book.js).
   const drive = parseDriveFileUrl(row.url);
   if (drive) {
     const fmt = (row.ext || "").trim().toLowerCase();
@@ -1245,7 +1297,8 @@ export function gatedLinks(row, flagged) {
     const base = `lib=drive&id=${encodeURIComponent(drive.fileId)}`;
     const out = { ...none };
     if (SENDABLE_FORMATS.has(fmt)) {
-      out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}`;
+      out.get = `/kindle/get?${base}&f=${fmt}&t=${title}${fpQ}`;
+      out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}${fpQ}`;
     }
     if (fmt === "epub") {
       out.read = `/site/reader/?${base}&f=epub&title=${title}`;
@@ -1259,8 +1312,8 @@ export function gatedLinks(row, flagged) {
   const base = `lib=tg&h=${encodeURIComponent(parsed.handle)}&p=${parsed.postId}`;
   const out = { ...none };
   if (SENDABLE_FORMATS.has(fmt)) {
-    out.get = `/kindle/get?${base}&f=${fmt}&t=${title}`;
-    out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}`;
+    out.get = `/kindle/get?${base}&f=${fmt}&t=${title}${fpQ}`;
+    out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}${fpQ}`;
   }
   if (fmt === "epub") {
     out.read = `/site/reader/?${base}&f=epub&title=${title}`;
@@ -1270,15 +1323,53 @@ export function gatedLinks(row, flagged) {
 
 /** One D1 lookup by Telegram post: the first book row for that post
  *  URL, by id. A post can hold several files — the first row wins
- *  (see the route docs). Returns the row or null. Exported for tests. */
-export async function d1LookupByPost(db, handle, postId) {
+ *  (see the route docs). Returns the row or null. `vis` (optional,
+ *  built in onRequest) applies the Drive-visibility clause, so a
+ *  Drive row can never leak through this path to a viewer who may
+ *  not see its library; without `vis` the legacy no-filter query
+ *  runs. Exported for tests. */
+export async function d1LookupByPost(db, handle, postId, vis) {
   const url = `https://t.me/${handle}/${postId}`;
+  const dv = driveVisibility(vis);
   const { results } = await db
     .prepare(
-      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
-        "FROM books b WHERE b.url = ? COLLATE NOCASE ORDER BY b.id LIMIT 1",
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
+        " FROM books b" + dv.join + " WHERE b.url = ? COLLATE NOCASE" + dv.clause + " ORDER BY b.id LIMIT 1",
     )
-    .bind(url)
+    .bind(url, ...dv.params)
+    .all();
+  return (results && results[0]) || null;
+}
+
+/** True when `h`/`p` address a Drive book, not a Telegram post:
+ *  h=drive and p is a Drive file id (10-80 chars). A numeric p of
+ *  1-10 digits stays a Telegram post id — a channel literally
+ *  named "drive" keeps its posts on the Telegram path. Exported
+ *  for tests. */
+export function isDriveLookup(handle, postId) {
+  const p = postId || "";
+  return handle === "drive"
+    && /^[A-Za-z0-9_-]{10,80}$/.test(p)
+    && !/^\d{1,10}$/.test(p);
+}
+
+/** One D1 lookup by Drive file id: the first kind='drive' row whose
+ *  URL is that file's Drive URL, by id. The stored URL is the
+ *  /file/d/<id>/view form (see parseDriveFileUrl); the exact
+ *  no-suffix form is accepted too. `vis` (optional) applies the
+ *  Drive-visibility clause — an invisible library's book reads as
+ *  "unknown" (null), never as a title leak. Exported for tests. */
+export async function d1LookupByDriveFile(db, fileId, vis) {
+  const dv = driveVisibility(vis);
+  const exact = `https://drive.google.com/file/d/${fileId}`;
+  const prefix = exact + "/";
+  const { results } = await db
+    .prepare(
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
+        " FROM books b" + dv.join + " WHERE b.kind = 'drive' AND (b.url = ? OR instr(b.url, ?) = 1)" +
+        dv.clause + " ORDER BY b.id LIMIT 1",
+    )
+    .bind(exact, prefix, ...dv.params)
     .all();
   return (results && results[0]) || null;
 }
@@ -1688,13 +1779,45 @@ export async function onRequest(context) {
   // the viewer is identified by ?fp= (the catalog fingerprint), the
   // owner by env.RLIBOOK_OWNER_ID (same value as the bot's wrangler
   // var; OWNER_TG_ID accepted as an alias). Anonymous viewers see
-  // public libraries only. The registry probe is one tiny
+  // public libraries only. When no ?fp= is present, the rlb_fp
+  // cookie is read server-side instead (?fp= wins — see
+  // cookieFp above). The registry probe is one tiny
   // sqlite_master lookup; when the table is absent the search falls
   // back to the legacy no-filter queries.
-  const viewerTgId = await verifyFingerprint(env, (url.searchParams.get("fp") || "").trim());
+  // The verified fingerprint also rides on the delivery links
+  // (WAVE 7): /kindle/get and /api/send-to-kindle resolve identity
+  // from ?fp= OR the rlb_fp cookie, but a search visitor may carry
+  // ?fp= with no cookie set yet — so the gated links carry it
+  // explicitly (see gatedLinks). Only a VERIFIED fp is threaded;
+  // an unknown token is dropped, never echoed into links.
+  const rawFp = (url.searchParams.get("fp") || "").trim() || cookieFp(request);
+  const viewerTgId = await verifyFingerprint(env, rawFp);
+  const viewerFp = viewerTgId !== null ? rawFp : "";
   const ownerId = Number(((env && (env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID)) || "").toString().trim());
+  // hasRestrictedDrive (WAVE 7, wave-7 child A): one LIMIT 1 probe
+  // for a private/pending_public Drive library. It decides whether
+  // the fast direct-FTS count may run (see countTotal): with no
+  // restricted library the direct count is exact, with one the
+  // join form must run. The table is tiny (one row per library),
+  // so the probe costs ~1 row. A probe failure assumes restricted
+  // (fail closed on totals: the join form is always correct, and
+  // a failed probe must never let the direct count overcount
+  // invisible books) — search itself never 500s on it.
+  const hasRegistry = await hasDriveRegistry(db);
+  let hasRestrictedDrive = false;
+  if (hasRegistry) {
+    try {
+      const probe = await db
+        .prepare("SELECT 1 AS n FROM drive_libraries WHERE visibility IN ('private', 'pending_public') LIMIT 1")
+        .bind().first();
+      hasRestrictedDrive = !!probe;
+    } catch (e) {
+      hasRestrictedDrive = true;
+    }
+  }
   const vis = {
-    hasRegistry: await hasDriveRegistry(db),
+    hasRegistry,
+    hasRestrictedDrive,
     viewerTgId: viewerTgId || -1,
     isOwner: viewerTgId !== null && Number.isSafeInteger(ownerId) && ownerId > 0 && ownerId === viewerTgId,
   };
@@ -1711,24 +1834,33 @@ export async function onRequest(context) {
   const coverage = await d1Coverage(db, env);
   const cov = coverage ? { coverage } : {};
 
-  // Single-book lookup by Telegram post (?h=&p=): the bot's dl_ deep
-  // link resolves the book's format through this instead of trusting
-  // the link. Both params are required; a bad handle or post id is a
-  // 400, an unknown post is { ok: true, book: null } (not a 404 —
-  // the caller treats "unknown post" as "cannot confirm the format").
-  // The book carries the same fields as a search result (gated links
-  // for everyone, `url` only for an authenticated bot caller).
+  // Single-book lookup by Telegram post (?h=&p=) — or by Drive file
+  // (?h=drive&p=<fileId>, WAVE 7, wave-7 child A): the ?h=&p= path
+  // previously resolved Telegram posts only, so a Drive book was
+  // unreachable here at all. Both forms are visible ONLY through
+  // the viewer's ?fp= fingerprint (vis is passed to the lookup):
+  // a private/pending Drive book reads as { book: null } for anyone
+  // but its submitter (pending: + owner), exactly like a hidden
+  // post — no title leak. Both params are required; a bad handle,
+  // post id or file id is a 400, an unknown post/file is
+  // { ok: true, book: null } (not a 404 — the caller treats
+  // "unknown" as "cannot confirm the format"). The book carries the
+  // same fields as a search result (gated links for everyone, `url`
+  // only for an authenticated bot caller).
   const hParam = (url.searchParams.get("h") || "").trim();
   const pParam = (url.searchParams.get("p") || "").trim();
   if (hParam || pParam) {
-    if (!SOURCE_RE.test(hParam) || !/^\d{1,10}$/.test(pParam)) {
+    const driveLookup = isDriveLookup(hParam.toLowerCase(), pParam);
+    if (!driveLookup && (!SOURCE_RE.test(hParam) || !/^\d{1,10}$/.test(pParam))) {
       return json(
-        { ok: false, error: "bad post — use ?h=<channel handle>&p=<post id>" },
+        { ok: false, error: "bad post — use ?h=<channel handle>&p=<post id> or ?h=drive&p=<Drive file id>" },
         400,
       );
     }
     try {
-      const row = await d1LookupByPost(db, hParam.toLowerCase(), pParam);
+      const row = driveLookup
+        ? await d1LookupByDriveFile(db, pParam, vis)
+        : await d1LookupByPost(db, hParam.toLowerCase(), pParam, vis);
       if (!row) {
         return json({ ok: true, ...cov, book: null });
       }
@@ -1741,7 +1873,7 @@ export async function onRequest(context) {
       // post" — the same null, no "removed" notice, no title leak.
       const state = await flagStateForRows(env, [row]);
       if (state.status === "degraded") {
-        const out = toResult(row, false, false);
+        const out = toResult(row, false, false, viewerFp);
         out.get = null;
         out.send = null;
         out.read = null;
@@ -1755,7 +1887,7 @@ export async function onRequest(context) {
         return json({ ok: true, ...cov, flagStatus: state.status, book: null });
       }
       const flagged = key ? state.flagged.has(key) : false;
-      return json({ ok: true, ...cov, flagStatus: state.status, book: toResult(row, flagged, includeUrl) });
+      return json({ ok: true, ...cov, flagStatus: state.status, book: toResult(row, flagged, includeUrl, viewerFp) });
     } catch (e) {
       console.warn("[tg-search] post lookup failed:", e && e.message);
       return json(
@@ -1795,7 +1927,7 @@ export async function onRequest(context) {
       // flagStatus ("ok" | "legacy" | "degraded") tells the caller
       // whether the denylist was trusted for this page. Same-title
       // reposts collapse to one tile (see visibleResults).
-      const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit);
+      const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit, viewerFp);
       return json({
         ok: true, q, source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov, ...fmtField,
         flagStatus,
@@ -1843,7 +1975,7 @@ export async function onRequest(context) {
     // the caller whether the denylist was trusted for this page.
     // Same-title reposts collapse to one tile (see visibleResults);
     // `total` stays the raw match count, not distinct titles.
-    const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit);
+    const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit, viewerFp);
     return json({
       ok: true,
       q,

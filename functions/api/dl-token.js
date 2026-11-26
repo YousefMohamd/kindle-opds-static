@@ -2,7 +2,7 @@
 // Route: GET /api/dl-token?h=<handle>&p=<post_id>&f=<format>
 //        (Telegram books, legacy form — no lib needed)
 //        GET /api/dl-token?lib=<slug>&id=<book id>&f=<format>
-//        (OPDS books — khazendar / sahwa / electronic / hindawi / doab)
+//        (OPDS books — khazendar / sahwa / electronic / hindawi / doab / drive)
 //        GET /api/dl-token?lib=tg&h=<handle>&p=<post_id>&f=<format>
 //
 //   GET /api/dl-token?h=khazendar&p=12345&f=epub
@@ -38,14 +38,21 @@
 //     means the book IS flagged -> 403, no token.
 //     (Block 7 populates those keys; the bot's flags.ts list is the
 //     source of truth for which titles are flagged.)
+//   * Drive-kind OPDS books (lib=drive, khazendar, sahwa,
+//     electronic — WAVE 7 follow-up A2) use the same gate with the
+//     Drive key `flag:drive:<fileId>` (the key tg-search.js flags
+//     Drive rows with and send-to-kindle.js checks for lib=drive).
+//     The flag is on the Drive FILE, not the library that listed
+//     it, so one key covers the same file under any drive-kind lib.
+//     Hindawi / DOAB (PD/CC libraries) are never flagged.
 //   * If the KV binding is missing, a token IS issued. That is the
 //     honest v1 limit: there is no flag feed yet, so "not flagged"
-//     currently means "not on the denylist". OPDS books (PD/CC
-//     libraries) are never flagged.
+//     currently means "not on the denylist".
 //   * If the KV binding EXISTS but the flag lookup throws (KV
-//     outage), the check fails CLOSED for Telegram books (403) —
-//     a KV outage must never mint a token for a book that might be
-//     flagged. OPDS books are unaffected (never flagged).
+//     outage), the check fails CLOSED for Telegram AND drive-kind
+//     books (403) — a KV outage must never mint a token for a book
+//     that might be flagged. Hindawi / DOAB are unaffected (never
+//     flagged).
 //   * The issuer does NOT prove the book exists, and does NOT prove
 //     it is public-domain / CC. Do NOT present it as a completed
 //     legal check.
@@ -63,6 +70,18 @@
 // OPDS books are never hidden (they have no post identity to
 // report). User reports NEVER hide: an approved report sets
 // `flag:` instead — the hidden key is owner-only.
+//
+// Drive visibility gate (WAVE 7 follow-up A4): a private/pending
+// Drive library's book mints ONLY for its submitter (pending: +
+// the owner) — 403 "private_library", no token, no quota burned.
+// Same lookup and rule as the serve-side gate in
+// send-to-kindle.js / read.js (driveBookLibrary + driveLibraryAllows,
+// shared from this file), because the /k/ short link bypasses the
+// serve side entirely. Public / legacy (no registry row) /
+// unindexed file ids mint unchanged (fail open on no D1 / D1 error).
+// A caller with no fingerprint has no identity and is refused a
+// private book; the viewer id comes from opts.fp via
+// viewerTgIdFromFp (mirrors drive-libraries.js verifyFingerprint).
 //
 // Mint caps (Kindle delivery, design §4.3 — same overLimit pattern
 // as functions/api/send-to-kindle.js, same accepted KV race):
@@ -137,9 +156,10 @@
 //                mint counters `dlt:*:<YYYY-MM-DD>`,
 //                short links `k:<code>`.
 //
-// Free-tier friendly: 1 KV get for the flag check + 1 for the hidden
-// check + up to 2 counter ops + 1 short-link write per mint, no
-// catalog fetch, no heavy work. Zero D1 writes.
+// Free-tier friendly: 1 KV get for the flag check (Telegram books
+// and drive-kind OPDS books — 1 get either way, never both) + 1 for
+// the hidden check + up to 2 counter ops + 1 short-link write per
+// mint, no catalog fetch, no heavy work. Zero D1 writes.
 
 const ALLOWED_FORMATS = new Set(["epub", "pdf", "mobi", "azw3", "kfx", "txt", "doc", "docx"]);
 const DEFAULT_TTL_SECONDS = 600;
@@ -166,6 +186,16 @@ export const OPDS_LIBS = {
   electronic: { kind: "drive", label: "المكتبة الإلكترونية" },
   hindawi: { kind: "hindawi", label: "هنداوي" },
   doab: { kind: "doab", label: "DOAB" },
+  // Drive-library books (WAVE 7, wave-7 child A): lib=drive&id=<Drive
+  // file id> — the generic Drive entry send-to-kindle.js already has
+  // (same label). This is the one-liner that unlocks Drive download
+  // (/api/dl-token mint + /k/ short link to the uc URL), the reader
+  // token (/api/read-token) and /read for kind='drive' search
+  // results: parseBookParams + resolveOpdsAcquisitionUrl already
+  // handle kind "drive" (uc download URL), so no new fetch path is
+  // needed. The id rule is the same Drive file-id shape as the
+  // other drive-kind libs (opdsIdOk below).
+  drive: { kind: "drive", label: "مكتبة Drive" },
 };
 
 function opdsIdOk(kind, id) {
@@ -446,6 +476,124 @@ export async function isFlaggedBook(env, handle, postId) {
   }
 }
 
+/** Flag-denylist check for one Drive-kind book (lib=drive,
+ *  khazendar, sahwa, electronic — WAVE 7 follow-up A2). True =
+ *  flagged, no token. Same shape as isFlaggedBook: no KV binding
+ *  -> false, a KV error -> TRUE (fail closed). The key is
+ *  `flag:drive:<fileId>` — the same key tg-search.js flags Drive
+ *  rows with (driveFlagKey) and send-to-kindle.js checks for
+ *  lib=drive. One key covers the file under ANY drive-kind lib:
+ *  the flag is on the Drive file, not the library that listed it.
+ *  Hindawi / DOAB books never reach this function (never flagged). */
+export async function isFlaggedDriveBook(env, fileId) {
+  if (!env.RLIBOOK_KV) return false;
+  try {
+    const v = await env.RLIBOOK_KV.get(`flag:drive:${fileId}`);
+    return v !== null && v !== undefined;
+  } catch {
+    return true;
+  }
+}
+
+/** The canonical D1 `books.url` for a Drive file id (see
+ *  telegram/tbi/drive_index.py to_book: every kind='drive' row is
+ *  stored as https://drive.google.com/file/d/<fileId>/view, with
+ *  source='drive:<folderId>'). Moved here from send-to-kindle.js
+ *  (WAVE 7 follow-up A4) so the mint side shares the serve side's
+ *  lookup — one definition, same semantics everywhere. */
+export function driveFileUrl(fileId) {
+  return "https://drive.google.com/file/d/" + fileId + "/view";
+}
+
+/** Look up the Drive library a file id belongs to (WAVE 7).
+ *
+ *  fileId -> D1 `books` (kind='drive', url = the canonical form
+ *  above) -> source 'drive:<folderId>' -> D1 `drive_libraries`
+ *  (visibility + submitter_tg_id). Returns { folderId, visibility,
+ *  submitter } or null when the file is not an indexed Drive book
+ *  (unknown id, a non-Drive URL shape, no D1 binding, or a D1
+ *  error). Null means "no library to protect" and the caller
+ *  treats it as public — see driveLibraryAllows for the fail-open
+ *  posture. Two cheap indexed D1 reads (the url equality uses
+ *  idx_books_url; the registry lookup is a PK read), never a scan.
+ */
+export async function driveBookLibrary(db, fileId) {
+  if (!db || typeof db.prepare !== "function") return null;
+  if (!/^[A-Za-z0-9_-]{10,80}$/.test(fileId || "")) return null;
+  try {
+    const row = await db.prepare(
+      "SELECT source FROM books WHERE kind = 'drive' AND url = ? LIMIT 1",
+    ).bind(driveFileUrl(fileId)).first();
+    if (!row || !row.source) return null;
+    const m = /^drive:([A-Za-z0-9_-]{10,64})$/.exec(String(row.source));
+    if (!m) return null;
+    const folderId = m[1];
+    const reg = await db.prepare(
+      "SELECT visibility, submitter_tg_id FROM drive_libraries WHERE folder_id = ? LIMIT 1",
+    ).bind(folderId).first();
+    // No registry row = a legacy library (khazendar / sahwa /
+    // electronic, or Oriental Music before the registry existed):
+    // public, by the same rule every other reader uses.
+    if (!reg) return { folderId, visibility: "public", submitter: 0 };
+    return {
+      folderId,
+      visibility: String(reg.visibility || "public").toLowerCase(),
+      submitter: Number(reg.submitter_tg_id) || 0,
+    };
+  } catch {
+    return null; // D1 hiccup: fail open — see driveLibraryAllows.
+  }
+}
+
+/** May this viewer (Telegram id, or null when unknown) receive a
+ *  book from this Drive library? Same rule as /api/drive-libraries
+ *  and tg-search.js: public for everyone; private for its submitter
+ *  only; pending_public for the submitter + the owner. A null lib
+ *  (not an indexed Drive book, or the D1 lookup failed) allows —
+ *  the fail-open posture matches the serve-side gate: during a D1
+ *  outage the gate cannot run, and closing ALL Drive mints/sends
+ *  whenever D1 hiccups would break the public libraries too. The
+ *  residual risk is documented in send-to-kindle.js: "private" is
+ *  unlisted, not access-controlled — the uc fetch itself needs only
+ *  the file id, and the file must be "Anyone with the link" public
+ *  for the fetch to work at all. An unknown visibility value is
+ *  treated as public (legacy rule).
+ */
+export function driveLibraryAllows(lib, viewerTgId, ownerTgId) {
+  if (!lib) return true;
+  if (lib.visibility === "public") return true;
+  const isSubmitter = !!(viewerTgId && lib.submitter && viewerTgId === lib.submitter);
+  if (lib.visibility === "private") return isSubmitter;
+  if (lib.visibility === "pending_public") {
+    return isSubmitter || !!(viewerTgId && ownerTgId && viewerTgId === ownerTgId);
+  }
+  return true;
+}
+
+const FP_RE = /^[A-Za-z0-9_-]{22}$/;
+
+/** Resolve a catalog fingerprint to the viewer's Telegram id (WAVE
+ *  7 follow-up A4 — the mint-side visibility gate). Mirrors
+ *  functions/api/drive-libraries.js verifyFingerprint exactly: the
+ *  fingerprint must be 22 chars, KV `fp:<fp>` -> { tg_id }, and
+ *  anything missing, malformed or erroring is null (unknown viewer),
+ *  never a throw. A null viewer is refused a private book by
+ *  driveLibraryAllows, so a bad fingerprint can never mint one. */
+export async function viewerTgIdFromFp(env, fp) {
+  if (!FP_RE.test(fp || "")) return null;
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const raw = await kv.get("fp:" + fp);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    const id = v && Number(v.tg_id);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 function counterKey(key) {
   return "dlt:" + key + ":" + new Date().toISOString().slice(0, 10);
 }
@@ -547,7 +695,8 @@ export function isServiceKeyRequest(request, env) {
  *  still applies: an owner-hidden book stays hidden even for its
  *  owner. Returns { ok: true, token, exp, ttl, url } or
  *  { ok: false, status, error } with error one of: not_configured,
- *  proxy_not_configured, flagged, hidden, mint_cap_ip, mint_cap_user.
+ *  proxy_not_configured, flagged, hidden, private_library,
+ *  mint_cap_ip, mint_cap_user.
  *  `url` is the signed proxy URL for Telegram books (null when the
  *  proxy base is unset — impossible here, that is proxy_not_configured)
  *  and null for OPDS books (see the file header: no proxy URL exists
@@ -565,8 +714,51 @@ export async function mintTokenForBook(env, book, opts = {}) {
   if (!own && book.kind === "tg" && (await isFlaggedBook(env, book.handle, book.postId))) {
     return { ok: false, status: 403, error: "flagged" };
   }
+  // Drive-kind OPDS books (WAVE 7 follow-up A2): the wave-7
+  // one-liner unlocked lib=drive (and khazendar / sahwa /
+  // electronic were already drive-kind) for minting, but the flag
+  // gate above is Telegram-only — a flagged Drive book minted
+  // freely through a direct /api/dl-token call while the website
+  // showed it with no links. Same key send-to-kindle.js checks
+  // (`flag:drive:<fileId>`), same 403, same position (before any
+  // counter, so a refused mint never burns quota). The `!own`
+  // prefix is the same personal-book rule as the Telegram gate:
+  // your own file (server-verified via isPersonalBook, title
+  // match — the documented caveat) skips the flag gate. The
+  // hidden check below stays Telegram-only: there is no
+  // `hidden:drive:` mechanism (tg-search / send-to-kindle flag
+  // Drive rows only, never hide them).
+  if (!own && book.kind === "opds" && OPDS_LIBS[book.lib].kind === "drive"
+    && (await isFlaggedDriveBook(env, book.id))) {
+    return { ok: false, status: 403, error: "flagged" };
+  }
   if (book.kind === "tg" && (await isHiddenBook(env, book.handle, book.postId))) {
     return { ok: false, status: 403, error: "hidden" };
+  }
+  // Drive visibility gate (WAVE 7 follow-up A4 — the mint-side
+  // counterpart of the serve-side gate in send-to-kindle.js /
+  // read.js). A non-submitter minting a dl-token for a private
+  // Drive book got a /k/ short link resolving straight to the uc
+  // URL — the serve-side gates never see it, so the mint IS the
+  // enforcement point for downloads. Same placement as the flag
+  // gate above (before any counter, so a refused mint never burns
+  // quota), same OPDS_LIBS kind condition, same lookup
+  // (driveBookLibrary) and rule (driveLibraryAllows) as the serve
+  // side, so mint and serve can never disagree. The viewer id
+  // comes from opts.fp (the catalog fingerprint, resolved via
+  // viewerTgIdFromFp); a caller with no fingerprint has no
+  // identity and is refused a private book. Public / legacy (no
+  // registry row) / unindexed file ids mint unchanged (fail open,
+  // per driveLibraryAllows). `!own` is the same personal-book rule
+  // as the flag gate: your own file (server-verified) skips it.
+  if (!own && book.kind === "opds" && OPDS_LIBS[book.lib] && OPDS_LIBS[book.lib].kind === "drive") {
+    const viewerTgId = await viewerTgIdFromFp(env, opts.fp);
+    const ownerRaw = Number((env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID) || 0);
+    const ownerTgId = Number.isSafeInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : 0;
+    const libInfo = await driveBookLibrary(env.TG_D1, book.id);
+    if (!driveLibraryAllows(libInfo, viewerTgId, ownerTgId)) {
+      return { ok: false, status: 403, error: "private_library" };
+    }
   }
 
   const ttl = clampTtl(env);

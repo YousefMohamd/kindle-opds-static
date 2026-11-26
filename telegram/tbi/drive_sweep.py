@@ -41,6 +41,21 @@ Build 2 (approve -> visible everywhere) support:
   visibility, submitter_tg_id}) when the D1 read failed, so the
   static surfaces still refresh. Used by the publish-surfaces job.
 
+Make-public backstop (WAVE 7, spec: SWEEP_SPEC_pubreq.md): the bot's
+``/api/drive-pubreq`` endpoint UPDATEs D1 directly, but it cannot
+apply a request when the library is not indexed yet, or when the
+endpoint call itself failed — the KV submissions log still holds
+the ``pending_public`` record in both cases, and this sweep reads
+that log every 2 hours. ``parse_pending`` therefore also yields a
+``to_publish`` category (indexed library, registry visibility still
+``private``), and ``--run`` emits the guarded ``publish_sql`` for
+it (and for a folder indexed in this run from a ``pending_public``
+trigger) in the manifest; the workflow applies those statements
+after the batch import. The UPDATE is always guarded by
+``AND visibility = 'private'`` — it can never flip a public
+library back, and a stale entry is a harmless 0-row no-op. The
+sweep NEVER creates a registry row for publish.
+
 No network in this module except the drive_index.py subprocess
 (which calls the Drive API with DRIVE_API_KEY from the environment).
 No secrets are printed: folder ids and counts only.
@@ -63,6 +78,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -88,14 +104,46 @@ def folder_id_from_title(title: str) -> str | None:
     return m.group(1) if m else None
 
 
-def parse_pending(records: list, indexed: set[str], failed: set[str]) -> dict:
+def utcnow_iso() -> str:
+    """UTC now as YYYY-MM-DDTHH:MM:SSZ (the monitor's requested_at format)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def publish_sql_for(folder_id: str, now_iso: str) -> str:
+    """Guarded pending_public UPDATE for one folder (WAVE 7 backstop).
+
+    The ``AND visibility = 'private'`` guard is load-bearing: the
+    statement can never flip a public library back, and a stale
+    entry (the endpoint already applied it) is a harmless 0-row
+    no-op. Never UPDATE without that guard. The sweep never creates
+    a registry row — this applies only to folders already in it.
+    """
+    if not FOLDER_RE.match(folder_id):
+        raise ValueError(f"bad folder_id {folder_id!r}")
+    return (
+        "UPDATE drive_libraries SET visibility = 'pending_public', "
+        f"requested_at = '{now_iso}' WHERE folder_id = '{folder_id}' "
+        "AND visibility = 'private';"
+    )
+
+
+def parse_pending(records: list, indexed: set[str], failed: set[str],
+                  registry_visibility: dict | None = None) -> dict:
     """Newest-wins pending queue from the submissions log.
 
-    Returns {to_index, skipped_indexed, skipped_failed, invalid}:
-    to_index is [{folder_id, submitter_tg_id, submitted_at}] in
-    submission order (newest first — the log's own order). A folder
-    is decided by its NEWEST record only: a later status (e.g. an
-    owner rejection) supersedes the pending one. "Needs indexing"
+    Returns {to_index, to_publish, skipped_indexed, skipped_failed, invalid}:
+    to_index is [{folder_id, submitter_tg_id, submitted_at, status}] in
+    submission order (newest first — the log's own order). ``status``
+    is the triggering newest-record status (``pending_index`` /
+    ``pending_public`` / ``pending``) — ``--run`` needs it to know a
+    folder indexed from a ``pending_public`` trigger also gets a
+    ``publish_sql``. to_publish is [{folder_id, submitter_tg_id,
+    submitted_at}] — an INDEXED library whose newest record asks for
+    publication (status ``pending_public``) while the registry still
+    says ``private``: the endpoint could not apply it (not indexed
+    when asked, or the endpoint call failed), so the sweep is the
+    backstop. A folder is decided by its NEWEST record only: a later
+    status (e.g. an owner rejection) supersedes the pending one. "Needs indexing"
     covers both ``pending_index`` (just submitted) and
     ``pending_public`` (the submitter asked for publication while
     the folder was still unindexed — /mylibraries shows the button
@@ -105,10 +153,14 @@ def parse_pending(records: list, indexed: set[str], failed: set[str]) -> dict:
     registry row).
     """
     to_index: list[dict] = []
+    to_publish: list[dict] = []
     skipped_indexed: list[str] = []
     skipped_failed: list[str] = []
     invalid: list[str] = []
     seen: set[str] = set()
+    vis = registry_visibility or {}
+    indexed_lower = {f.lower() for f in indexed}
+    failed_lower = {f.lower() for f in failed}
     for rec in records or []:
         if not isinstance(rec, dict):
             continue
@@ -122,12 +174,26 @@ def parse_pending(records: list, indexed: set[str], failed: set[str]) -> dict:
         if not FOLDER_RE.match(folder_id):
             invalid.append(folder_id)
             continue
-        if rec.get("type") != "channel" or rec.get("status") not in (
+        status = rec.get("status")
+        if rec.get("type") != "channel" or status not in (
                 "pending_index", "pending_public", "pending"):
             continue  # decided by a newer non-pending record
-        if key in {f.lower() for f in indexed}:
+        if key in indexed_lower:
+            # Already indexed: only a pending_public request against
+            # a STILL-private registry row is actionable (the
+            # backstop). Already pending_public / public / unknown
+            # visibility -> neither action list (fail closed: the
+            # endpoint is the fast path, and a missing visibility
+            # value must not trigger a write).
+            if status == "pending_public" and vis.get(key) == "private":
+                submitter = rec.get("user_id")
+                to_publish.append({
+                    "folder_id": folder_id,
+                    "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
+                    "submitted_at": str(rec.get("timestamp") or ""),
+                })
             skipped_indexed.append(folder_id)
-        elif key in {f.lower() for f in failed}:
+        elif key in failed_lower:
             skipped_failed.append(folder_id)
         else:
             submitter = rec.get("user_id")
@@ -135,9 +201,11 @@ def parse_pending(records: list, indexed: set[str], failed: set[str]) -> dict:
                 "folder_id": folder_id,
                 "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
                 "submitted_at": str(rec.get("timestamp") or ""),
+                "status": status,
             })
     return {
         "to_index": to_index,
+        "to_publish": to_publish,
         "skipped_indexed": skipped_indexed,
         "skipped_failed": skipped_failed,
         "invalid": invalid,
@@ -369,7 +437,18 @@ def main() -> int:
         return 2
     records = json.loads(Path(args.submissions).read_text(encoding="utf-8"))
     failed = load_failed(Path(args.failed) if args.failed else None)
-    plan = parse_pending(records, registry_folders(registry), failed)
+    # Registry visibility (lower-cased folder -> visibility) for the
+    # to_publish backstop: drive-libraries.json is the registry as
+    # of the last commit. It may be stale vs D1 (the endpoint may
+    # have applied the request already) — the guarded UPDATE makes
+    # that a harmless 0-row no-op.
+    registry_visibility = {
+        str(e.get("folder_id") or "").lower():
+            str(e.get("visibility") or "").strip().lower()
+        for e in registry.get("libraries", [])
+    }
+    plan = parse_pending(records, registry_folders(registry), failed,
+                         registry_visibility)
 
     if args.plan and not args.run:
         text = json.dumps(plan, ensure_ascii=False, indent=2)
@@ -378,6 +457,7 @@ def main() -> int:
         else:
             print(text)
         print(f"Plan: {len(plan['to_index'])} to index, "
+              f"{len(plan['to_publish'])} to publish, "
               f"{len(plan['skipped_indexed'])} already indexed, "
               f"{len(plan['skipped_failed'])} failed-known, "
               f"{len(plan['invalid'])} invalid", file=sys.stderr)
@@ -387,8 +467,17 @@ def main() -> int:
         if not args.manifest:
             print("ERROR: --run needs --manifest", file=sys.stderr)
             return 2
+        # One timestamp for the whole run (the requested_at the
+        # publish UPDATEs carry).
+        now_iso = utcnow_iso()
         manifest: dict = {
             "indexed": [], "failed": [], "deferred": [],
+            "to_publish": [
+                {"folder_id": item["folder_id"],
+                 "submitter_tg_id": item["submitter_tg_id"],
+                 "publish_sql": publish_sql_for(item["folder_id"], now_iso)}
+                for item in plan["to_publish"]
+            ],
             "skipped_indexed": plan["skipped_indexed"],
             "skipped_failed": plan["skipped_failed"],
             "invalid": plan["invalid"],
@@ -400,6 +489,14 @@ def main() -> int:
                 Path(args.out_dir), args.state_file, registry_path,
                 args.max_books)
             if "books" in entry:
+                # Newly indexed from a pending_public trigger: the
+                # folder was still unindexed when the user asked, so
+                # the endpoint could not apply it — the manifest
+                # carries the guarded UPDATE for the workflow to
+                # apply after the batch + registry import.
+                if item.get("status") == "pending_public":
+                    entry["publish_sql"] = publish_sql_for(
+                        item["folder_id"], now_iso)
                 manifest["indexed"].append(entry)
                 start_id += entry["books"]
                 print(f"Indexed {entry['folder_id']}: {entry['books']} books "
@@ -418,7 +515,8 @@ def main() -> int:
             encoding="utf-8")
         print(f"Run done: {len(manifest['indexed'])} indexed, "
               f"{len(manifest['failed'])} failed, "
-              f"{len(manifest['deferred'])} deferred")
+              f"{len(manifest['deferred'])} deferred, "
+              f"{len(manifest['to_publish'])} to publish")
         return 0
 
     print("ERROR: pass one of --plan, --run, --sync-registry",

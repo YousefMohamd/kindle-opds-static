@@ -198,6 +198,21 @@
 // strips it from the address bar — the Convert pick needs it in the
 // query string (/api/convert-book takes fp from the query only).
 var catalogFp = (new URLSearchParams(location.search).get("fp") || "").trim();
+// Fingerprint query suffixes (WAVE 7, 2026-11-26): the viewer is
+// identified to the search/library endpoints by ?fp= ONLY —
+// /api/tg-search and /api/drive-libraries do NOT read the rlb_fp
+// cookie (HttpOnly, and the endpoints take fp from the query). So
+// every fetch below that can return a private library carries fp
+// explicitly. catalogFp was captured above before identify() strips
+// it from the address bar, so it stays available for the whole page
+// lifetime. Empty when anonymous: the fetches then omit fp entirely
+// and the endpoints answer public-only (fail-closed — never an
+// invented fp).
+// fpApiQ: append to a URL that already has "?" (fetch URLs, and
+// hrefs passed through esc() later, which turns & into &amp;).
+// fpHrefQ: append to a raw-HTML href built as a string (already &amp;).
+var fpApiQ = catalogFp ? "&fp=" + encodeURIComponent(catalogFp) : "";
+var fpHrefQ = catalogFp ? "&amp;fp=" + encodeURIComponent(catalogFp) : "";
 var qEl = document.getElementById("q");
 var statusEl = document.getElementById("status");
 var resEl = document.getElementById("results");
@@ -379,7 +394,7 @@ function renderGroup(heading, items, tg) {
     // URL any more (the OPDS feed itself still carries acquisition
     // links for KOReader; only the website changed). The "صفحة
     // الكتاب" link beside OPDS titles stays as a second way in.
-    var bookPage = "/book?q=" + encodeURIComponent(b.title || "");
+    var bookPage = "/book?q=" + encodeURIComponent(b.title || "") + fpApiQ;
     var titleLink = bookPage;
     html += "<li><div class=\"title\"><a href=\"" + esc(titleLink) + "\">" +
       esc(b.title) + "</a></div>" +
@@ -558,7 +573,7 @@ function runSearch(q) {
   notfoundEl.hidden = true;
   var enc = encodeURIComponent(q);
   Promise.allSettled([
-    fetch("/api/tg-search?q=" + enc + "&limit=10").then(function (r) { return r.json(); }),
+    fetch("/api/tg-search?q=" + enc + "&limit=10" + fpApiQ).then(function (r) { return r.json(); }),
     fetch("/opds/search?q=" + enc).then(function (r) { return r.text(); }).then(parseOpds)
   ]).then(function (out) {
     var tg = [], opds = [], tgDown = false, opdsDown = false, tgPartial = false, tgMatch = null;
@@ -661,7 +676,7 @@ function runSearch(q) {
           if (rel.length) {
             var html = "<p><b>كتب مشابهة قد تعجبك:</b></p><ul>";
             for (var i = 0; i < rel.length; i++) {
-              html += "<li><a href=\"/book?q=" + encodeURIComponent(rel[i].title) + "\">"
+              html += "<li><a href=\"/book?q=" + encodeURIComponent(rel[i].title) + fpHrefQ + "\">"
                 + esc(rel[i].title) + "</a>"
                 + (rel[i].author ? " — " + esc(rel[i].author) : "") + "</li>";
             }
@@ -700,11 +715,14 @@ fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(funct
   }
 }).catch(function () { /* keep the static numbers */ });
 
-// Public Drive libraries from /api/drive-libraries (WAVE 4, WS8).
-// Private/pending libraries never appear here — the endpoint lists
-// public ones only for an anonymous visitor. Each links to the
-// library's browse view (/telegram/?source=drive:<folderId>).
-fetch("/api/drive-libraries").then(function (r) { return r.json(); }).then(function (d) {
+// Drive libraries from /api/drive-libraries (WAVE 4, WS8; WAVE 7
+// threads the fingerprint). With ?fp= (a catalog visit) the endpoint
+// also returns the viewer's OWN private / pending_public libraries
+// (mine:true); anonymous visitors get public ones only (fail-closed).
+// Each links to the library's browse view
+// (/telegram/?source=drive:<folderId>), carrying fp forward so the
+// browse page can identify the viewer too.
+fetch("/api/drive-libraries" + (catalogFp ? "?fp=" + encodeURIComponent(catalogFp) : "")).then(function (r) { return r.json(); }).then(function (d) {
   var libs = (d && d.ok && d.libraries) || [];
   var box = document.getElementById("drivelibs");
   if (!libs.length) {
@@ -714,7 +732,7 @@ fetch("/api/drive-libraries").then(function (r) { return r.json(); }).then(funct
   var total = 0, html = "";
   for (var i = 0; i < libs.length; i++) {
     total += libs[i].count || 0;
-    html += "<a href=\"/telegram/?source=" + encodeURIComponent("drive:" + libs[i].folder_id) + "\">"
+    html += "<a href=\"/telegram/?source=" + encodeURIComponent("drive:" + libs[i].folder_id) + fpHrefQ + "\">"
       + esc(libs[i].title || libs[i].folder_id) + " (" + (libs[i].count || 0) + " كتاب)</a>";
   }
   box.innerHTML = html;

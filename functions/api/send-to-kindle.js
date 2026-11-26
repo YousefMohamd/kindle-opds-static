@@ -46,6 +46,16 @@
 //   Neither present -> an HTML page with the email form (GET, no JS),
 //   so a bare link to this endpoint still works on the Kindle browser.
 //
+// Drive visibility (WAVE 7): a private/pending Drive library's file
+// is emailed ONLY to its submitter (pending: + the owner) — the gate
+// in onRequest, via driveBookLibrary (D1 registry lookup). Honest
+// limit: "private" is unlisted, NOT access-controlled. The uc fetch
+// itself needs only the file id, and the file must be "Anyone with
+// the link" public for the fetch to work at all — so anyone who
+// already holds a file id can still fetch the raw uc URL directly
+// (browser/USB). The gate closes the SERVER-mediated paths (this
+// email endpoint + the /read reader), not the direct link.
+//
 // Env (Pages dashboard -> Settings -> Functions; secrets, never in repo):
 //   RESEND_API_KEY  (required unless BREVO_API_KEY is set) — the SAME
 //                     Resend key the bot uses. Secrets are per-project:
@@ -76,6 +86,14 @@
 //                     uses (id b5c90a91d24c424db87bf09e3883654f).
 //                     Needed for fp lookup AND for rate-limit counters.
 //                     Without it the endpoint refuses (503).
+//   TG_D1           (optional) — D1 binding (the Telegram catalog
+//                     database, same as /api/drive-libraries). Used
+//                     ONLY by the Drive visibility gate (WAVE 7):
+//                     file id -> books.url -> source drive:<folder>
+//                     -> drive_libraries visibility + submitter.
+//                     Unbound, or a D1 error, passes the gate open
+//                     — see driveLibraryAllows. No D1 writes; 1-2
+//                     indexed reads per Drive send.
 //   PROXY_BASE_URL  (Telegram books only, optional for now) — e.g.
 //                     https://rlibook-download-proxy.onrender.com (no trailing
 //                     slash). Unset -> Telegram sends fail cleanly with
@@ -108,7 +126,13 @@
 // The proxy base URL is NOT set yet (PROXY_BASE_URL unset — the proxy
 // is not deployed); until it is, Telegram sends fail cleanly with an
 // honest "not configured" page (503), never silently.
-import { makeToken } from "./dl-token.js";
+import { makeToken, driveFileUrl, driveBookLibrary, driveLibraryAllows } from "./dl-token.js";
+// Re-exported (WAVE 7 follow-up A4): the Drive visibility helpers
+// now live in dl-token.js (single definition shared by the mint
+// side and this serve side); this file imports them, it no longer
+// defines them. The re-export keeps existing importers
+// (send-to-kindle.test.mjs) working unchanged.
+export { driveFileUrl, driveBookLibrary, driveLibraryAllows } from "./dl-token.js";
 import { sendEmailWithFallback } from "./email-send.js";
 import { parseCookies, COOKIE_NAME } from "./identify.js";
 
@@ -439,6 +463,10 @@ export async function onRequest(context) {
   // ---- resolve the destination Kindle email -------------------------
   let kindleEmail = null;
   let emailSource = null;
+  // The viewer's Telegram id, when the fingerprint resolved (null
+  // for a typed-email reader). Hoisted: the Drive visibility gate
+  // below needs it after the destination is known.
+  let viewerTgId = null;
   if (fp) {
     // A fingerprint is 22 chars; a longer value can never match and
     // would make an oversized KV key — skip the lookup, same result
@@ -448,6 +476,7 @@ export async function onRequest(context) {
       rec = fp.length <= 128 ? await env.RLIBOOK_KV.get("fp:" + fp, "json") : null;
     } catch { rec = null; }
     const tgId = rec && Number.isSafeInteger(rec.tg_id) ? rec.tg_id : null;
+    viewerTgId = tgId;
     if (tgId) {
       const stored = await env.RLIBOOK_KV.get("kindle_email:" + tgId);
       if (stored && isKindleEmail(stored)) {
@@ -500,7 +529,11 @@ export async function onRequest(context) {
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);
     }
   }
-  if (lib === "drive") {
+  // Flagged Drive books (W3/W6, WS8; WAVE 7: all drive-kind libs —
+  // lib=drive AND the legacy khazendar / sahwa / electronic, which
+  // share the same flag:drive:<fileId> key and the same uc fetch —
+  // gating only lib=drive left a flagged legacy file emailable).
+  if (LIBS[lib] && LIBS[lib].kind === "drive") {
     let flagged = false;
     try {
       flagged = (await env.RLIBOOK_KV.get(`flag:drive:${id}`)) !== null;
@@ -510,6 +543,32 @@ export async function onRequest(context) {
         "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
         + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
         + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
+        + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);
+    }
+  }
+
+  // ---- Drive visibility gate (WAVE 7) ------------------------------
+  // A private/pending Drive library's file can only be emailed by
+  // its submitter (pending: + the owner). Public / legacy (no
+  // registry row) / unindexed file ids pass through unchanged. The
+  // gate runs for every kind="drive" library (drive + khazendar +
+  // sahwa + electronic — all four ids are Drive file ids), after
+  // the destination is known (the viewer id comes from the
+  // fingerprint) and BEFORE the dedupe claim, so a refused book
+  // never occupies the window or burns quota. A reader with no
+  // fingerprint has no identity, so a private book is refused to
+  // them even with a typed email — open the book from the catalog
+  // or the bot instead. See driveBookLibrary / driveLibraryAllows
+  // for the lookup and the fail-open posture on D1 errors.
+  if (LIBS[lib] && LIBS[lib].kind === "drive") {
+    const ownerRaw = Number((env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID) || 0);
+    const ownerTgId = Number.isSafeInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : 0;
+    const libInfo = await driveBookLibrary(env.TG_D1, id);
+    if (!driveLibraryAllows(libInfo, viewerTgId, ownerTgId)) {
+      return page("📁 مكتبة خاصة",
+        "<p>📁 هذا الكتاب من مكتبة Drive خاصة — الإرسال بالبريد متاح لصاحب المكتبة فقط.</p>\n"
+        + "<p>إن كنت صاحب المكتبة، افتح الكتاب من كتالوجك أو من البوت "
+        + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a> (ببصمتك).</p>\n"
         + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);
     }
   }

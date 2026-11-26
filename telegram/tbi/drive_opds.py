@@ -30,6 +30,22 @@ they are visible only to the submitter through the D1-backed
 skips anything not public. Legacy registry entries without a
 ``visibility`` field count as public (same rule as the website).
 
+RETRACTION (WAVE 7): a public -> private flip must not leave the
+library's static files live. ``--all`` therefore also deletes the
+per-library feed of every folder that is no longer public
+(``drive/<folder_id>/index.xml``) and regenerates the combined
+files from the remaining public libraries — so a flipped library
+vanishes from drive/search-index.json, drive/index.xml AND its own
+feed in one run. When the registry still lists libraries but NONE
+is public anymore, --all writes EMPTY combined surfaces (empty
+search index + empty navigation feed) instead of erroring, so the
+last public library's flip retracts too; only a registry with NO
+entries at all still exits 2 (nothing trusted to retract from).
+The single-library path retracts the same way (feed + nav entry +
+that library's rows in the combined search index) instead of
+merely skipping. The publish-surfaces job's ``git add drive/``
+stages the deletions, so no workflow change is needed.
+
 Usage:
   python3 telegram/tbi/drive_opds.py --books d1-batches-drive/drive-1EFegWouzH4C-books.json \
       --registry drive-libraries.json --out drive
@@ -46,6 +62,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -217,6 +234,121 @@ def write_all_public(out_dir: Path, libs: list[dict]) -> dict:
     return counts
 
 
+# Same shape as the bot's parseLibraryArg (see drive_sweep.py): a
+# Drive folder id is 10-64 base64url characters. Only directories
+# matching this are ever treated as per-library feeds by the
+# retraction sweep below — anything else under the out dir is left
+# alone.
+FOLDER_RE = re.compile(r"^[A-Za-z0-9_-]{10,64}$")
+
+# One navigation-feed entry, as written by navigation_feed().
+NAV_ENTRY_RE = re.compile(
+    r"<entry><title>(.*?)</title><id>urn:static:libraries:drive:(.*?)</id>"
+    r".*?<content type=\"text\">(\d+) book</content></entry>")
+
+
+def parse_nav_entries(text: str) -> list[dict]:
+    """Navigation feed XML -> [{folder_id, title, count}]."""
+    out = []
+    for m in NAV_ENTRY_RE.finditer(text or ""):
+        out.append({"folder_id": m.group(2),
+                    "title": html.unescape(m.group(1)),
+                    "count": int(m.group(3))})
+    return out
+
+
+def retract_library_feed(out_dir: Path, folder_id: str) -> bool:
+    """Delete one library's per-library OPDS feed, if present.
+
+    Returns True when a file was actually removed. The directory
+    itself is removed too when it becomes empty. Never raises for a
+    missing file — retraction is idempotent.
+    """
+    feed = out_dir / folder_id / "index.xml"
+    if not feed.exists():
+        return False
+    feed.unlink()
+    try:
+        (out_dir / folder_id).rmdir()  # only when now empty
+    except OSError:
+        pass
+    return True
+
+
+def retract_orphan_feeds(out_dir: Path, keep_folder_ids: set) -> list[str]:
+    """Delete per-library feeds whose folder is not public anymore.
+
+    ``keep_folder_ids`` is the set of folders that stay public.
+    Only subdirectories whose name looks like a Drive folder id are
+    considered; anything else under the out dir is left alone.
+    Returns the folder ids whose feed was removed.
+    """
+    removed = []
+    if not out_dir.is_dir():
+        return removed
+    for child in sorted(out_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        if not FOLDER_RE.match(child.name):
+            continue
+        if child.name in keep_folder_ids:
+            continue
+        if retract_library_feed(out_dir, child.name):
+            removed.append(child.name)
+    return removed
+
+
+def retract_from_combined(out_dir: Path, folder_id: str,
+                          file_ids: set) -> None:
+    """Drop one library from the combined static files.
+
+    Removes its entry from drive/index.xml (navigation feed) and its
+    books (by file id) from drive/search-index.json. Files that do
+    not exist are left alone — a fresh out dir retracts to nothing,
+    which is the single-library SKIP case. NOTE: a file id shared by
+    two libraries (the same Drive file in two folders) is removed
+    from the combined index for both; the next --all rebuild restores
+    the surviving library's row.
+    """
+    nav_path = out_dir / "index.xml"
+    if nav_path.exists():
+        kept = [e for e in parse_nav_entries(nav_path.read_text(encoding="utf-8"))
+                if e["folder_id"] != folder_id]
+        nav_path.write_text(navigation_feed(kept), encoding="utf-8")
+    index_path = out_dir / "search-index.json"
+    if index_path.exists() and file_ids:
+        try:
+            rows = json.loads(index_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+        kept_rows = [r for r in rows if r.get("i") not in file_ids]
+        if len(kept_rows) != len(rows):
+            index_path.write_text(
+                json.dumps(kept_rows, ensure_ascii=False), encoding="utf-8")
+
+
+def retract_library(out_dir: Path, folder_id: str, file_ids: set) -> bool:
+    """Full retraction for one flipped library: feed + combined files.
+
+    Returns True when anything was actually removed.
+    """
+    removed_feed = retract_library_feed(out_dir, folder_id)
+    before_nav = before_index = None
+    nav_path = out_dir / "index.xml"
+    index_path = out_dir / "search-index.json"
+    if nav_path.exists():
+        before_nav = nav_path.read_text(encoding="utf-8")
+    if index_path.exists():
+        before_index = index_path.read_text(encoding="utf-8")
+    retract_from_combined(out_dir, folder_id, file_ids)
+    changed = removed_feed
+    if before_nav is not None and nav_path.exists():
+        changed = changed or nav_path.read_text(encoding="utf-8") != before_nav
+    if before_index is not None and index_path.exists():
+        changed = changed or index_path.read_text(encoding="utf-8") != before_index
+    return changed
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--books", default="",
@@ -250,6 +382,23 @@ def main() -> int:
 
     if args.all:
         registry = load_registry(Path(args.registry)) if Path(args.registry).exists() else {"libraries": []}
+        registry_entries = registry.get("libraries", [])
+        public_ids = {str(e.get("folder_id") or "")
+                      for e in public_libraries(registry)}
+        out_dir = Path(args.out)
+        # Retraction (WAVE 7): delete the per-library feed of every
+        # folder that is no longer public — a public -> private flip
+        # must not leave drive/<folder>/index.xml live. Only when
+        # the registry is real (has entries): an empty/missing
+        # registry must never nuke the live feeds. The keep set is
+        # ALL public folders, not just the ones with books — a public
+        # library whose artifacts are missing keeps its old feed.
+        retracted = []
+        if registry_entries:
+            retracted = retract_orphan_feeds(out_dir, public_ids)
+            for fid in retracted:
+                print(f"RETRACTED: removed stale feed drive/{fid}/index.xml "
+                      "(no longer public)")
         libs = []
         for entry in public_libraries(registry):
             folder_id = entry.get("folder_id") or ""
@@ -264,10 +413,31 @@ def main() -> int:
                 b.setdefault("library_title", title)
             libs.append({"folder_id": folder_id, "title": title, "books": books})
         if not libs:
-            print("ERROR: no public library with books found — nothing written.",
-                  file=sys.stderr)
-            return 2
-        counts = write_all_public(Path(args.out), libs)
+            if public_ids:
+                # Public libraries exist but none yielded books
+                # (missing artifacts): unchanged behaviour — nothing
+                # written; the retraction above already landed.
+                print("ERROR: no public library with books found — nothing written.",
+                      file=sys.stderr)
+                return 2
+            if not registry_entries:
+                print("ERROR: no public library with books found — nothing written.",
+                      file=sys.stderr)
+                return 2
+            # The registry lists libraries but NONE is public anymore
+            # (e.g. the last public library flipped private): write
+            # EMPTY combined surfaces so the flip retracts instead of
+            # leaving the previous files live.
+            counts = write_all_public(out_dir, [])
+            if args.counts_out:
+                Path(args.counts_out).write_text(
+                    json.dumps(counts, ensure_ascii=False, indent=1), encoding="utf-8")
+                print(f"Wrote {args.counts_out} (0 libraries)")
+            print(f"Retracted {len(retracted)} stale feed(s); wrote empty "
+                  f"{args.out}/search-index.json + {args.out}/index.xml "
+                  "(no public libraries)")
+            return 0
+        counts = write_all_public(out_dir, libs)
         if args.counts_out:
             Path(args.counts_out).write_text(
                 json.dumps(counts, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -301,8 +471,17 @@ def main() -> int:
     visibility = args.visibility or registry_visibility(registry, folder_id)
     out_dir = Path(args.out)
     if visibility != "public":
-        print(f"SKIP: library {folder_id} is {visibility} — "
-              "private/pending libraries never enter the static OPDS files.")
+        # Retraction (WAVE 7): a private/pending library never enters
+        # the static files — and a library that WAS public must have
+        # its live files removed, not merely skipped. The feed, the
+        # navigation entry and its rows in the combined search index
+        # all go; a fresh out dir retracts to nothing (no writes).
+        file_ids = {b.get("file_id") for b in books if b.get("file_id")}
+        changed = retract_library(out_dir, folder_id, file_ids)
+        print(f"RETRACTED: library {folder_id} is {visibility} — "
+              "removed its static OPDS files"
+              + (" (feed + combined entries)" if changed else " (nothing was live)")
+              + "; private/pending libraries never enter the static OPDS files.")
         return 0
 
     lib_dir = out_dir / folder_id
@@ -319,14 +498,10 @@ def main() -> int:
     # feed is per-run for one library, so merge with an existing one.
     nav_path = out_dir / "index.xml"
     if nav_path.exists():
-        import re as _re
         existing = nav_path.read_text(encoding="utf-8")
-        for m in _re.finditer(
-                r"<entry><title>(.*?)</title><id>urn:static:libraries:drive:(.*?)</id>.*?<content type=\"text\">(\d+) book</content></entry>",
-                existing):
-            if m.group(2) != folder_id:
-                nav_libs.append({"folder_id": m.group(2), "title": html.unescape(m.group(1)),
-                                 "count": int(m.group(3))})
+        for e in parse_nav_entries(existing):
+            if e["folder_id"] != folder_id:
+                nav_libs.append(e)
     nav_libs.sort(key=lambda l: l["title"].lower())
     nav_path.write_text(navigation_feed(nav_libs), encoding="utf-8")
     print(f"Wrote {out_dir}/search-index.json ({len(index_rows)} books), "

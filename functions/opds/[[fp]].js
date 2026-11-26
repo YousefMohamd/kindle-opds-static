@@ -31,13 +31,16 @@
 // Private books NEVER appear without a valid fingerprint.
 //
 // Private books are metadata only (title, author, source, added_at
-// from KV priv:<tg_id>). The file itself lives on the user's own Drive,
-// never on our server. An acquisition link is emitted ONLY when the
-// record carries a real downloadable reference (drive_id today). The
-// Block 2 download-proxy link (https://<proxy>/dl?h=..&p=..&f=..&t=..)
-// needs a signed token from the token issuer, which is not built yet —
-// so no proxy link is emitted today; see opds-feed/README.md for the
-// follow-ups.
+// from KV priv:<tg_id>) PLUS the submitter's own private Drive
+// libraries (WAVE 7, C-bot — D1: the submitter's rows in
+// drive_libraries with visibility private/pending_public, joined to
+// their books by source = 'drive:<folderId>'). The file itself lives
+// on the user's own Drive, never on our server. An acquisition link
+// is emitted ONLY when the record carries a real downloadable
+// reference (drive_id today). The Block 2 download-proxy link
+// (https://<proxy>/dl?h=..&p=..&f=..&t=..) needs a signed token
+// from the token issuer, which is not built yet — so no proxy link
+// is emitted today; see opds-feed/README.md for the follow-ups.
 //
 // Entry format matches the existing catalog (functions/opds/search.js +
 // index.xml): same <entry> shape, same acquisition link relation, same
@@ -50,7 +53,15 @@
 // Free-tier friendly: root / private / opensearch do no heavy fetching
 // (one KV read each); search fetches the same five search-index.json
 // files the public search already fetches (~3 MB total) — same cost
-// profile as the existing /opds/search.
+// profile as the existing /opds/search. The Drive lookup (WAVE 7,
+// C-bot) adds, per verified request, one tiny registry SELECT plus
+// one index-served SELECT per own private library
+// (WHERE source = 'drive:<folderId>' — idx_books_source serves it,
+// same shape as functions/api/drive-libraries.js counts), each
+// LIMIT-capped; it never runs for an unverified fingerprint, and a
+// missing TG_D1 binding or a D1 error degrades to KV books only
+// (fail closed — a Drive book never appears without a verified fp,
+// and a lookup failure never leaks another user's books).
 
 const NAV_CT = "application/atom+xml;profile=opds-catalog;kind=navigation; charset=utf-8";
 const ACQ_CT = "application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8";
@@ -184,6 +195,107 @@ async function getPrivateBooks(env, tgId) {
     console.warn("[opds] private books lookup failed:", e && e.message);
     return [];
   }
+}
+
+// The file id inside a Drive book URL (same regex as
+// functions/api/tg-search.js parseDriveFileUrl / driveFlagKey).
+const DRIVE_FILE_RE = /^https:\/\/drive\.google\.com\/file\/d\/([A-Za-z0-9_-]+)/;
+function driveFileId(url) {
+  const m = DRIVE_FILE_RE.exec(url || "");
+  return m ? m[1] : null;
+}
+
+// Escape a LIKE pattern fragment (%, _ and the escape char itself).
+function escapeLike(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+// The submitter's own private Drive books from D1 (WAVE 7, C-bot).
+// Two steps, both index-served, no substr() join (cf. the
+// driveVisibility join in tg-search.js — same visibility rule, but
+// this shape keeps the read to the viewer's own libraries only):
+//   1. the viewer's private/pending_public libraries from the
+//      registry (tiny table, one SELECT);
+//   2. per library, its books by source = 'drive:<folderId>'
+//      (idx_books_source serves it — same shape as the counts in
+//      functions/api/drive-libraries.js).
+// `q` ("" = list, otherwise a search) filters title/author in SQL
+// so a 397-book library costs its matches, not its full list.
+// Returns the privateEntry shape ({ title, author, source, drive_id,
+// format }); [] when TG_D1 is unbound, the fingerprint is unverified
+// (the caller only calls this when verified), or D1 fails — fail
+// closed in every case: no D1 row ever reaches another user.
+async function getPrivateDriveBooks(env, tgId, q, limit) {
+  const db = env && env.TG_D1;
+  if (!db || !tgId || !limit) return [];
+  try {
+    const libs = await db
+      .prepare(
+        "SELECT folder_id, title FROM drive_libraries" +
+          " WHERE submitter_tg_id = ? AND visibility IN ('private', 'pending_public')",
+      )
+      .bind(tgId)
+      .all();
+    const rows = (libs && libs.results) || [];
+    const out = [];
+    const needle = (q || "").trim();
+    for (const lib of rows) {
+      if (out.length >= limit) break;
+      const folderId = String(lib.folder_id || "");
+      if (!/^[A-Za-z0-9_-]{10,64}$/.test(folderId)) continue;
+      const left = limit - out.length;
+      let res;
+      if (needle) {
+        const pat = "%" + escapeLike(needle) + "%";
+        res = await db
+          .prepare(
+            "SELECT b.title AS title, b.author AS author, b.ext AS ext, b.url AS url" +
+              " FROM books b WHERE b.source = ? AND b.kind = 'drive'" +
+              " AND (b.title LIKE ? ESCAPE '\\' OR b.author LIKE ? ESCAPE '\\')" +
+              " ORDER BY b.id LIMIT ?",
+          )
+          .bind("drive:" + folderId, pat, pat, left)
+          .all();
+      } else {
+        res = await db
+          .prepare(
+            "SELECT b.title AS title, b.author AS author, b.ext AS ext, b.url AS url" +
+              " FROM books b WHERE b.source = ? AND b.kind = 'drive'" +
+              " ORDER BY b.id LIMIT ?",
+          )
+          .bind("drive:" + folderId, left)
+          .all();
+      }
+      for (const b of (res && res.results) || []) {
+        out.push({
+          title: b.title || "Untitled / بدون عنوان",
+          author: b.author || null,
+          source: lib.title || "Drive",
+          added_at: null,
+          drive_id: driveFileId(b.url),
+          format: b.ext || null,
+        });
+      }
+    }
+    return out;
+  } catch (e) {
+    console.warn("[opds] private Drive lookup failed:", e && e.message);
+    return [];
+  }
+}
+
+// Merge KV private books + D1 Drive books, deduping on drive_id
+// (a book recorded in both places lists once). KV first, then Drive.
+function mergePrivateBooks(kvBooks, driveBooks) {
+  const seen = new Set();
+  const out = [];
+  for (const b of [...(kvBooks || []), ...(driveBooks || [])]) {
+    const key = b && b.drive_id ? "d:" + b.drive_id : "t:" + (b.title || "") + "\n" + (b.author || "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(b);
+  }
+  return out;
 }
 
 function privateEntry(book, tgId, now) {
@@ -354,7 +466,11 @@ export async function onRequest(context) {
   const verified = tgId !== null;
 
   if (sub === "") {
-    const privCount = verified ? (await getPrivateBooks(env, tgId)).length : 0;
+    // The count is the merged private list, capped at the feed cap
+    // (MAX_PRIVATE_FEED) — the same books /private shows.
+    const kvBooks = verified ? await getPrivateBooks(env, tgId) : [];
+    const driveBooks = verified ? await getPrivateDriveBooks(env, tgId, "", MAX_PRIVATE_FEED) : [];
+    const privCount = verified ? mergePrivateBooks(kvBooks, driveBooks).slice(0, MAX_PRIVATE_FEED).length : 0;
     return new Response(rootFeed(fp, verified, privCount, now), {
       status: 200,
       headers: { "content-type": NAV_CT },
@@ -362,7 +478,9 @@ export async function onRequest(context) {
   }
 
   if (sub === "private") {
-    const books = verified ? await getPrivateBooks(env, tgId) : [];
+    const kvBooks = verified ? await getPrivateBooks(env, tgId) : [];
+    const driveBooks = verified ? await getPrivateDriveBooks(env, tgId, "", MAX_PRIVATE_FEED) : [];
+    const books = verified ? mergePrivateBooks(kvBooks, driveBooks) : [];
     return new Response(privateFeed(fp, verified, tgId, books, now), {
       status: 200,
       headers: { "content-type": ACQ_CT },
@@ -393,7 +511,9 @@ export async function onRequest(context) {
       let privCount = 0;
       if (verified) {
         const books = await getPrivateBooks(env, tgId);
-        const matches = privateMatches(books, q);
+        const kvMatches = privateMatches(books, q);
+        const driveMatches = await getPrivateDriveBooks(env, tgId, q, MAX_PRIVATE_RESULTS);
+        const matches = mergePrivateBooks(kvMatches, driveMatches).slice(0, MAX_PRIVATE_RESULTS);
         privCount = matches.length;
         for (const b of matches) privEntries += privateEntry(b, tgId, now);
       }

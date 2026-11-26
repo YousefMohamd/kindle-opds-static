@@ -39,6 +39,13 @@
 //  46. sendEmailWithFallback unit: SMTP2GO 200 with succeeded 0 is a
 //      failure (falls through to the queue path); SMTP2GO success
 //      returns provider "smtp2go" with the email_id
+//  47. (WAVE 7, flag gate) a flagged file from khazendar / sahwa /
+//      electronic -> 403, nothing fetched or sent (the gate used to
+//      cover lib=drive only); unflagged legacy file still sends.
+//  48. (WAVE 7, visibility gate) driveBookLibrary / driveLibraryAllows
+//      units + onRequest matrix: private + submitter -> 200; private +
+//      other/anonymous -> 403; pending + owner -> 200; public /
+//      unindexed / no TG_D1 -> 200 (fail open, documented).
 // Exit 0 = all pass; non-zero + a message = failure.
 // No network, no production KV, no Resend key, no deploy.
 // All emails / fingerprints below are FAKE test data — never a real address.
@@ -52,6 +59,9 @@ import {
   dedupeKeyFor,
   proxyDownloadUrl,
   enqueueTomorrow,
+  driveBookLibrary,
+  driveLibraryAllows,
+  driveFileUrl,
   MAX_FILE_BYTES,
   DAILY_PER_DEST,
   DAILY_PER_IP,
@@ -1078,6 +1088,152 @@ check("magicBytesOk epub rejects html", magicBytesOk(FAKE_HTML, "epub") === fals
     });
     check("46 unit: smtp2go success -> provider smtp2go + email_id", r.ok === true && r.provider === "smtp2go" && r.messageId === "s2g1");
   }
+}
+
+// --- 47. (WAVE 7) flagged legacy drive libs -> 403 -----------------------
+{
+  const FILE_ID = "1MPnTH-P5PD3KCwkQd8Swayi2my_RD1Uq";
+  for (const lib of ["khazendar", "sahwa", "electronic"]) {
+    const kv = makeKv({
+      ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+      ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+      ["flag:drive:" + FILE_ID]: "1",
+    });
+    const { fetchImpl, calls } = makeFetch({});
+    const res = await run(
+      makeCtx({ kv, fetchImpl, params: { lib, id: FILE_ID, f: "epub", t: "Test Book", fp: FP } }),
+      fetchImpl,
+    );
+    const body = await res.text();
+    check(`47 flagged ${lib}: 403 + bot hint`, res.status === 403 && body.includes("RliBook_bot"), `status=${res.status}`);
+    check(`47 flagged ${lib}: nothing fetched or sent`, calls.book.length === 0 && calls.resend.length === 0);
+  }
+  // Control: the same file unflagged still sends (the gate is
+  // flag-specific, not a blanket block on legacy libs).
+  const kv = makeKv({
+    ["fp:" + FP]: JSON.stringify({ tg_id: TG_ID }),
+    ["kindle_email:" + TG_ID]: KINDLE_EMAIL,
+  });
+  const { fetchImpl, calls } = makeFetch({});
+  const res = await run(
+    makeCtx({ kv, fetchImpl, params: { lib: "khazendar", id: FILE_ID, f: "epub", t: "Test Book", fp: FP } }),
+    fetchImpl,
+  );
+  check("47 unflagged khazendar: 200 + sent", res.status === 200 && calls.resend.length === 1, `status=${res.status}`);
+}
+
+// --- 48. (WAVE 7) Drive visibility gate -----------------------------------
+// Mock D1: books {url: source}, registry {folderId: {visibility, submitter_tg_id}}.
+function makeDb({ books = {}, registry = {}, throwOn = false } = {}) {
+  return {
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (throwOn) throw new Error("d1 down");
+              if (String(sql).includes("FROM books")) {
+                const source = books[args[0]];
+                return source ? { source } : null;
+              }
+              if (String(sql).includes("FROM drive_libraries")) {
+                return registry[args[0]] || null;
+              }
+              return null;
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+const PRIV_FOLDER = "PRIVFOLDER1234567890";
+const PRIV_FILE = "1PRIVFILE1234567890AB";
+const PRIV_URL = driveFileUrl(PRIV_FILE);
+const OWNER_ID = 111222333;
+const OTHER_FP = "fp_other_user_xyz";
+const OTHER_ID = 999888777;
+
+function privDb(visibility = "private", submitter = TG_ID) {
+  return makeDb({
+    books: { [PRIV_URL]: "drive:" + PRIV_FOLDER },
+    registry: { [PRIV_FOLDER]: { visibility, submitter_tg_id: submitter } },
+  });
+}
+
+function privKv(fp = FP, tgId = TG_ID) {
+  return makeKv({
+    ["fp:" + fp]: JSON.stringify({ tg_id: tgId }),
+    ["kindle_email:" + tgId]: KINDLE_EMAIL,
+  });
+}
+
+{
+  // Units: driveBookLibrary maps file id -> folder + visibility.
+  const lib = await driveBookLibrary(privDb(), PRIV_FILE);
+  check("48 unit: driveBookLibrary maps file -> private library",
+    lib && lib.folderId === PRIV_FOLDER && lib.visibility === "private" && lib.submitter === TG_ID,
+    JSON.stringify(lib));
+  check("48 unit: driveBookLibrary unindexed file -> null",
+    (await driveBookLibrary(privDb(), "1NOTINDEXED123456789")) === null);
+  check("48 unit: driveBookLibrary no db -> null",
+    (await driveBookLibrary(undefined, PRIV_FILE)) === null);
+  check("48 unit: driveBookLibrary bad id -> null",
+    (await driveBookLibrary(privDb(), "not a file id!")) === null);
+  check("48 unit: driveBookLibrary D1 error -> null (fail open)",
+    (await driveBookLibrary(makeDb({ throwOn: true }), PRIV_FILE)) === null);
+  const legacy = await driveBookLibrary(
+    makeDb({ books: { [PRIV_URL]: "drive:" + PRIV_FOLDER }, registry: {} }), PRIV_FILE);
+  check("48 unit: driveBookLibrary no registry row -> public (legacy)",
+    legacy && legacy.visibility === "public", JSON.stringify(legacy));
+
+  // Units: driveLibraryAllows matrix (same rule as drive-libraries.js).
+  const priv = { folderId: PRIV_FOLDER, visibility: "private", submitter: TG_ID };
+  const pend = { folderId: PRIV_FOLDER, visibility: "pending_public", submitter: TG_ID };
+  const pub = { folderId: PRIV_FOLDER, visibility: "public", submitter: TG_ID };
+  check("48 unit: allows public to anyone", driveLibraryAllows(pub, null, 0) === true);
+  check("48 unit: allows private to submitter", driveLibraryAllows(priv, TG_ID, OWNER_ID) === true);
+  check("48 unit: denies private to other", driveLibraryAllows(priv, OTHER_ID, OWNER_ID) === false);
+  check("48 unit: denies private to anonymous", driveLibraryAllows(priv, null, 0) === false);
+  check("48 unit: denies private to owner (submitter-only, like drive-libraries.js)",
+    driveLibraryAllows(priv, OWNER_ID, OWNER_ID) === false);
+  check("48 unit: allows pending to submitter", driveLibraryAllows(pend, TG_ID, OWNER_ID) === true);
+  check("48 unit: allows pending to owner", driveLibraryAllows(pend, OWNER_ID, OWNER_ID) === true);
+  check("48 unit: denies pending to other", driveLibraryAllows(pend, OTHER_ID, OWNER_ID) === false);
+  check("48 unit: allows null lib (unindexed / D1 down)", driveLibraryAllows(null, null, 0) === true);
+
+  // onRequest matrix (lib=drive, EPUB).
+  async function sendDrive({ db, kv, params, ownerId }) {
+    const { fetchImpl, calls } = makeFetch({});
+    const ctx = makeCtx({ kv, fetchImpl, params });
+    if (db !== undefined) ctx.env.TG_D1 = db;
+    if (ownerId !== undefined) ctx.env.RLIBOOK_OWNER_ID = String(ownerId);
+    const res = await run(ctx, fetchImpl);
+    return { res, body: await res.text(), calls };
+  }
+  const base = { lib: "drive", id: PRIV_FILE, f: "epub", t: "Private Book" };
+  let r = await sendDrive({ db: privDb(), kv: privKv(), params: { ...base, fp: FP } });
+  check("48 send: private + submitter -> 200 + sent", r.res.status === 200 && r.calls.resend.length === 1, `status=${r.res.status}`);
+  r = await sendDrive({ db: privDb(), kv: privKv(OTHER_FP, OTHER_ID), params: { ...base, fp: OTHER_FP } });
+  check("48 send: private + other user -> 403", r.res.status === 403 && r.body.includes("مكتبة خاصة"), `status=${r.res.status}`);
+  check("48 send: private + other user -> nothing fetched or sent",
+    r.calls.book.length === 0 && r.calls.resend.length === 0);
+  r = await sendDrive({ db: privDb(), kv: makeKv({}), params: { ...base, to: "someone@kindle.com" } });
+  check("48 send: private + typed email (no fp) -> 403", r.res.status === 403, `status=${r.res.status}`);
+  check("48 send: private + typed email -> nothing fetched or sent",
+    r.calls.book.length === 0 && r.calls.resend.length === 0);
+  r = await sendDrive({ db: privDb("pending_public"), kv: privKv(FP, OWNER_ID), params: { ...base, fp: FP }, ownerId: OWNER_ID });
+  // NOTE: the fp above resolves to OWNER_ID (kv built with fp=FP -> OWNER_ID).
+  check("48 send: pending + owner -> 200 + sent", r.res.status === 200 && r.calls.resend.length === 1, `status=${r.res.status}`);
+  r = await sendDrive({ db: privDb("public"), kv: privKv(OTHER_FP, OTHER_ID), params: { ...base, fp: OTHER_FP } });
+  check("48 send: public + other user -> 200 + sent", r.res.status === 200 && r.calls.resend.length === 1, `status=${r.res.status}`);
+  r = await sendDrive({ db: privDb(), kv: privKv(), params: { lib: "drive", id: "1NOTINDEXED123456789", f: "epub", t: "x", fp: FP } });
+  check("48 send: unindexed file id -> 200 (fail open)", r.res.status === 200, `status=${r.res.status}`);
+  r = await sendDrive({ db: undefined, kv: privKv(), params: { ...base, fp: FP } });
+  check("48 send: no TG_D1 binding -> 200 (fail open)", r.res.status === 200, `status=${r.res.status}`);
+  r = await sendDrive({ db: makeDb({ throwOn: true }), kv: privKv(), params: { ...base, fp: FP } });
+  check("48 send: D1 error -> 200 (fail open, documented)", r.res.status === 200, `status=${r.res.status}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

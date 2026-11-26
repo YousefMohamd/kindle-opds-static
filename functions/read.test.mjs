@@ -32,6 +32,9 @@
 //      magic bytes -> 502; an oversized file -> 413; a bad book
 //      identity -> 400; security headers (CSP, noindex, no-store)
 //      on chapter pages; a very long chapter is cut at the unit cap.
+//  8. (WAVE 7) Drive visibility gate: private + submitter -> chapter;
+//      private + other/anonymous -> 403, no fetch; pending + owner ->
+//      chapter; public / unindexed / no TG_D1 -> chapter (fail open).
 // Exit 0 = all pass; non-zero = failure. No network, no production
 // KV, no deploy. All book data below is FAKE test data.
 
@@ -834,6 +837,107 @@ console.log("7. Token renewal + own books:");
   check("7f library token on a hidden book -> 403 (entry hidden check)",
     rLibHide.status === 403 && rLibHide.body.includes("أزاله المالك"),
     "status " + rLibHide.status);
+}
+
+// ================= 8. Drive visibility gate (WAVE 7) ==================
+console.log("8. Drive visibility gate (WAVE 7):");
+{
+  // Mock D1: same shape as the send-to-kindle test.
+  function makeDb({ books = {}, registry = {} } = {}) {
+    return {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              async first() {
+                if (String(sql).includes("FROM books")) {
+                  const source = books[args[0]];
+                  return source ? { source } : null;
+                }
+                if (String(sql).includes("FROM drive_libraries")) {
+                  return registry[args[0]] || null;
+                }
+                return null;
+              },
+            };
+          },
+        };
+      },
+    };
+  }
+  const PRIV_FOLDER = "PRIVFOLDER1234567890";
+  const PRIV_FILE = "1PRIVFILE1234567890AB";
+  const PRIV_URL = "https://drive.google.com/file/d/" + PRIV_FILE + "/view";
+  const FP = "fp_reader_test_abc";
+  const SUBMITTER = 7283934644;
+  const OTHER_FP = "fp_reader_other_xyz";
+  const OTHER_ID = 999888777;
+  const OWNER_ID = 111222333;
+  function privDb(visibility = "private") {
+    return makeDb({
+      books: { [PRIV_URL]: "drive:" + PRIV_FOLDER },
+      registry: { [PRIV_FOLDER]: { visibility, submitter_tg_id: SUBMITTER } },
+    });
+  }
+  function privEnv(fp, tgId, db, ownerId) {
+    const kv = makeKv({
+      ["fp:" + fp]: JSON.stringify({ tg_id: tgId }),
+    });
+    const env = { ...ENV, RLIBOOK_KV: kv };
+    if (db !== undefined) env.TG_D1 = db;
+    if (ownerId !== undefined) env.RLIBOOK_OWNER_ID = String(ownerId);
+    return env;
+  }
+  fetchMode = "epub";
+  const params = { lib: "khazendar", id: PRIV_FILE, f: "epub" };
+
+  lastFetchUrl = "NONE";
+  let r = await call({ ...params, fp: FP }, privEnv(FP, SUBMITTER, privDb()));
+  check("8a private + submitter (?fp=) -> 200 chapter",
+    r.status === 200 && r.body.includes("هذا نص الفصل الأول للاختبار"), "status " + r.status);
+  check("8a private + submitter fetched the book", lastFetchUrl.includes("drive.google.com/uc?id=" + PRIV_FILE), lastFetchUrl);
+
+  lastFetchUrl = "NONE";
+  r = await call({ ...params, fp: OTHER_FP }, privEnv(OTHER_FP, OTHER_ID, privDb()));
+  check("8b private + other user -> 403 private library",
+    r.status === 403 && r.body.includes("مكتبة خاصة"), "status " + r.status);
+  check("8b private + other user -> no book fetch", lastFetchUrl === "NONE", lastFetchUrl);
+
+  lastFetchUrl = "NONE";
+  r = await call(params, privEnv(FP, SUBMITTER, privDb()));
+  check("8c private + no fingerprint -> 403", r.status === 403 && r.body.includes("مكتبة خاصة"), "status " + r.status);
+  check("8c private + no fingerprint -> no book fetch", lastFetchUrl === "NONE", lastFetchUrl);
+
+  // Cookie identity: the same fingerprint via the rlb_fp cookie.
+  lastFetchUrl = "NONE";
+  {
+    const env = privEnv(FP, SUBMITTER, privDb());
+    const tok = await makeReaderToken(KEY, "khazendar", PRIV_FILE, "epub", 3600, Math.floor(Date.now() / 1000));
+    const url = "https://rlibook.tech/read?lib=khazendar&id=" + PRIV_FILE + "&f=epub&rtok=" + encodeURIComponent(tok);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+    try {
+      const res = await onRequest({
+        request: new Request(url, { method: "GET", headers: { Cookie: "rlb_fp=" + FP } }),
+        env,
+      });
+      const body = await res.text();
+      check("8d private + submitter via rlb_fp cookie -> 200 chapter",
+        res.status === 200 && body.includes("هذا نص الفصل الأول للاختبار"), "status " + res.status);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+
+  r = await call({ ...params, fp: FP }, privEnv(FP, OWNER_ID, privDb("pending_public"), OWNER_ID));
+  check("8e pending + owner -> 200 chapter", r.status === 200, "status " + r.status);
+  r = await call({ ...params, fp: OTHER_FP }, privEnv(OTHER_FP, OTHER_ID, privDb("public")));
+  check("8f public + other user -> 200 chapter", r.status === 200, "status " + r.status);
+  r = await call({ lib: "khazendar", id: "1NOTINDEXED123456789", f: "epub", fp: FP },
+    privEnv(FP, SUBMITTER, privDb()));
+  check("8g unindexed file id -> 200 (fail open)", r.status === 200, "status " + r.status);
+  r = await call({ ...params, fp: FP }, privEnv(FP, SUBMITTER, undefined));
+  check("8h no TG_D1 binding -> 200 (fail open)", r.status === 200, "status " + r.status);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

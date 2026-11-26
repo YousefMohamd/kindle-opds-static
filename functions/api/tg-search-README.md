@@ -273,8 +273,11 @@ node verify-population.mjs        # (in the task working dir)
 - Flagged Drive books use KV `flag:drive:<fileId>` (a t.me key cannot
   address them); the flags:all blob may also carry `drive:<fileId>`
   entries. `send-to-kindle.js` (lib=drive) checks the same key.
-- Delivery for Drive rows is send-by-email + read-online only
-  (`send` / `read` gated links); there is no `/kindle/get` delivery
-  page for Drive books and no bot deep link for a flagged Drive
-  book (the bot has no `dl_drive_` link — a flagged Drive book
-  shows 🚩 with the bot home link instead).
+- Delivery for Drive rows is `/kindle/get` (download, WAVE 7 —
+  unlocked by the `drive` entry in dl-token.js OPDS_LIBS) +
+  send-by-email + read-online (`get` / `send` / `read` gated
+  links; the `get` / `send` links carry `&fp=` when the viewer is
+  identified, so /kindle/get and /api/send-to-kindle can resolve
+  the submitter for a private library). No bot deep link for a
+  flagged Drive book (the bot has no `dl_drive_` link — a flagged
+  Drive book shows 🚩 with the bot home link instead).

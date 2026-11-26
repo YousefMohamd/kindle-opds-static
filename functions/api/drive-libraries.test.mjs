@@ -87,8 +87,8 @@ const KV = mockKV({
   ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
 });
 
-async function call(env, path) {
-  const req = new Request("https://example.com" + path, { method: "GET" });
+async function call(env, path, headers = {}) {
+  const req = new Request("https://example.com" + path, { method: "GET", headers });
   const res = await onRequest({ request: req, env, params: {} });
   return { status: res.status, body: await res.json() };
 }
@@ -140,6 +140,30 @@ const ids = (body) => (body.libraries || []).map((l) => l.folder_id);
   const req = new Request("https://example.com/api/drive-libraries", { method: "POST" });
   const res = await onRequest({ request: req, env: env(), params: {} });
   check("6a POST -> 405", res.status === 405, `status=${res.status}`);
+}
+// 7. rlb_fp cookie fallback (WAVE 7, A3): no ?fp= -> the cookie is
+// read server-side and verified through the same KV lookup; ?fp=
+// wins when present; unknown/malformed cookie -> anonymous.
+const FP_UNKNOWN = "DDDDDDDDDDDDDDDDDDDDDD"; // 22 chars, not in KV
+{
+  const { body } = await call(env(), "/api/drive-libraries", { Cookie: "rlb_fp=" + FP_SUB });
+  check("7a cookie-only submitter sees all three", ids(body).length === 3, JSON.stringify(ids(body)));
+  const priv = body.libraries.find((l) => l.folder_id === F_PRIV);
+  check("7a2 cookie-only private row mine:true", priv && priv.mine === true);
+  const { body: oth } = await call(env(), "/api/drive-libraries", { Cookie: "rlb_fp=" + FP_OTHER });
+  check("7b cookie-only stranger sees public only", JSON.stringify(ids(oth)) === JSON.stringify([F_PUB]), JSON.stringify(ids(oth)));
+  const { status: sUnk, body: unk } = await call(env(), "/api/drive-libraries", { Cookie: "rlb_fp=" + FP_UNKNOWN });
+  check("7c unknown cookie -> 200, public only (fail closed)", sUnk === 200 && JSON.stringify(ids(unk)) === JSON.stringify([F_PUB]), `status=${sUnk} ${JSON.stringify(ids(unk))}`);
+  const { body: win } = await call(env(), "/api/drive-libraries?fp=" + FP_OTHER, { Cookie: "rlb_fp=" + FP_SUB });
+  check("7d ?fp= wins over cookie (?fp= stranger + cookie submitter -> public only)",
+    JSON.stringify(ids(win)) === JSON.stringify([F_PUB]), JSON.stringify(ids(win)));
+  const { body: win2 } = await call(env(), "/api/drive-libraries?fp=" + FP_SUB, { Cookie: "rlb_fp=" + FP_OTHER });
+  check("7e ?fp= wins over cookie (?fp= submitter + cookie stranger -> all three)",
+    ids(win2).length === 3, JSON.stringify(ids(win2)));
+  const { status: sBad, body: bad } = await call(env(), "/api/drive-libraries", { Cookie: "rlb_fp=%ZZ; other=x" });
+  check("7f malformed cookie -> 200, public only (never a 500)", sBad === 200 && JSON.stringify(ids(bad)) === JSON.stringify([F_PUB]), `status=${sBad} ${JSON.stringify(ids(bad))}`);
+  const { body: noc } = await call(env(), "/api/drive-libraries", { Cookie: "other=1; session=abc" });
+  check("7g unrelated cookies only -> public only", JSON.stringify(ids(noc)) === JSON.stringify([F_PUB]), JSON.stringify(ids(noc)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

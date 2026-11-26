@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey, parseDriveFileUrl, driveFlagKey } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey, parseDriveFileUrl, driveFlagKey, d1LookupByPost, d1LookupByDriveFile, isDriveLookup } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -1293,19 +1293,21 @@ const driveTitles = (body) => (body.results || []).map((r) => r.title);
   const leg = (body.results || []).find((r) => r.title === "كتاب الدرايف القديم");
   check("31a7 legacy Drive book: kind drive + library null (no registry row)",
     leg && leg.kind === "drive" && leg.library === null, JSON.stringify(leg));
-  check("31a8 Drive EPUB: send link lib=drive, reader link, NO /kindle/get link",
-    pub && pub.send !== null && pub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub&t=")
-    && pub.read !== null && pub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub&title=")
-    && pub.get === null, JSON.stringify(pub));
+  check("31a8 Drive EPUB: get link lib=drive (/kindle/get), send link, reader link",
+    pub && pub.get !== null && pub.get.startsWith("/kindle/get?lib=drive&id=DRIVEPUBFILEID001&f=epub&t=")
+    && pub.send !== null && pub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub&t=")
+    && pub.read !== null && pub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub&title="),
+    JSON.stringify(pub));
   // 31b submitter (fp=FP_SUB): all four.
   const { body: subBody } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_SUB);
   check("31b submitter sees all four Drive books",
     ["كتاب الدرايف العام", "كتاب الدرايف الخاص", "كتاب الدرايف المعلق", "كتاب الدرايف القديم"].every((t) => driveTitles(subBody).includes(t)),
     JSON.stringify(driveTitles(subBody)));
   const priv = (subBody.results || []).find((r) => r.title === "كتاب الدرايف الخاص");
-  check("31b2 private Drive PDF: send link, no reader link (PDF is not readable online)",
-    priv && priv.send !== null && priv.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPRIVFILEID01&f=pdf&t=")
-    && priv.read === null && priv.get === null, JSON.stringify(priv));
+  check("31b2 private Drive PDF: get + send link, no reader link (PDF is not readable online)",
+    priv && priv.get !== null && priv.get.startsWith("/kindle/get?lib=drive&id=DRIVEPRIVFILEID01&f=pdf&t=")
+    && priv.send !== null && priv.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPRIVFILEID01&f=pdf&t=")
+    && priv.read === null, JSON.stringify(priv));
   // 31c stranger (fp=FP_OTHER): public + legacy only.
   const { body: othBody } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_OTHER);
   check("31c stranger sees public + legacy only",
@@ -1353,12 +1355,13 @@ const driveTitles = (body) => (body.results || []).map((r) => r.title);
     && driveFlagKey("https://t.me/kotobkhana/7559") === null);
   // 31i unit checks: gatedLinks for Drive rows.
   const gEpub = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, false);
-  check("31i gatedLinks Drive EPUB: send + read, get null",
-    gEpub.send !== null && gEpub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub")
-    && gEpub.read !== null && gEpub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub") && gEpub.get === null,
+  check("31i gatedLinks Drive EPUB: get + send + read",
+    gEpub.get !== null && gEpub.get.startsWith("/kindle/get?lib=drive&id=DRIVEPUBFILEID001&f=epub")
+    && gEpub.send !== null && gEpub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub")
+    && gEpub.read !== null && gEpub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub"),
     JSON.stringify(gEpub));
   const gPdf = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPRIVFILEID01/view", ext: "pdf", title: "كتاب الدرايف الخاص" }, false);
-  check("31i2 gatedLinks Drive PDF: send only", gPdf.send !== null && gPdf.read === null && gPdf.get === null, JSON.stringify(gPdf));
+  check("31i2 gatedLinks Drive PDF: get + send only", gPdf.get !== null && gPdf.get.startsWith("/kindle/get?lib=drive&id=DRIVEPRIVFILEID01&f=pdf") && gPdf.send !== null && gPdf.read === null, JSON.stringify(gPdf));
   const gFlag = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, true);
   check("31i3 gatedLinks flagged Drive: all null", gFlag.get === null && gFlag.send === null && gFlag.read === null, JSON.stringify(gFlag));
   // 31j bad Drive source: a folder id under 10 chars is a 400.
@@ -1376,7 +1379,13 @@ const driveTitles = (body) => (body.results || []).map((r) => r.title);
 // page can mean). When the page is NOT full, total = offset +
 // rows.length exactly. The COUNT that still runs is a direct-FTS
 // count when no source/format filter applies, and the join form
-// only when a filter applies. These checks count the actual
+// only when a filter applies — or when a restricted (private /
+// pending_public) Drive library exists (WAVE 7, wave-7 child A:
+// the direct count cannot carry the visibility filter, so with a
+// restricted library present the join form runs even unfiltered,
+// and the full-page total can never overcount invisible Drive
+// matches; with no restricted library the direct form stays).
+// These checks count the actual
 // SELECT COUNT(*) statements executed per request (coverage is a
 // MAX(id) refresh, not a COUNT, so it never pollutes the count)
 // and assert the totals stay exact.
@@ -1424,15 +1433,69 @@ function recordingD1(sqlite) {
     countStmts().length - before === 0 && small.total === expectedSmall && expectedSmall >= 1,
     `counts=${countStmts().length - before} total=${small.total} expected=${expectedSmall}`);
   // 32b: full page (40 matches, fetchLimit 30) — exactly ONE COUNT,
-  // direct-FTS form (no books join: no filter applies).
+  // total exact (40). WAVE 7 (wave-7 child A): the COUNT is the JOIN
+  // form WITH the driveVisibility clause, not the direct-FTS form —
+  // this test DB holds restricted Drive libraries (private +
+  // pending_public fixtures from §31), so the direct count (which
+  // cannot carry a books-table filter) must NOT run: it would
+  // overcount invisible Drive matches. The statement-count intent
+  // (ONE COUNT, exact total) is unchanged; only the form follows
+  // the visibility state. The direct form is covered by 32b2 below
+  // on a DB with no restricted library.
   before = countStmts().length;
   const { body: full } = await call(env, "/api/tg-search?q=zzcount&limit=10");
   const newCounts = countStmts().slice(before);
-  check("32b full page: exactly ONE COUNT, direct-FTS form, total exact (40)",
+  check("32b full page: exactly ONE COUNT, JOIN form with visibility clause, total exact (40)",
     newCounts.length === 1
-    && newCounts[0] === "SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?"
+    && newCounts[0].startsWith("SELECT COUNT(*) AS n FROM books b")
+    && newCounts[0].includes("WHERE b.id IN (SELECT rowid FROM books_fts")
+    && newCounts[0].includes("drive_libraries")
     && full.total === 40 && (full.results || []).length === 10,
     `counts=${JSON.stringify(newCounts)} total=${full.total} results=${(full.results || []).length}`);
+  // 32b2: direct-FTS form when NO restricted Drive library exists.
+  // A separate mini-DB (same schema, one PUBLIC Drive library only,
+  // 6 books sharing one word) — the unfiltered full-page COUNT must
+  // be the direct form again, with an exact total.
+  const db2 = new DatabaseSync(":memory:");
+  db2.exec(`
+    CREATE TABLE books (
+      id INTEGER PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'channel',
+      ext TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '',
+      date TEXT NOT NULL DEFAULT '', url TEXT NOT NULL,
+      filename TEXT NOT NULL DEFAULT '',
+      UNIQUE(url, filename)
+    );
+    CREATE VIRTUAL TABLE books_fts USING fts5(title, author, tokenize='unicode61 remove_diacritics 1');
+    CREATE INDEX idx_books_source ON books(source);
+    CREATE TABLE drive_libraries (
+      folder_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
+      visibility TEXT NOT NULL DEFAULT 'public',
+      submitter_tg_id INTEGER, added_at TEXT NOT NULL DEFAULT ''
+    );
+  `);
+  db2.prepare(
+    "INSERT INTO drive_libraries(folder_id,title,visibility,submitter_tg_id,added_at) VALUES (?,?,?,?,?)",
+  ).run(F_PUB, "Oriental Music", "public", null, "2026-11-22");
+  const ins2Book = db2.prepare(
+    "INSERT INTO books(id,title,author,source,kind,ext,size,date,url,filename) VALUES (?,?,?,?,?,?,?,?,?,?)",
+  );
+  const ins2Fts = db2.prepare("INSERT INTO books_fts(rowid,title,author) VALUES (?,?,?)");
+  for (let i = 1; i <= 6; i++) {
+    ins2Book.run(1000 + i, `ZZDirect A${i}`, "ZZDirect Author", "zzchan", "channel", "epub", "1.0 MB", "2026-11-20", `https://t.me/zzchan/${2000 + i}`, `ZZDirect A${i}.epub`);
+    ins2Fts.run(1000 + i, norm(`ZZDirect A${i}`), norm("ZZDirect Author"));
+  }
+  const rec2 = recordingD1(db2);
+  const kvCov2 = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 422821, at: Date.now() }) });
+  const env2 = { TG_D1: rec2.db, RLIBOOK_KV: kvCov2 };
+  const before2 = rec2.counts().length;
+  const { body: direct } = await call(env2, "/api/tg-search?q=zzdirect&limit=2");
+  const newCounts2 = rec2.counts().slice(before2);
+  check("32b2 no restricted Drive library: exactly ONE COUNT, direct-FTS form, total exact (6)",
+    newCounts2.length === 1
+    && newCounts2[0] === "SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?"
+    && direct.total === 6 && (direct.results || []).length === 2,
+    `counts=${JSON.stringify(newCounts2)} total=${direct.total} results=${(direct.results || []).length}`);
   // 32c: wide page (limit 50 -> fetchLimit 50 > 40) — ZERO COUNT, total exact.
   before = countStmts().length;
   const { body: wide } = await call(env, "/api/tg-search?q=zzcount&limit=50");
@@ -1484,6 +1547,184 @@ function recordingD1(sqlite) {
   check("32i dense ids: MAX(id) === COUNT(*) (the estimator's premise)",
     dense.prepare("SELECT MAX(id) AS n FROM books").get().n === 100
     && dense.prepare("SELECT COUNT(*) AS n FROM books").get().n === 100);
+}
+
+// 33. Drive single-book lookup + fp threading on ?h=&p= + the
+// countTotal overcount fix (WAVE 7, wave-7 child A). The ?h=&p=
+// path previously resolved Telegram posts only, so a Drive book
+// was unreachable there at all; now ?h=drive&p=<fileId> resolves
+// it, subject to the same ?fp= visibility as search — an invisible
+// library's book reads as { book: null }, never as a title leak.
+// Fixtures: 5 public + 1 private Drive books sharing one word, so
+// the unfiltered full-page COUNT can be checked for overcounting.
+const ZZDRIVE = [
+  ["ZZDrive Pub A1", "ZZDrive Author", "drive:" + F_PUB, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPUB0001/view", "ZZDrive Pub A1.epub"],
+  ["ZZDrive Pub A2", "ZZDrive Author", "drive:" + F_PUB, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPUB0002/view", "ZZDrive Pub A2.epub"],
+  ["ZZDrive Pub A3", "ZZDrive Author", "drive:" + F_PUB, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPUB0003/view", "ZZDrive Pub A3.epub"],
+  ["ZZDrive Pub A4", "ZZDrive Author", "drive:" + F_PUB, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPUB0004/view", "ZZDrive Pub A4.epub"],
+  ["ZZDrive Pub A5", "ZZDrive Author", "drive:" + F_PUB, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPUB0005/view", "ZZDrive Pub A5.epub"],
+  ["ZZDrive Priv A1", "ZZDrive Author", "drive:" + F_PRIV, "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/ZZDRIVEPRIV001/view", "ZZDrive Priv A1.epub"],
+];
+ZZDRIVE.forEach((f, j) => {
+  const id = 900301 + j;
+  insBook.run(id, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
+  insFts.run(id, norm(f[0]), norm(f[1]));
+});
+{
+  // 33a anonymous ?h=drive&p=<public fileId> -> the book, with a
+  // /kindle/get link (lib=drive).
+  const { status, body } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPUBFILEID001");
+  check("33a anonymous Drive lookup: public book + get link lib=drive",
+    status === 200 && body.book && body.book.title === "كتاب الدرايف العام"
+    && body.book.kind === "drive" && body.book.library === "Oriental Music"
+    && body.book.get !== null && body.book.get.startsWith("/kindle/get?lib=drive&id=DRIVEPUBFILEID001&f=epub&t="),
+    `status=${status} ` + JSON.stringify(body.book));
+  // 33b anonymous ?h=drive&p=<private fileId> -> book null, no leak.
+  const { body: privBody } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPRIVFILEID01");
+  check("33b anonymous Drive lookup: private book reads as null (no title leak)",
+    privBody.book === null, JSON.stringify(privBody.book));
+  // 33c submitter fp on the private file -> the book, with get link.
+  const { body: subBook } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPRIVFILEID01&fp=" + FP_SUB);
+  check("33c submitter Drive lookup: private book + get link lib=drive",
+    subBook.book && subBook.book.title === "كتاب الدرايف الخاص"
+    && subBook.book.get !== null && subBook.book.get.startsWith("/kindle/get?lib=drive&id=DRIVEPRIVFILEID01&f=pdf&t="),
+    JSON.stringify(subBook.book));
+  // 33d pending file: owner sees it, stranger does not.
+  const { body: ownPend } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPENDFILEID01&fp=" + FP_OWNER);
+  check("33d owner Drive lookup: pending book returned",
+    ownPend.book && ownPend.book.title === "كتاب الدرايف المعلق", JSON.stringify(ownPend.book));
+  const { body: othPend } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPENDFILEID01&fp=" + FP_OTHER);
+  check("33d2 stranger Drive lookup: pending book reads as null",
+    othPend.book === null, JSON.stringify(othPend.book));
+  // 33e validation: a short file id is a 400; a numeric p under
+  // h=drive stays the Telegram path (channel "drive", unknown post
+  // -> book null, not a 400).
+  const badDrive = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=short");
+  check("33e h=drive&p=short -> 400", badDrive.status === 400, `status=${badDrive.status}`);
+  const numDrive = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=12345");
+  check("33e2 h=drive&p=12345 (numeric) -> Telegram path, unknown post -> book null",
+    numDrive.status === 200 && numDrive.body.book === null, `status=${numDrive.status} ` + JSON.stringify(numDrive.body.book));
+  // 33f unit checks: isDriveLookup + d1LookupByDriveFile with vis.
+  check("33f isDriveLookup: file id yes, numeric post no, other handle no, short no",
+    isDriveLookup("drive", "DRIVEPUBFILEID001") === true
+    && isDriveLookup("drive", "7559") === false
+    && isDriveLookup("kotobkhana", "DRIVEPUBFILEID001") === false
+    && isDriveLookup("drive", "short") === false);
+  const VIS_ANON = { hasRegistry: true, hasRestrictedDrive: true, viewerTgId: -1, isOwner: false };
+  const VIS_SUB = { hasRegistry: true, hasRestrictedDrive: true, viewerTgId: 111, isOwner: false };
+  const VIS_OWNER = { hasRegistry: true, hasRestrictedDrive: true, viewerTgId: 999, isOwner: true };
+  const legacyRow = await d1LookupByDriveFile(D1, "DRIVEPRIVFILEID01");
+  check("33f2 d1LookupByDriveFile without vis: legacy no-filter row returned",
+    legacyRow && legacyRow.title === "كتاب الدرايف الخاص", JSON.stringify(legacyRow && legacyRow.title));
+  const anonRow = await d1LookupByDriveFile(D1, "DRIVEPRIVFILEID01", VIS_ANON);
+  check("33f3 d1LookupByDriveFile with anon vis: private row -> null", anonRow === null, JSON.stringify(anonRow));
+  const subRow = await d1LookupByDriveFile(D1, "DRIVEPRIVFILEID01", VIS_SUB);
+  check("33f4 d1LookupByDriveFile with submitter vis: private row returned",
+    subRow && subRow.title === "كتاب الدرايف الخاص", JSON.stringify(subRow && subRow.title));
+  const ownPendRow = await d1LookupByDriveFile(D1, "DRIVEPENDFILEID01", VIS_OWNER);
+  check("33f5 d1LookupByDriveFile with owner vis: pending row returned",
+    ownPendRow && ownPendRow.title === "كتاب الدرايف المعلق", JSON.stringify(ownPendRow && ownPendRow.title));
+  const noRow = await d1LookupByDriveFile(D1, "NOPEFILEID0001", VIS_ANON);
+  check("33f6 d1LookupByDriveFile unknown file id -> null", noRow === null);
+  const tgRow = await d1LookupByPost(D1, "kotobkhana", 7559, VIS_ANON);
+  check("33f7 d1LookupByPost with vis still resolves a Telegram post",
+    tgRow && tgRow.title !== undefined, JSON.stringify(tgRow && tgRow.title));
+  // 33g the countTotal overcount fix: anonymous unfiltered search
+  // matching 5 public + 1 private Drive books, full page
+  // (limit=1 -> fetchLimit 3) — the ONE COUNT must be the join
+  // form and the total must be 5, not 6. Submitter sees 6.
+  const rec33 = recordingD1(db);
+  const env33 = {
+    TG_D1: rec33.db,
+    RLIBOOK_KV: mockKVStore({ ...fpEntries(), "tg-search:coverage": JSON.stringify({ indexed: 422821, at: Date.now() }) }),
+    RLIBOOK_OWNER_ID: "999",
+  };
+  let before33 = rec33.counts().length;
+  const { body: anonCount } = await call(env33, "/api/tg-search?q=zzdrive&limit=1");
+  const anonCounts = rec33.counts().slice(before33);
+  check("33g anonymous full page over Drive books: ONE COUNT, JOIN form, total 5 (private excluded)",
+    anonCounts.length === 1
+    && anonCounts[0].startsWith("SELECT COUNT(*) AS n FROM books b")
+    && anonCounts[0].includes("drive_libraries")
+    && anonCount.total === 5 && (anonCount.results || []).length === 1,
+    `counts=${JSON.stringify(anonCounts)} total=${anonCount.total}`);
+  before33 = rec33.counts().length;
+  const { body: subCount } = await call(env33, "/api/tg-search?q=zzdrive&limit=1&fp=" + FP_SUB);
+  check("33g2 submitter full page over the same books: total 6 (private included)",
+    subCount.total === 6 && (subCount.results || []).length === 1,
+    `total=${subCount.total}`);
+  // 34. rlb_fp cookie fallback (WAVE 7, A3): no ?fp= -> the cookie
+  // is read server-side and verified through the same KV lookup;
+  // ?fp= wins when present; unknown/malformed cookie -> anonymous.
+  const FP_UNKNOWN = "4444444444444444444444"; // 22 chars, not in KV
+  const { body: ckSub } = await call(driveEnv(fpEntries()), DRIVE_Q, { Cookie: "rlb_fp=" + FP_SUB });
+  check("34a cookie-only submitter sees all four Drive books",
+    ["كتاب الدرايف العام", "كتاب الدرايف الخاص", "كتاب الدرايف المعلق", "كتاب الدرايف القديم"].every((t) => driveTitles(ckSub).includes(t)),
+    JSON.stringify(driveTitles(ckSub)));
+  check("34a2 cookie-only submitter total is 4", ckSub.total === 4, `total=${ckSub.total}`);
+  const { body: ckOth } = await call(driveEnv(fpEntries()), DRIVE_Q, { Cookie: "rlb_fp=" + FP_OTHER });
+  check("34b cookie-only stranger sees public + legacy only",
+    driveTitles(ckOth).includes("كتاب الدرايف العام") && driveTitles(ckOth).includes("كتاب الدرايف القديم")
+    && !driveTitles(ckOth).includes("كتاب الدرايف الخاص") && !driveTitles(ckOth).includes("كتاب الدرايف المعلق"),
+    JSON.stringify(driveTitles(ckOth)));
+  const { status: sUnk, body: ckUnk } = await call(driveEnv(fpEntries()), DRIVE_Q, { Cookie: "rlb_fp=" + FP_UNKNOWN });
+  check("34c unknown cookie -> 200, anonymous (public + legacy, total 2)",
+    sUnk === 200 && ckUnk.total === 2 && !driveTitles(ckUnk).includes("كتاب الدرايف الخاص"),
+    `status=${sUnk} total=${ckUnk.total} ${JSON.stringify(driveTitles(ckUnk))}`);
+  const { body: ckWin } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_OTHER, { Cookie: "rlb_fp=" + FP_SUB });
+  check("34d ?fp= wins over cookie (?fp= stranger + cookie submitter -> public + legacy only)",
+    !driveTitles(ckWin).includes("كتاب الدرايف الخاص") && !driveTitles(ckWin).includes("كتاب الدرايف المعلق"),
+    JSON.stringify(driveTitles(ckWin)));
+  const { body: ckWin2 } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_SUB, { Cookie: "rlb_fp=" + FP_OTHER });
+  check("34e ?fp= wins over cookie (?fp= submitter + cookie stranger -> all four)",
+    ["كتاب الدرايف العام", "كتاب الدرايف الخاص", "كتاب الدرايف المعلق", "كتاب الدرايف القديم"].every((t) => driveTitles(ckWin2).includes(t)),
+    JSON.stringify(driveTitles(ckWin2)));
+  const { status: sBad, body: ckBad } = await call(driveEnv(fpEntries()), DRIVE_Q, { Cookie: "rlb_fp=%ZZ; other=x" });
+  check("34f malformed cookie -> 200, anonymous (never a 500)",
+    sBad === 200 && ckBad.total === 2 && !driveTitles(ckBad).includes("كتاب الدرايف الخاص"),
+    `status=${sBad} total=${ckBad.total}`);
+  const { body: ckNo } = await call(driveEnv(fpEntries()), DRIVE_Q, { Cookie: "other=1; session=abc" });
+  check("34g unrelated cookies only -> anonymous (public + legacy, total 2)",
+    ckNo.total === 2 && !driveTitles(ckNo).includes("كتاب الدرايف الخاص"),
+    `total=${ckNo.total} ${JSON.stringify(driveTitles(ckNo))}`);
+  // 35. Delivery links carry the verified fp (WAVE 7 merge fix):
+  // /kindle/get and /api/send-to-kindle resolve identity from
+  // ?fp= OR the rlb_fp cookie, and a search visitor may carry
+  // ?fp= with no cookie set yet — so gatedLinks threads the
+  // verified fp onto get + send. The read link never carries it
+  // (the site reader has no server gate). Anonymous -> no fp in
+  // any link; flagged -> no links at all, fp or not.
+  const gFp = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, false, FP_SUB);
+  check("35a gatedLinks Drive EPUB + fp: get + send carry &fp=, read does not",
+    gFp.get !== null && gFp.get.endsWith("&fp=" + FP_SUB)
+    && gFp.send !== null && gFp.send.endsWith("&fp=" + FP_SUB)
+    && gFp.read !== null && !gFp.read.includes("fp="),
+    JSON.stringify(gFp));
+  const gNoFp = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, false);
+  check("35b gatedLinks Drive EPUB, no fp: no &fp= in any link",
+    gNoFp.get !== null && !gNoFp.get.includes("fp=") && !gNoFp.send.includes("fp=") && !gNoFp.read.includes("fp="),
+    JSON.stringify(gNoFp));
+  const gTgFp = gatedLinks({ url: "https://t.me/kotobkhana/7559", ext: "pdf", title: "T" }, false, FP_SUB);
+  check("35c gatedLinks Telegram PDF + fp: get + send carry &fp=",
+    gTgFp.get !== null && gTgFp.get.endsWith("&fp=" + FP_SUB) && gTgFp.send !== null && gTgFp.send.endsWith("&fp=" + FP_SUB),
+    JSON.stringify(gTgFp));
+  const gFlagFp = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, true, FP_SUB);
+  check("35d gatedLinks flagged + fp: still all null",
+    gFlagFp.get === null && gFlagFp.send === null && gFlagFp.read === null, JSON.stringify(gFlagFp));
+  const { body: fpSub } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_SUB);
+  const privRow = (fpSub.results || []).find((r) => r.title === "كتاب الدرايف الخاص");
+  check("35e live search as submitter: private book get + send carry &fp=",
+    !!privRow && privRow.get !== null && privRow.get.includes("&fp=" + FP_SUB)
+    && privRow.send !== null && privRow.send.includes("&fp=" + FP_SUB),
+    JSON.stringify(privRow));
+  const { body: fpAnon } = await call(driveEnv(fpEntries()), DRIVE_Q);
+  check("35f live anonymous search: no result link carries &fp=",
+    (fpAnon.results || []).every((r) => !(r.get || "").includes("fp=") && !(r.send || "").includes("fp=")),
+    JSON.stringify((fpAnon.results || []).map((r) => r.get)));
+  const { body: fpLk } = await call(driveEnv(fpEntries()), "/api/tg-search?h=drive&p=DRIVEPRIVFILEID01&fp=" + FP_SUB);
+  check("35g live lookup as submitter: private book get carries &fp=",
+    fpLk.book && fpLk.book.get !== null && fpLk.book.get.includes("&fp=" + FP_SUB),
+    JSON.stringify(fpLk.book));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

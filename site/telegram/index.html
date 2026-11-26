@@ -123,6 +123,22 @@ var SRC = queryParam("source").trim();
 // loaded from the live /api/tg-search endpoint instead (browse mode
 // with no q, search mode with q); see loadDrive below. (WAVE 4, WS8.)
 var IS_DRIVE = SRC.indexOf("drive:") === 0;
+// Fingerprint (?fp=) from the catalog link (WAVE 7): the Drive
+// browse/search below goes to the live /api/tg-search endpoint,
+// which identifies the viewer by ?fp= only (it does not read the
+// rlb_fp cookie). Without fp the endpoint answers public-only — a
+// private library's books stay invisible (fail-closed). The static
+// shards hold no Drive books, so no fp is needed there. fp is also
+// carried forward on the /book chips and the libraries.html / home
+// links below, so the viewer keeps their identity across pages.
+// fpQ: append to a URL that already has "?" (fetch URLs, and hrefs
+// passed through esc() later, which turns & into &amp;).
+// fpHrefQ: append to a raw-HTML href built as a string (already &amp;).
+// fpFirst: the whole "?fp=..." when fp is the first query parameter.
+var FP = queryParam("fp").trim();
+var fpQ = FP ? "&fp=" + encodeURIComponent(FP) : "";
+var fpHrefQ = FP ? "&amp;fp=" + encodeURIComponent(FP) : "";
+var fpFirst = FP ? "?fp=" + encodeURIComponent(FP) : "";
 var DRIVE_LOADED = false; // the Drive API rows for the current query
 var qEl = document.getElementById("q");
 var fmtEl = document.getElementById("fmt");
@@ -243,7 +259,7 @@ function driveToBook(r) {
            size: "", source: SRC, sources: [SRC], date: "", url: r.url || "" };
 }
 function loadDrive(q) {
-  var u = "/api/tg-search?source=" + encodeURIComponent(SRC) + "&limit=50";
+  var u = "/api/tg-search?source=" + encodeURIComponent(SRC) + "&limit=50" + fpQ;
   if (q) u += "&q=" + encodeURIComponent(q);
   countEl.textContent = "جارٍ تحميل كتب المكتبة…";
   return getJson(u, "api/tg-search").then(function (d) {
@@ -359,7 +375,7 @@ function renderList() {
       // Drive books have no t.me post: the chip opens the book page
       // (/book), where the book is sent by email or read online.
       var chipHref = IS_DRIVE
-        ? "/book?q=" + encodeURIComponent(g2.title)
+        ? "/book?q=" + encodeURIComponent(g2.title) + fpQ
         : tgLink(b);
       chips += "<a class=\"chip\" href=\"" + esc(chipHref) + "\">" +
         esc(b.ext.toUpperCase()) +
@@ -422,11 +438,11 @@ getJson("index.json", "index.json not found").then(function (data) {
       // filter. The book page is the delivery path.
       srcEl.innerHTML = "مكتبة Drive — الكتب من هذه المكتبة وحدها. "
         + "اضغط صيغة الكتاب لفتح صفحة الكتاب (إرسال بالإيميل أو قراءة أونلاين). "
-        + "<a href=\"libraries.html\">كل المكتبات</a> • "
+        + "<a href=\"libraries.html" + fpFirst + "\">كل المكتبات</a> • "
         + "<a href=\"/telegram/\">إلغاء التصفية</a>";
     } else {
       srcEl.innerHTML = "مكتبة <b>" + esc(SRC) + "</b> — الكتب من هذه المكتبة وحدها. " +
-        "<a href=\"libraries.html\">كل مكتبات تلجرام</a> • " +
+        "<a href=\"libraries.html" + fpFirst + "\">كل مكتبات تلجرام</a> • " +
         "<a href=\"/telegram/\">إلغاء التصفية</a>";
     }
   }
@@ -448,6 +464,24 @@ qEl.addEventListener("input", function () {
   render();
 });
 fmtEl.addEventListener("change", render);
+
+// Carry ?fp= forward to the libraries page and the homepage (WAVE 7):
+// libraries.html fetches /api/drive-libraries?fp= to show the
+// viewer's own private libraries, and the homepage threads fp into
+// its own fetches — a plain link would drop the fingerprint and the
+// next page would fall back to the public-only view. Only the
+// static footer links are rewritten here (the banner links above
+// are built with fpFirst when the manifest loads). Without fp this
+// block does nothing.
+if (FP) {
+  var fwdLinks = document.getElementsByTagName("a");
+  for (var fli = 0; fli < fwdLinks.length; fli++) {
+    var fwdHref = fwdLinks[fli].getAttribute("href") || "";
+    if (fwdHref === "libraries.html" || fwdHref === "/") {
+      fwdLinks[fli].setAttribute("href", fwdHref + fpFirst);
+    }
+  }
+}
 </script>
 </body>
 </html>

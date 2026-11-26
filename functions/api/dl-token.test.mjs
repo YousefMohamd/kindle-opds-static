@@ -39,6 +39,20 @@
 //      (6th mint for one fp -> 429 mint_cap_user); a wrong key or
 //      an unset secret falls through to the normal IP-counted
 //      path; flag/hidden gates still refuse service mints.
+//  11. Drive flag denylist (WAVE 7 follow-up A2): a KV
+//      `flag:drive:<fileId>` key refuses the mint for lib=drive
+//      AND for khazendar / sahwa / electronic (same file, same
+//      key — the flag is on the Drive file, not the library);
+//      unflagged drive-kind books mint normally; the refusal
+//      burns no quota; Hindawi / DOAB are never flagged; the
+//      service key does not bypass the drive flag gate.
+//  12. Drive visibility gate (WAVE 7 follow-up A4): a private
+//      Drive book mints only for its submitter (pending: + the
+//      owner) — 403 "private_library", no token, no quota burned;
+//      public / legacy (no registry row) / unindexed / no-D1 /
+//      D1-error mint unchanged (fail open, D's helper semantics);
+//      the service key does not bypass it; viewerTgIdFromFp
+//      mirrors drive-libraries.js verifyFingerprint.
 // Exit 0 = all pass; non-zero = failure. No network, no production
 // KV, no deploy. The signing key below is FAKE test data.
 
@@ -53,6 +67,7 @@ import {
   resolveAndConsumeShortLink,
   storeShortLink,
   isFlaggedBook,
+  isFlaggedDriveBook,
   isHiddenBook,
   MINT_CAP_PER_IP,
   MINT_CAP_ANONYMOUS,
@@ -65,6 +80,10 @@ import {
   READER_TOKEN_TTL_SECONDS,
   timingSafeEqual,
   isServiceKeyRequest,
+  viewerTgIdFromFp,
+  driveFileUrl,
+  driveBookLibrary,
+  driveLibraryAllows,
 } from "./dl-token.js";
 
 let pass = 0;
@@ -166,6 +185,38 @@ console.log("2. OPDS acceptance + validation:");
     r.body.ttl === 600 && Math.abs(r.body.exp - Math.floor(Date.now() / 1000) - 600) <= 5,
     JSON.stringify({ ttl: r.body.ttl, exp: r.body.exp }));
   check("2a cache-control: no-store", r.cache === "no-store", r.cache);
+}
+// 2a-drive. lib=drive (WAVE 7, wave-7 child A — the OPDS one-liner):
+// the generic Drive entry in OPDS_LIBS unlocks the mint path for
+// kind='drive' search results. Mocked env only — no live mint, no
+// quota burned.
+{
+  const kv = makeKv();
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const r = await call({ lib: "drive", id: "DRIVEPUBFILEID001", f: "epub" }, env, "10.0.0.9");
+  check("2a-drive lib=drive mints: 200 ok", r.status === 200 && r.body.ok === true, "status " + r.status);
+  const payload = r.body.token && verifyHmac(r.body.token, KEY);
+  check("2a-drive token payload: h=drive, p is the file-id STRING",
+    payload !== null && payload.h === "drive" && payload.p === "DRIVEPUBFILEID001",
+    JSON.stringify(payload));
+  check("2a-drive url is null (OPDS: no proxy URL; the short link is the path)",
+    r.body.url === null, "url=" + r.body.url);
+  check("2a-drive short link present (/k/<16 chars>)",
+    typeof r.body.short === "string" && /^\/k\/[A-Za-z0-9]{16}$/.test(r.body.short),
+    r.body.short);
+  check("2a-drive short resolves to the Drive uc download URL",
+    (await resolveShortLink(env, r.body.short.slice(3)))?.url
+      === "https://drive.google.com/uc?id=DRIVEPUBFILEID001&export=download");
+  const badDrive = await call({ lib: "drive", id: "short", f: "epub" }, env, "10.0.0.10");
+  check("2a-drive bad drive id (too short) -> 400 bad_id",
+    badDrive.status === 400 && badDrive.body.error === "bad_id", JSON.stringify(badDrive.body));
+  check("2a-drive parseBookParams lib=drive -> kind opds, lib drive",
+    (() => { const b = parseBookParams(new URLSearchParams("lib=drive&id=DRIVEPUBFILEID001&f=pdf")); return b.ok && b.kind === "opds" && b.lib === "drive" && b.id === "DRIVEPUBFILEID001" && b.fmt === "pdf"; })());
+  check("2a-drive resolveOpdsAcquisitionUrl drive -> uc URL",
+    resolveOpdsAcquisitionUrl("drive", "DRIVEPUBFILEID001")
+    === "https://drive.google.com/uc?id=DRIVEPUBFILEID001&export=download");
+  check("2a-drive resolveOpdsAcquisitionUrl bad drive id -> null",
+    resolveOpdsAcquisitionUrl("drive", "short") === null);
 }
 {
   const env = { RLIBOOK_KV: makeKv(), PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
@@ -305,6 +356,80 @@ console.log("4b. Owner-hide denylist:");
   const opds = await call({ lib: "hindawi", id: "13028368", f: "epub" }, env, "10.0.2.7");
   check("4h OPDS books are never hidden",
     opds.status === 200 && opds.body.ok === true, "status " + opds.status);
+}
+
+// ================= 4c. Drive flag denylist (WAVE 7 follow-up A2) ===
+// The wave-7 one-liner unlocked lib=drive for minting but the flag
+// gate was Telegram-only: a flagged Drive book minted freely via a
+// direct /api/dl-token call. The gate is the same `flag:drive:<id>`
+// key send-to-kindle.js checks, and it covers ALL drive-kind libs
+// (drive, khazendar, sahwa, electronic) — the flag is on the Drive
+// file, not the library that listed it.
+console.log("4c. Drive flag denylist:");
+{
+  const kv = makeKv({ "flag:drive:DRIVEFLAGFILE01": "1" });
+  const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const r = await call({ lib: "drive", id: "DRIVEFLAGFILE01", f: "epub" }, env, "10.0.2.8");
+  check("4c-a flagged Drive file -> 403 flagged, no token",
+    r.status === 403 && r.body.error === "flagged" && !r.body.token,
+    "status " + r.status + " " + JSON.stringify(r.body));
+  check("4c-a flagged Drive mint wrote no short link",
+    ![...kv.map.keys()].some((k) => k.startsWith("k:")), [...kv.map.keys()].join(","));
+  // The refusal burned no quota: 5 anonymous mints still succeed.
+  let okCount = 0;
+  for (let i = 0; i < 5; i++) {
+    const rr = await call({ lib: "drive", id: "DRIVEOKFILE000" + i, f: "epub" }, env, "10.0.2.8");
+    if (rr.status === 200) okCount++;
+  }
+  check("4c-b refused Drive mint burned no quota (5 anonymous mints still succeed)",
+    okCount === 5, "ok=" + okCount);
+  // Unflagged Drive file mints normally.
+  const ok = await call({ lib: "drive", id: "DRIVEOKFILE0009", f: "epub" }, env, "10.0.2.9");
+  check("4c-c unflagged Drive file -> 200, token + short link",
+    ok.status === 200 && ok.body.ok === true && !!ok.body.token
+    && typeof ok.body.short === "string" && ok.body.short.startsWith("/k/"),
+    "status " + ok.status);
+  // Same file, other drive-kind libs: the same key refuses them.
+  for (const lib of ["khazendar", "sahwa", "electronic"]) {
+    const rr = await call({ lib, id: "DRIVEFLAGFILE01", f: "epub" }, env, "10.0.2.10");
+    check(`4c-d flagged file via lib=${lib} -> 403 flagged (same key, same file)`,
+      rr.status === 403 && rr.body.error === "flagged", "status " + rr.status);
+  }
+  const okKhaz = await call({ lib: "khazendar", id: "DRIVEOKFILE0010", f: "epub" }, env, "10.0.2.10");
+  check("4c-e unflagged khazendar file -> 200",
+    okKhaz.status === 200 && okKhaz.body.ok === true, "status " + okKhaz.status);
+  // Hindawi / DOAB are never flagged: a flag:drive key whose id
+  // happens to equal a Hindawi numeric id must not refuse it.
+  const kvH = makeKv({ "flag:drive:13028368": "1" });
+  const envH = { RLIBOOK_KV: kvH, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+  const hind = await call({ lib: "hindawi", id: "13028368", f: "epub" }, envH, "10.0.2.11");
+  check("4c-f Hindawi book mints despite a flag:drive key for the same id (kind isolation)",
+    hind.status === 200 && hind.body.ok === true, "status " + hind.status);
+  // isFlaggedDriveBook units (exported): present -> true, absent ->
+  // false, no KV -> false, KV outage -> true (fail closed).
+  check("4c-g isFlaggedDriveBook: key present -> true",
+    (await isFlaggedDriveBook(env, "DRIVEFLAGFILE01")) === true);
+  check("4c-g isFlaggedDriveBook: key absent -> false",
+    (await isFlaggedDriveBook(env, "DRIVEOKFILE0009")) === false);
+  check("4c-g isFlaggedDriveBook: no KV binding -> false",
+    (await isFlaggedDriveBook({}, "DRIVEFLAGFILE01")) === false);
+  check("4c-g isFlaggedDriveBook: KV outage -> true (fail closed)",
+    (await isFlaggedDriveBook({ RLIBOOK_KV: { get: async () => { throw new Error("down"); } } }, "DRIVEFLAGFILE01")) === true);
+  // Service-key mints are refused by the drive flag gate too.
+  const envSvc = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, DL_TOKEN_SERVICE_KEY: SVC_KEY };
+  const svc = await call({ lib: "drive", id: "DRIVEFLAGFILE01", f: "epub", fp: "fp_svc_drive_1" }, envSvc, "10.0.2.12", svcAuth);
+  check("4c-h flagged Drive file + service key -> 403 flagged (gate untouched)",
+    svc.status === 403 && svc.body.error === "flagged", "status " + svc.status);
+  // Own-book rule, same as Telegram: a server-verified own file
+  // skips the flag gate (title-match caveat, documented in
+  // dl-token.js). Direct mintTokenForBook call: own=true mints.
+  const driveBook = { kind: "opds", lib: "drive", id: "DRIVEFLAGFILE01", fmt: "epub" };
+  const ownMint = await mintTokenForBook(env, driveBook, { ip: "10.0.2.13", fp: "abc123", own: true });
+  check("4c-i mintTokenForBook own + flagged Drive file -> ok (flag gate skipped, same as Telegram)",
+    ownMint.ok === true && !!ownMint.token, JSON.stringify(ownMint));
+  const libMint = await mintTokenForBook(env, driveBook, { ip: "10.0.2.14", fp: "abc123" });
+  check("4c-i library mint of the same flagged Drive file -> 403 flagged",
+    libMint.ok === false && libMint.error === "flagged", JSON.stringify(libMint));
 }
 
 // ================= 5. mint caps ======================================
@@ -676,6 +801,187 @@ console.log("10. Service-key exemption (E_LIMIT Option A):");
   check("10h refused service mints burned no quota (no dlt:* counter at all)",
     ![...kv.map.keys()].some((k) => k.startsWith("dlt:")),
     [...kv.map.keys()].join(","));
+}
+
+// ================= 12. Drive visibility gate (mint side) =========
+// Mock D1: books {url: source}, registry {folderId: {visibility,
+// submitter_tg_id}}. Same shape as send-to-kindle.test.mjs §48.
+function makeDb({ books = {}, registry = {}, throwOn = false } = {}) {
+  return {
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (throwOn) throw new Error("d1 down");
+              if (String(sql).includes("FROM books")) {
+                const source = books[args[0]];
+                return source ? { source } : null;
+              }
+              if (String(sql).includes("FROM drive_libraries")) {
+                return registry[args[0]] || null;
+              }
+              return null;
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+const PRIV_FOLDER = "PRIVFOLDER1234567890";
+const PRIV_FILE = "1PRIVFILE1234567890AB";
+const PRIV_URL = driveFileUrl(PRIV_FILE);
+// Fingerprints are 22 chars (drive-libraries.js FP_RE) —
+// viewerTgIdFromFp rejects anything else as an unknown viewer.
+const SUB_FP = "SUBMITTERFP00000000001";
+const OTHER_FP = "OTHERUSERFP00000000002";
+const OWNER_FP = "OWNERUSERFP00000000003";
+const SUB_ID = 777001;
+const OTHER_ID = 888002;
+const OWNER_ID = 111222333;
+
+function privDb(visibility = "private", submitter = SUB_ID) {
+  return makeDb({
+    books: { [PRIV_URL]: "drive:" + PRIV_FOLDER },
+    registry: { [PRIV_FOLDER]: { visibility, submitter_tg_id: submitter } },
+  });
+}
+
+function privKv(fp, tgId) {
+  return makeKv({ ["fp:" + fp]: JSON.stringify({ tg_id: tgId }) });
+}
+
+console.log("12. Drive visibility gate (mint side):");
+{
+  // Units: viewerTgIdFromFp mirrors drive-libraries.js
+  // verifyFingerprint (22-char fp, kv fp: -> { tg_id }, null on
+  // anything missing / malformed / erroring, never a throw).
+  const kv = privKv(SUB_FP, SUB_ID);
+  check("12a viewerTgIdFromFp: valid fp -> tg id",
+    (await viewerTgIdFromFp({ RLIBOOK_KV: kv }, SUB_FP)) === SUB_ID);
+  check("12a viewerTgIdFromFp: unknown fp -> null",
+    (await viewerTgIdFromFp({ RLIBOOK_KV: kv }, OTHER_FP)) === null);
+  check("12a viewerTgIdFromFp: short fp (fails FP_RE) -> null",
+    (await viewerTgIdFromFp({ RLIBOOK_KV: kv }, "abc123")) === null);
+  check("12a viewerTgIdFromFp: no KV -> null",
+    (await viewerTgIdFromFp({}, SUB_FP)) === null);
+  const badKv = makeKv({ ["fp:" + SUB_FP]: "{not json" });
+  check("12a viewerTgIdFromFp: malformed fp record -> null",
+    (await viewerTgIdFromFp({ RLIBOOK_KV: badKv }, SUB_FP)) === null);
+  const noIdKv = makeKv({ ["fp:" + SUB_FP]: JSON.stringify({ tg_id: "nope" }) });
+  check("12a viewerTgIdFromFp: non-numeric tg_id -> null",
+    (await viewerTgIdFromFp({ RLIBOOK_KV: noIdKv }, SUB_FP)) === null);
+
+  // onRequest matrix (lib=drive, EPUB, unless noted).
+  async function mintDrive({ db, kv, fp, ownerId, lib = "drive", id = PRIV_FILE,
+    ip = "10.0.6.1", svc = false } = {}) {
+    const env = { RLIBOOK_KV: kv, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY };
+    if (db !== undefined) env.TG_D1 = db;
+    if (ownerId !== undefined) env.RLIBOOK_OWNER_ID = String(ownerId);
+    if (svc) env.DL_TOKEN_SERVICE_KEY = SVC_KEY;
+    const params = { lib, id, f: "epub" };
+    if (fp !== undefined) params.fp = fp;
+    const r = await call(params, env, ip, svc ? svcAuth : {});
+    return { ...r, kv };
+  }
+
+  let r = await mintDrive({ db: privDb(), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP });
+  check("12b private + non-submitter fp -> 403 private_library, no token",
+    r.status === 403 && r.body && r.body.error === "private_library" && !r.body.token,
+    "status " + r.status + " " + JSON.stringify(r.body));
+  check("12b private + non-submitter -> no short link either",
+    r.body && !r.body.short);
+  r = await mintDrive({ db: privDb(), kv: privKv(SUB_FP, SUB_ID) });
+  check("12c private + no fp (anonymous) -> 403 private_library",
+    r.status === 403 && r.body && r.body.error === "private_library",
+    "status " + r.status);
+  r = await mintDrive({ db: privDb(), kv: privKv(SUB_FP, SUB_ID), fp: SUB_FP });
+  check("12d private + submitter fp -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  check("12d submitter token verifies (h=drive, p=file id)",
+    r.body.token && (verifyHmac(r.body.token, KEY) || {}).p === PRIV_FILE);
+  check("12d submitter short link resolves to the Drive uc URL",
+    (await resolveShortLink({ RLIBOOK_KV: r.kv }, r.body.short.slice(3)))?.url
+      === "https://drive.google.com/uc?id=" + PRIV_FILE + "&export=download");
+  r = await mintDrive({ db: privDb(), kv: privKv(OWNER_FP, OWNER_ID), fp: OWNER_FP, ownerId: OWNER_ID });
+  check("12e private + owner (not submitter) -> 403 private_library (submitter-only, D's rule)",
+    r.status === 403 && r.body && r.body.error === "private_library",
+    "status " + r.status);
+  r = await mintDrive({ db: privDb("pending_public"), kv: privKv(OWNER_FP, OWNER_ID), fp: OWNER_FP, ownerId: OWNER_ID });
+  check("12f pending_public + owner -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ db: privDb("pending_public"), kv: privKv(SUB_FP, SUB_ID), fp: SUB_FP, ownerId: OWNER_ID });
+  check("12f pending_public + submitter -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ db: privDb("pending_public"), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP, ownerId: OWNER_ID });
+  check("12f pending_public + other -> 403 private_library",
+    r.status === 403 && r.body && r.body.error === "private_library",
+    "status " + r.status);
+  r = await mintDrive({ db: privDb("public"), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP });
+  check("12g public + other user -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ db: makeDb({ books: { [PRIV_URL]: "drive:" + PRIV_FOLDER }, registry: {} }),
+    kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP });
+  check("12h legacy (no registry row) + other user -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ db: privDb(), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP, id: "1NOTINDEXED123456789" });
+  check("12i unindexed file id + other user -> 200 (fail open, D's rule)",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP });
+  check("12j no TG_D1 binding + other user -> 200 (fail open)",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+  r = await mintDrive({ db: makeDb({ throwOn: true }), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP });
+  check("12k D1 error + other user -> 200 (fail open, documented)",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+
+  // A refused mint burns no quota: the same IP + fp still has its
+  // full 5/day afterwards (5 Hindawi mints ok, 6th -> 429).
+  {
+    const kvQ = privKv(OTHER_FP, OTHER_ID);
+    const refused = await mintDrive({ db: privDb(), kv: kvQ, fp: OTHER_FP, ip: "10.0.6.9" });
+    check("12l setup: private + other -> 403",
+      refused.status === 403 && refused.body.error === "private_library");
+    check("12l refused mint wrote NO dlt:* counter",
+      ![...kvQ.map.keys()].some((k) => k.startsWith("dlt:")),
+      [...kvQ.map.keys()].join(","));
+    let allOk = true;
+    for (let i = 0; i < 5; i++) {
+      const m = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: OTHER_FP },
+        { RLIBOOK_KV: kvQ, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY }, "10.0.6.9");
+      if (m.status !== 200) allOk = false;
+    }
+    check("12l after refusal: 5 mints from the same IP + fp still succeed", allOk);
+    const sixth = await call({ lib: "hindawi", id: "13028368", f: "epub", fp: OTHER_FP },
+      { RLIBOOK_KV: kvQ, PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY }, "10.0.6.9");
+    check("12l 6th mint after refusal -> 429 (the refusal took no count)",
+      sixth.status === 429, "status " + sixth.status);
+  }
+
+  r = await mintDrive({ db: privDb(), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP, svc: true });
+  check("12m service key does NOT bypass the visibility gate -> 403 private_library",
+    r.status === 403 && r.body && r.body.error === "private_library",
+    "status " + r.status);
+  // The gate engages for every drive-kind lib, not just lib=drive:
+  // the same private file under khazendar is refused to others.
+  r = await mintDrive({ db: privDb(), kv: privKv(OTHER_FP, OTHER_ID), fp: OTHER_FP, lib: "khazendar", ip: "10.0.6.2" });
+  check("12n khazendar (drive-kind) private file + other -> 403 private_library",
+    r.status === 403 && r.body && r.body.error === "private_library",
+    "status " + r.status);
+  r = await mintDrive({ db: privDb(), kv: privKv(SUB_FP, SUB_ID), fp: SUB_FP, lib: "khazendar", ip: "10.0.6.3" });
+  check("12n khazendar private file + submitter -> 200 mints",
+    r.status === 200 && r.body && r.body.ok === true, "status " + r.status);
+
+  // Direct mintTokenForBook: the refusal is { ok:false, 403,
+  // private_library } — the shape /kindle/get surfaces as-is.
+  const direct = await mintTokenForBook(
+    { RLIBOOK_KV: privKv(OTHER_FP, OTHER_ID), PROXY_SIGNING_KEY: KEY, PROXY_BASE_URL: PROXY, TG_D1: privDb(), RLIBOOK_OWNER_ID: String(OWNER_ID) },
+    { kind: "opds", lib: "drive", id: PRIV_FILE, fmt: "epub" },
+    { ip: "10.0.6.4", fp: OTHER_FP });
+  check("12o mintTokenForBook direct: private + other -> 403 private_library",
+    direct.ok === false && direct.status === 403 && direct.error === "private_library",
+    JSON.stringify(direct));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

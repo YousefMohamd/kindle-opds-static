@@ -397,18 +397,25 @@ export function formatBookMeta({ size, pages } = {}) {
 // object ({ indexed, target, partial }) passed through validated —
 // null when the endpoint did not send one — so the caller can say
 // honestly that D1 is still a partial snapshot (import finishes
-// 2026-11-19) instead of guessing. Each result is validated: a title
+// 2026-11-19) instead of guessing. `fp` (WAVE 7) is the viewer's
+// catalog fingerprint (?fp= or the rlb_fp cookie, as extracted by
+// onRequest below): it is forwarded as ?fp= so the endpoint returns
+// the viewer's OWN private Drive libraries too — the endpoint
+// identifies the viewer by ?fp= only and answers public-only without
+// it (fail-closed). Empty fp sends no fp param at all; fp is never
+// invented here. Each result is validated: a title
 // is required, and the get/send/read links are used only when they
 // are strings on the expected same-origin paths — the raw t.me post
 // URL is never read here, so a bad endpoint reply can never inject
 // an arbitrary link into the page.
 // `origin` is the request origin (same-origin subrequest, like the
 // OPDS index fetches below). Exported for tests.
-export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
+export async function fetchTelegramResults(origin, q, limit = TG_LIMIT, fp = "") {
   try {
     const tgUrl = new URL("/api/tg-search", origin);
     tgUrl.searchParams.set("q", q);
     tgUrl.searchParams.set("limit", String(limit));
+    if (fp) tgUrl.searchParams.set("fp", fp);
     const res = await fetch(tgUrl.toString(), {headers: {"accept": "application/json"}});
     if (!res.ok) return {available: false, total: 0, coverage: null, results: []};
     const data = await res.json();
@@ -681,7 +688,7 @@ export async function onRequest(context) {
   // The promise is made non-rejecting here, so even if the OPDS loop
   // returns early (500 on a missing index) there is no unhandled
   // rejection from the Telegram half.
-  const tgPromise = fetchTelegramResults(url.origin, q)
+  const tgPromise = fetchTelegramResults(url.origin, q, TG_LIMIT, fp)
     .catch(() => ({available: false, total: 0, coverage: null, results: []}));
   // An OPDS index that cannot be read (missing file, bad JSON) is a
   // 500 — but a 500 the user can act on: a full page naming the
@@ -786,7 +793,7 @@ export async function onRequest(context) {
         if (related.length >= 5) break;
       }
       if (related.length < 5) {
-        const tgRel = await fetchTelegramResults(url.origin, relWord, 5);
+        const tgRel = await fetchTelegramResults(url.origin, relWord, 5, fp);
         // Source-hiding (2026-11-21): Telegram related books show no
         // source label — pass "" so the "(source)" suffix disappears.
         // OPDS related books keep their library label above.
@@ -798,7 +805,7 @@ export async function onRequest(context) {
     const relatedHtml = related.length
       ? "<h2>كتب مشابهة قد تعجبك</h2>\n<ul>\n"
         + related.map((r) =>
-          "<li><a href=\"/book?q=" + encodeURIComponent(r.title) + "\">"
+          "<li><a href=\"/book?q=" + encodeURIComponent(r.title) + fpQ + "\">"
           + esc(r.title) + "</a>"
           + (r.author ? " — " + esc(r.author) : "")
           + (r.source ? " (" + esc(r.source) + ")" : "")

@@ -590,6 +590,53 @@ console.log("D. fetchTelegramResults unit:");
     r.body.includes("View in bot") && r.body.includes("https://t.me/RliBook_bot"));
 }
 
+// ============ D3. Fingerprint threading (WAVE 7) ==================
+console.log("D3. Fingerprint threading (WAVE 7):");
+const FP22 = "TESTFP1234567890ABCDEF"; // 22 URL-safe chars, fingerprint shape
+{
+  tgMode = "ok";
+  lastTgUrl = "";
+  const t = await fetchTelegramResults("https://rlibook.tech", "x", 10, FP22);
+  check("D3a fp passed -> tg-search URL carries ?fp=",
+    lastTgUrl.includes("fp=" + FP22), lastTgUrl);
+  check("D3a fp passed -> results still ok",
+    t.available === true && t.results.length === 2);
+}
+{
+  tgMode = "ok";
+  lastTgUrl = "";
+  const t = await fetchTelegramResults("https://rlibook.tech", "x");
+  check("D3b no fp -> tg-search URL carries NO fp param (anonymous = public-only)",
+    !lastTgUrl.includes("fp="), lastTgUrl);
+  check("D3b no fp -> results still ok",
+    t.available === true && t.results.length === 2);
+}
+{
+  // No-match page: the main + related tg-search calls must carry fp,
+  // and the related /book links must carry it forward.
+  tgMode = "empty";
+  tgCalls = 0;
+  lastTgUrl = "";
+  const r = await getBook("لؤلؤة غيرموجودة", "&fp=" + FP22);
+  check("D3c /book?fp= -> tg-search called with fp",
+    tgCalls >= 1 && lastTgUrl.includes("fp=" + FP22),
+    "calls " + tgCalls + " last " + lastTgUrl);
+  check("D3c /book?fp= -> related /book links carry fp forward",
+    r.body.includes("/book?q=" + encodeURIComponent("لؤلؤة الحب") + "&amp;fp=" + FP22));
+}
+{
+  // Negative: no fp anywhere in the request -> no fp anywhere in
+  // the page (no invented fingerprint) and no fp in the tg-search URL.
+  tgMode = "empty";
+  tgCalls = 0;
+  lastTgUrl = "";
+  const r = await getBook("لؤلؤة غيرموجودة");
+  check("D3d no fp -> tg-search URL carries NO fp param",
+    !lastTgUrl.includes("fp="), lastTgUrl);
+  check("D3d no fp -> page contains no fp= anywhere (nothing invented)",
+    !r.body.includes("fp="));
+}
+
 // ============ G. Enrichment: cover + rating + description ==========
 console.log("G. Enrichment (Blocks 4 + 9):");
 tgMode = "ok";

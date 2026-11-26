@@ -12,11 +12,15 @@
 // purpose field — the download proxy rejects it, so it can never
 // download anything. Reading is free and unlimited: minting takes
 // no KV counter and burns no download quota. The only gates are
-// the flag denylist (Telegram books), the owner-hide denylist
-// (Workstream 2b — a hidden book gets no reader token either) and
-// the signing key being configured. No KV binding -> the flag/hide
-// checks pass open (same posture as the reader itself) and the
-// token is still minted.
+// the flag denylist (Telegram books AND drive-kind OPDS books —
+// WAVE 7 follow-up A2, same `flag:drive:<fileId>` key as the
+// download mint), the owner-hide denylist (Workstream 2b — a hidden
+// book gets no reader token either), the Drive visibility gate
+// (WAVE 7 follow-up A4 — a private/pending Drive library's book
+// gets a reader token only for its submitter, pending: + the owner;
+// 403 "private_library") and the signing key being configured. No
+// KV binding -> the flag/hide checks pass open
+// (same posture as the reader itself) and the token is still minted.
 //
 // PERSONAL BOOKS (2026-11-16): `fp` + `t` (title) prove the book
 // is the caller's own upload — verified server-side against the
@@ -33,7 +37,8 @@
 // Env (same as dl-token.js):
 //   PROXY_SIGNING_KEY (required) — the shared HMAC secret.
 // KV binding (optional):
-//   RLIBOOK_KV — flag denylist keys `flag:<handle>:<post_id>`,
+//   RLIBOOK_KV — flag denylist keys `flag:<handle>:<post_id>` and
+//                `flag:drive:<fileId>` (drive-kind OPDS books),
 //                hidden keys `hidden:<handle>:<post_id>` (owner
 //                /hide only).
 //
@@ -43,12 +48,17 @@
 import {
   parseBookParams,
   isFlaggedBook,
+  isFlaggedDriveBook,
+  OPDS_LIBS,
   isHiddenBook,
   isPersonalBook,
   makeReaderToken,
   verifyReaderToken,
   readerTokenOwn,
   READER_TOKEN_TTL_SECONDS,
+  viewerTgIdFromFp,
+  driveBookLibrary,
+  driveLibraryAllows,
 } from "./dl-token.js";
 
 function json(status, obj) {
@@ -93,6 +103,18 @@ export async function onRequest(context) {
   if (!own && book.kind === "tg" && (await isFlaggedBook(env, book.handle, book.postId))) {
     return json(403, { ok: false, error: "flagged" });
   }
+  // Drive-kind OPDS books (WAVE 7 follow-up A2): the reader mint
+  // shared the download mint's hole — a flagged Drive book got a
+  // reader token while the website showed it with no reader link.
+  // Same `flag:drive:<fileId>` key, same 403, before any token is
+  // made. `own` is Telegram-only here (never true for OPDS books),
+  // so the gate is unconditional for drive-kind libs; a flagged
+  // book's renewal (rtok) hits this same check and is refused too.
+  // Hindawi / DOAB are never flagged and never reach this check.
+  if (!own && book.kind === "opds" && OPDS_LIBS[book.lib].kind === "drive"
+    && (await isFlaggedDriveBook(env, book.id))) {
+    return json(403, { ok: false, error: "flagged" });
+  }
   // Owner-hide (Workstream 2b): a hidden book gets no reader token
   // either. Same fail-closed shape as the flag check. This applies
   // even to own books: hide is the owner's explicit removal of the
@@ -101,6 +123,33 @@ export async function onRequest(context) {
   // is closed).
   if (book.kind === "tg" && (await isHiddenBook(env, book.handle, book.postId))) {
     return json(403, { ok: false, error: "hidden" });
+  }
+  // Drive visibility gate (WAVE 7 follow-up A4 — the mint-side
+  // counterpart of the serve-side gate in read.js). A reader token
+  // for a private Drive book lets /read serve the chapter — the
+  // serve-side gate there runs AFTER the token check, so an
+  // already-minted token is the only thing standing between a
+  // non-submitter and the chapter, and the /read gate itself does
+  // refuse them — but minting the token at all also hands out a
+  // fresh-renewal path, so the mint refuses first, same rule
+  // (driveBookLibrary + driveLibraryAllows, shared from
+  // dl-token.js), same 403 "private_library", before any token is
+  // made. The viewer id comes from this file's `fp` (the catalog
+  // fingerprint, via viewerTgIdFromFp); no fingerprint means no
+  // identity and a private book is refused. Public / legacy (no
+  // registry row) / unindexed file ids mint unchanged (fail open,
+  // per driveLibraryAllows). `own` is Telegram-only here (never
+  // true for OPDS books), so the gate is unconditional for
+  // drive-kind libs; a flagged book's renewal hits the flag check
+  // above, a private book's renewal hits this one.
+  if (!own && book.kind === "opds" && OPDS_LIBS[book.lib] && OPDS_LIBS[book.lib].kind === "drive") {
+    const viewerTgId = await viewerTgIdFromFp(env, fp);
+    const ownerRaw = Number((env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID) || 0);
+    const ownerTgId = Number.isSafeInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : 0;
+    const libInfo = await driveBookLibrary(env.TG_D1, book.id);
+    if (!driveLibraryAllows(libInfo, viewerTgId, ownerTgId)) {
+      return json(403, { ok: false, error: "private_library" });
+    }
   }
   const handle = book.kind === "tg" ? book.handle : book.lib;
   const postId = book.kind === "tg" ? book.postId : book.id;
