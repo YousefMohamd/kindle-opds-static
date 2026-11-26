@@ -1,0 +1,171 @@
+# Telegram D1 incremental import (v1.0).
+#
+# Closes the gap the 2026-11-26 wave-2 diagnosis pinned: the one-shot
+# delta COMPLETED 2026-11-22 (d1_sync_meta.delta_complete=1) and NO
+# incremental importer was ever scheduled, so D1 froze at
+# MAX(date)=2026-11-18 while the realtime sync kept writing new books
+# to the bot Worker's Durable Object (live:additions, 500-cap window)
+# and the daily sync kept publishing shards. Search is ~8 days behind
+# the live feed.
+#
+# What it does, every 6 hours + on manual dispatch:
+#   1. Fetches live:additions (public GET, no token, no Telegram
+#      session — so it never contends with the realtime sync or
+#      newspapers for the session, and needs no lease).
+#   2. Loads the committed shards and takes books newer than the
+#      shard watermark (d1_sync_meta.incr_shard_date) — this catches
+#      the Nov 21 rwaiaty4 batch (~304 files) the delta manifest
+#      predated, and any future shard-only book.
+#   3. Dedupes candidates against D1 with chunked indexed lookups
+#      (SELECT ... WHERE url IN (...) on idx_books_url — a few hundred
+#      rows read per run, never a full-table scan) and emits batch
+#      .sql files with tbi.d1_incremental (new books -> INSERT,
+#      changed books -> UPDATE + FTS DELETE+INSERT, unchanged -> nothing).
+#   4. Executes the batches with `wrangler d1 execute rlibook-tg
+#      --remote`, in order, stopping on the first failure, then
+#      executes watermark.sql LAST (d1_sync_meta incr_* keys) so a
+#      failed run never advances the watermark and the next run
+#      re-imports the same books harmlessly (INSERT OR IGNORE).
+#
+# What it deliberately does NOT do:
+#   * No reset_live() — the DO window must keep serving /new until
+#     the DAILY SYNC publishes the same books into the static site.
+#     Reset stays with the daily sync, after publish.
+#   * No flag filtering — flags are enforced at READ time by the
+#     search endpoint (KV flag:<handle>:<post_id>), as for
+#     delta-imported books.
+#   * No Telegram session, no DO writes, no repo commits, no state
+#     file. Progress lives in D1 itself (d1_sync_meta).
+#   * No Nov 19-23 backfill — those books are in NEITHER D1 nor DO
+#     (aged out of the 500-cap window); recovery needs an MTProto
+#     history re-read, a separate undecided step.
+#
+# Budgets (D1 free tier): 100k rows written/day, 5M rows read/day.
+# Measured dry-run vs live state 2026-11-26: 786 books -> 1,572-7,860
+# rows written (1.6-7.9% of one day), 785 rows read. The module caps
+# a run at 5,000 books and refuses to emit when the high-end estimate
+# exceeds the daily budget.
+#
+# Secrets required (repo Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+#     (already configured — same as telegram-sync / static-rebuild,
+#     which use them for KV reads). The D1 database is resolved BY
+#     NAME (rlibook-tg), so no new secret and no UUID in the repo.
+#   OPEN CHECK: the token is proven for KV reads only — its D1 scope
+#     is unverified. First dispatch with dry_run=true (exercises the
+#     D1 read path); then dispatch for real. If either 403s, add D1
+#     scope to the token — no code change. The module fails fast with
+#     a named error on a 403 instead of importing blind.
+#
+# Concurrency: its OWN group (not telegram-sync's). It writes only
+# D1 + d1_sync_meta, never site/telegram or index.db, so it can run
+# concurrently with the daily sync safely.
+#
+# Upload: this file goes to .github/workflows/ via the GitHub web UI
+# (workflow files cannot be pushed by any token). After it lands:
+#   1. Dispatch with dry_run=true, check the plan in the log.
+#   2. Dispatch for real; the first run should import ~786 books and
+#      move MAX(date) 2026-11-18 -> 2026-11-26.
+#   3. Verify: search for a Nov 26 book (e.g. a live-window title)
+#      on the website; it must now return.
+name: telegram-d1-incremental
+
+on:
+  schedule:
+    # Every 6 hours. The 500-cap DO window holds ~2 days of books at
+    # current volume, so 6-hourly has ~8x margin against a flood day
+    # sliding books out of the window before import.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: print what WOULD be imported, write nothing to D1"
+        type: boolean
+        default: false
+
+# Own group: this job writes only D1 + d1_sync_meta, never
+# site/telegram or index.db, so it never overlaps the daily sync's
+# publish. Two importer runs must never overlap each other (they
+# share the watermark + the id sequence).
+concurrency:
+  group: kindle-opds-static-telegram-d1-incremental
+  cancel-in-progress: false
+
+# No commits, no pushes: the job never writes to the repo.
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Emit incremental batches (live DO + shards -> SQL)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # The importer lives at telegram/tbi/d1_incremental.py; run
+          # it as telegram.tbi from the repo root (same pattern as
+          # telegram-static-rebuild's `python3 -m telegram.tbi.newest`).
+          # It reads D1 (meta + MAX(id) + chunked existence checks)
+          # with the token above, resolves the database BY NAME, and
+          # emits d1-incr/batch-*.sql + d1-incr/watermark.sql.
+          # --dry-run prints the plan and writes nothing.
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY_RUN="--dry-run"
+            echo "DRY-RUN: no files written, no D1 writes"
+          else
+            DRY_RUN=""
+          fi
+          PYTHONPATH=.. python3 -m telegram.tbi.d1_incremental \
+            --site-telegram ../site/telegram --out-dir d1-incr $DRY_RUN
+          ls -la d1-incr || echo "no d1-incr dir (nothing to emit)"
+
+      - name: Import batches into D1
+        if: ${{ !inputs.dry_run }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # wrangler d1 execute is the documented path (schema header
+          # + d1_sync.py docstring). Database by NAME — no UUID here.
+          npm install -g wrangler@4
+          if ! ls d1-incr/batch-*.sql 1>/dev/null 2>&1; then
+            echo "no batch files — nothing to import this run"
+            exit 0
+          fi
+          for f in d1-incr/batch-*.sql; do
+            echo "=== importing $f ==="
+            wrangler d1 execute rlibook-tg --remote --file "$f" || {
+              echo "::error::import failed at $f — watermark NOT updated; the next run re-imports the same books (idempotent)"
+              exit 1
+            }
+          done
+          # LAST, only after every batch succeeded: advance the
+          # watermark (d1_sync_meta incr_* keys).
+          echo "=== updating watermark ==="
+          wrangler d1 execute rlibook-tg --remote --file d1-incr/watermark.sql
+          echo "import complete — verify search returns a Nov 26 book"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## D1 incremental import"
+            echo ""
+            echo "- Trigger: ${{ github.event_name }} (dry_run=${{ inputs.dry_run }})"
+            echo "- Batches emitted:"
+            ls d1-incr/batch-*.sql 2>/dev/null || echo "  (none)"
+            echo "- Watermark file: $(test -f d1-incr/watermark.sql && echo yes || echo no)"
+            echo "- Next check: search the website for a book dated 2026-11-26; MAX(date) should now be 2026-11-26."
+          } >> "$GITHUB_STEP_SUMMARY"
