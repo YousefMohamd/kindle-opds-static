@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T09:24:21.631954+00:00",
+  "generated_at": "2026-11-26T09:30:56.065328+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -575,6 +575,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف العراق  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف مصر  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -616,11 +621,6 @@
     },
     {
       "name": "😄😁😄  صحف قطر  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف العراق  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
