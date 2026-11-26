@@ -32,8 +32,11 @@
 # POST-redirect), but the Function file is functions/libraries-monitor.js,
 # so Pages serves it at /libraries-monitor — and /libraries/monitor fell
 # through to the homepage, so the owner's approve link just reloaded the
-# homepage and the library could never be approved from the bot. A 200
-# rewrite (not a 301 — a redirect would downgrade the approve form's
-# POST to a GET and drop the approval) makes the linked route reach
-# the Function, with the method + body + query intact.
-/libraries/monitor  /libraries-monitor  200
+# homepage and the library could never be approved from the bot.
+# A 200 rewrite does NOT reach the Function (verified live 2026-11-26:
+# Pages build green, yet GET still served the homepage and POST got a
+# static 405 — the rewritten path never enters Function routing). A 308
+# (not a 301 — a 301 would downgrade the approve form's POST to a GET
+# and drop the approval; 308 preserves method + body) makes the client
+# re-request the real Function route, so the linked route works.
+/libraries/monitor  /libraries-monitor  308
