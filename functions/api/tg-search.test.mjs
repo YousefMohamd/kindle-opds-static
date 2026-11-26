@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -392,15 +392,15 @@ const D1 = mockD1(db);
 // 9. coverage: every ok:true reply reports the D1 snapshot honestly.
 // The test DB holds SAMPLE rows (5000 by default), so indexed must be
 // exactly that — a direct COUNT(*), never the manifest total — and
-// partial must be true while indexed < target (323,318).
+// partial must be true while indexed < target (422,821).
 {
   const { body } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("9a search reply carries coverage", !!body.coverage, JSON.stringify(body.coverage));
   check("9b coverage.indexed is the D1 COUNT(*)",
     body.coverage && body.coverage.indexed === TOTAL_ROWS,
     `indexed=${body.coverage && body.coverage.indexed} rows=${TOTAL_ROWS}`);
-  check("9c coverage.target is the D1 final-import target (323,318)",
-    body.coverage && body.coverage.target === 323318,
+  check("9c coverage.target is the D1 final-import target (422,821)",
+    body.coverage && body.coverage.target === 422821,
     JSON.stringify(body.coverage));
   check("9d coverage.partial true while D1 is incomplete",
     body.coverage && body.coverage.partial === true, JSON.stringify(body.coverage));
@@ -444,7 +444,7 @@ const D1 = mockD1(db);
     bodyHit.total >= 1 && (bodyHit.results || []).length >= 1, `total=${bodyHit.total}`);
   check("10d cache-hit coverage shape is unchanged",
     bodyHit.coverage && Object.keys(bodyHit.coverage).sort().join(",") === "indexed,partial,target"
-    && bodyHit.coverage.target === 323318 && bodyHit.coverage.partial === true,
+    && bodyHit.coverage.target === 422821 && bodyHit.coverage.partial === true,
     JSON.stringify(bodyHit.coverage));
 
   // 10e: cache miss — the live COUNT(*) runs exactly once and the
@@ -500,10 +500,10 @@ const D1 = mockD1(db);
 
   // 10l: a cached value at/above the target reports partial: false —
   // the /book partial note self-removes from the cached value too.
-  const kvDone = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 323318, at: Date.now() }) });
+  const kvDone = mockKVStore({ "tg-search:coverage": JSON.stringify({ indexed: 422821, at: Date.now() }) });
   const { body: bodyDone } = await call({ TG_D1: D1, RLIBOOK_KV: kvDone }, "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief"));
   check("10l cached indexed == target -> partial false",
-    bodyDone.coverage && bodyDone.coverage.indexed === 323318 && bodyDone.coverage.partial === false,
+    bodyDone.coverage && bodyDone.coverage.indexed === 422821 && bodyDone.coverage.partial === false,
     JSON.stringify(bodyDone.coverage));
 }
 
@@ -1155,6 +1155,57 @@ ZEBRA.forEach((f, j) => {
   check("29h browse of one library collapses its reposts too",
     (browseBody.results || []).filter((r) => r.title === "اختبار التكرار الأول").length === 1,
     JSON.stringify((browseBody.results || []).map((r) => r.title)));
+}
+
+// 30. Format token (2026-11-26): a trailing known-format word is a
+// filter on books.ext, not a search word — "قصة كل شخص pdf" must
+// return only PDF rows, "قصة كل شخص epub" must return none (the
+// fixture title exists as PDF only), and a bare "epub" must return
+// nothing (never a whole-catalog browse).
+{
+  const p1 = parseFormatToken(["بيت", "الحرير", "epub"]);
+  check("30a trailing epub is stripped + returned as the format",
+    p1.format === "epub" && JSON.stringify(p1.words) === JSON.stringify(["بيت", "الحرير"]));
+  const p2 = parseFormatToken(["قصة", "كل", "شخص"]);
+  check("30b no format token: words pass through, format null",
+    p2.format === null && JSON.stringify(p2.words) === JSON.stringify(["قصة", "كل", "شخص"]));
+  const p3 = parseFormatToken(["epub"]);
+  check("30c bare format token leaves no search words",
+    p3.format === "epub" && p3.words.length === 0);
+  const p4 = parseFormatToken(["كتاب", "PDF"]);
+  check("30d token match is case-insensitive",
+    p4.format === "pdf" && JSON.stringify(p4.words) === JSON.stringify(["كتاب"]));
+  const p5 = parseFormatToken(["النشاطات", "المدرسية", "doc"]);
+  check("30e doc IS a token here (indexer FMT_TRAIL omits it; search does not)",
+    p5.format === "doc" && p5.words.length === 2);
+  const p6 = parseFormatToken([]);
+  check("30f empty words: no format", p6.format === null && p6.words.length === 0);
+
+  const { body: pdfBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("قصة كل شخص pdf"));
+  check("30g pdf query finds the PDF fixture",
+    (pdfBody.results || []).some((r) => r.title === "قصة كل شخص"), JSON.stringify((pdfBody.results || []).slice(0, 2)));
+  check("30h pdf query echoes format + every row is PDF",
+    pdfBody.format === "pdf" && (pdfBody.results || []).length > 0
+    && (pdfBody.results || []).every((r) => r.formats.includes("PDF")),
+    `format=${pdfBody.format} total=${pdfBody.total}`);
+  const { body: epubBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("قصة كل شخص epub"));
+  check("30i same title as epub: every row is EPUB, the PDF fixture is excluded",
+    (epubBody.results || []).length > 0
+    && (epubBody.results || []).every((r) => r.formats.includes("EPUB"))
+    && !(epubBody.results || []).some((r) => r.title === "قصة كل شخص")
+    && epubBody.format === "epub",
+    `total=${epubBody.total}`);
+  const { body: bareBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=epub");
+  check("30j bare format token: total 0, never a catalog browse",
+    bareBody.total === 0 && bareBody.format === "epub", `total=${bareBody.total}`);
+  const { body: noTokBody } = await call({ TG_D1: D1 }, "/api/tg-search?q=" + encodeURIComponent("قصة كل شخص"));
+  check("30k no token: no format field, fixture still found",
+    !("format" in noTokBody) && (noTokBody.results || []).some((r) => r.title === "قصة كل شخص"));
+  const { body: browseBody } = await call({ TG_D1: D1 }, "/api/tg-search?source=kotobkhana&q=epub");
+  check("30l format token + source browses that library filtered to EPUB",
+    browseBody.format === "epub" && (browseBody.results || []).length > 0
+    && (browseBody.results || []).every((r) => r.formats.includes("EPUB")),
+    `format=${browseBody.format} total=${browseBody.total}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

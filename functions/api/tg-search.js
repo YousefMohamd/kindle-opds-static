@@ -115,6 +115,10 @@
 //     finds a query with one wrong word.
 //   Tier 4 longest-word: today's fallback, kept — the longest word
 //     alone (skipped for a single-word query: it IS tier 0).
+// Format token: a query whose LAST word is a known book format
+//   ("بيت الحرير epub") constrains every tier to that ext
+//   (see parseFormatToken) — the token is stripped before the
+//   ladder runs, and the reply echoes `format: "epub"`.
 // Results are ordered by bm25(books_fts, 3.0, 1.0) — title 3x,
 // author 1x — instead of f.rank. A non-exact `match` means the
 // results are approximate: callers label them 'أقرب النتائج'
@@ -307,6 +311,43 @@ export function queryWords(text) {
     .split(" ")
     .map(stripAl)
     .filter((w) => w.length >= 2);
+}
+
+// --- format token ------------------------------------------------------
+// The 22 book formats the indexer recognises (BOOK_EXTS in
+// bot/src/group-index.ts, a port of tbi/books.py). A query whose LAST
+// word is one of these is a format filter, not a search word:
+// "بيت الحرير epub" searches بيت الحرير among EPUB rows only. The
+// token is stripped BEFORE the ladder runs, so it can neither pollute
+// the FTS AND (a format word never appears in a title) nor rescue
+// junk through the OR tier — baseline: "بيت الحرير djvu" returned
+// 102 rows via 'any' even though no DJVU row matched. The filter is
+// applied as `AND b.ext = ?` on EVERY tier (and the smart trigram
+// rescue, and source browse) — the books table HAS an ext column,
+// so no schema change is needed. The reply echoes the detected
+// format (`format: "epub"`) so callers can show the active filter.
+// Deliberate difference from the indexer's FMT_TRAIL: "doc" (and
+// "lit") ARE tokens here — the indexer omits them from trailing
+// title-stripping because they are ordinary English words, but in a
+// search query a trailing "doc" means the format (eval q089). The
+// accepted edge case is a title genuinely ending in the word
+// "doc"/"lit" being read as a format filter instead.
+const FORMAT_EXTS = new Set([
+  "azw", "azw3", "cbr", "cbz", "chm", "djv", "djvu", "doc", "docx",
+  "epub", "fb2", "kepub", "kfx", "lit", "lrf", "mobi", "odt", "pdb",
+  "pdf", "prc", "rtf", "txt",
+]);
+
+/** Split a query's words into { words, format }: when the last word
+ *  is a known book format it is the format filter and is removed
+ *  from the search words; otherwise the words pass through
+ *  unchanged and format is null. Exported for tests. */
+export function parseFormatToken(words) {
+  const list = words || [];
+  if (list.length === 0) return { words: [], format: null };
+  const last = String(list[list.length - 1] || "").toLowerCase();
+  if (!FORMAT_EXTS.has(last)) return { words: list, format: null };
+  return { words: list.slice(0, -1), format: last };
 }
 
 // Escape a word for use inside an FTS5 double-quoted phrase: a "
@@ -842,36 +883,42 @@ async function d1Coverage(db, env) {
 // `source` (optional) restricts to one channel/group handle (exact match
 // on books.source). With no query words (empty q) and a source, it lists
 // that library's books by id order instead of FTS rank.
-async function d1Search(db, match, limit, offset, source) {
+async function d1Search(db, match, limit, offset, source, format) {
   const hasSource = !!(source && source.trim());
   const srcClause = hasSource ? " AND b.source = ?" : "";
   const srcParams = hasSource ? [source.trim()] : [];
+  // Format filter (see parseFormatToken): constrain to one ext, in
+  // BOTH the count and the rows query, so `total` and the page agree.
+  // COLLATE NOCASE guards against a mixed-case ext in live D1.
+  const hasFormat = !!(format && typeof format === "string" && format.trim());
+  const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
+  const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
   if (!match) {
     // Empty query + source: plain browse of one library.
     const countRes = await db
       .prepare(
         "SELECT COUNT(*) AS n FROM books b WHERE 1=1" +
-          (hasSource ? " AND b.source = ?" : ""),
+          (hasSource ? " AND b.source = ?" : "") + fmtClause,
       )
-      .bind(...srcParams)
+      .bind(...srcParams, ...fmtParams)
       .first();
     const total = countRes ? Number(countRes.n) || 0 : 0;
     if (total === 0) return { total: 0, rows: [] };
     const { results } = await db
       .prepare(
         "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
-          "FROM books b WHERE 1=1" + srcClause + " ORDER BY b.id LIMIT ? OFFSET ?",
+          "FROM books b WHERE 1=1" + srcClause + fmtClause + " ORDER BY b.id LIMIT ? OFFSET ?",
       )
-      .bind(...srcParams, limit, offset)
+      .bind(...srcParams, ...fmtParams, limit, offset)
       .all();
     return { total, rows: results || [] };
   }
   const countRes = await db
     .prepare(
       "SELECT COUNT(*) AS n FROM books b WHERE b.id IN " +
-        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause,
+        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause + fmtClause,
     )
-    .bind(match, ...srcParams)
+    .bind(match, ...srcParams, ...fmtParams)
     .first();
   const total = countRes ? Number(countRes.n) || 0 : 0;
   if (total === 0) return { total: 0, rows: [] };
@@ -879,9 +926,9 @@ async function d1Search(db, match, limit, offset, source) {
     .prepare(
       "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
         "FROM books_fts f JOIN books b ON b.id = f.rowid " +
-        "WHERE f.books_fts MATCH ?" + srcClause + " ORDER BY bm25(books_fts, 3.0, 1.0) LIMIT ? OFFSET ?",
+        "WHERE f.books_fts MATCH ?" + srcClause + fmtClause + " ORDER BY bm25(books_fts, 3.0, 1.0) LIMIT ? OFFSET ?",
     )
-    .bind(match, ...srcParams, limit, offset)
+    .bind(match, ...srcParams, ...fmtParams, limit, offset)
     .all();
   return { total, rows: results || [] };
 }
@@ -894,10 +941,10 @@ async function d1Search(db, match, limit, offset, source) {
 // visibleResults can collapse same-title reposts and still return
 // `limit` distinct books; `total` is the full match count, not the
 // fetched page. Exported for tests.
-export async function d1SearchLadder(db, words, limit, offset, source) {
+export async function d1SearchLadder(db, words, limit, offset, source, format) {
   const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
   for (const tier of ladderQueries(words)) {
-    const found = await d1Search(db, tier.expr, fetchLimit, offset, source);
+    const found = await d1Search(db, tier.expr, fetchLimit, offset, source, format);
     if (found.total > 0) return { ...found, match: tier.match };
   }
   return { total: 0, rows: [], match: null };
@@ -998,6 +1045,344 @@ export async function d1LookupByPost(db, handle, postId) {
   return (results && results[0]) || null;
 }
 
+// --- SMART SEARCH (batch-1, 2026-11-24) ------------------------------
+// Behind ?smart=1 (or env SEARCH_SMART=1). Three pieces, each gated
+// by the 82-query eval set (see search-eval/BASELINE.md):
+//   1. Trigram rescue — books_trigram (FTS5 trigram over the same
+//      normalized title+author as books_fts). Runs ONLY when the
+//      ladder finds nothing, as an OR of the query words' character
+//      trigrams (a whole-word substring phrase does NOT tolerate
+//      interior deletions — measured v1). The v1 trigram RERANK was
+//      removed: it moved zero ranks on the eval set while adding
+//      ~40% p95 latency and inflating `total`.
+//   2. Nonsense guard — when the ladder won on the OR ('any') tier,
+//      the top result must match at least half the query words
+//      (exact word or word-prefix); otherwise the query has no good
+//      match and the reply is empty + a did-you-mean suggestion
+//      instead of junk. (Baseline: 4/5 nonsense queries returned
+//      junk via 'any'. The guard only applies to 'any' — exact /
+//      prefix / typo wins are untouched.)
+//   3. Did-you-mean — vocab-table candidates (Claude's variant of
+//      the consensus SymSpell: a precomputed SymSpell delete
+//      dictionary for ~200k catalog words does not fit D1's 100k
+//      rows/day write budget as a one-off build, and a 200k-word
+//      in-memory dictionary does not fit a free Worker; the vocab
+//      table gives the same user-visible "هل تقصد: X؟" from the
+//      same catalog titles). Only on zero results; the query is
+//      NEVER silently rewritten — the suggestion is returned and
+//      the caller decides.
+//   4. Autocomplete — ?suggest=<prefix> reads prefix_counts
+//      (prefix 3-4 chars of normalized title -> top real titles).
+//      Suggestions start at 3 chars; every suggestion is a real
+//      catalog title by construction.
+// If the side tables are absent (not built yet), every smart step
+// fails SOFT: the trigram/suggest/vocab queries throw, the catch
+// returns the plain ladder result — smart=1 can never break a
+// search that works today.
+/** True when the smart path is requested for this call. */
+export function isSmartSearch(request, env) {
+  try {
+    const u = new URL(request.url);
+    if (u.searchParams.get("smart") === "1") return true;
+  } catch { /* fall through to env */ }
+  return env && env.SEARCH_SMART === "1";
+}
+
+/** One trigram search: OR of the query words against books_trigram
+ *  (substring match), rank order, bounded. Same row shape as
+ *  d1Search. Returns { total, rows }. */
+async function d1SearchTrigram(db, words, limit, offset, source, format) {
+  const match = words.map(ftsPhrase).join(" OR ");
+  const hasSource = !!(source && source.trim());
+  const srcClause = hasSource ? " AND b.source = ?" : "";
+  const srcParams = hasSource ? [source.trim()] : [];
+  const hasFormat = !!(format && typeof format === "string" && format.trim());
+  const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
+  const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
+  const countRes = await db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM books b WHERE b.id IN " +
+        "(SELECT rowid FROM books_trigram WHERE books_trigram MATCH ?)" + srcClause + fmtClause,
+    )
+    .bind(match, ...srcParams, ...fmtParams)
+    .first();
+  const total = countRes ? Number(countRes.n) || 0 : 0;
+  if (total === 0) return { total: 0, rows: [] };
+  const { results } = await db
+    .prepare(
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
+        "FROM books_trigram f JOIN books b ON b.id = f.rowid " +
+        "WHERE f.books_trigram MATCH ?" + srcClause + fmtClause + " ORDER BY f.rank LIMIT ? OFFSET ?",
+    )
+    .bind(match, ...srcParams, ...fmtParams, limit, offset)
+    .all();
+  return { total, rows: results || [] };
+}
+
+/** Small Levenshtein distance (query word vs vocab candidate). */
+export function levenshtein(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/** Damerau-Levenshtein distance: like Levenshtein but a transposition
+ *  of two adjacent letters costs 1, not 2 ("اعالم"->"اعلام" is one
+ *  typo, not two). Used for did-you-mean ranking; plain Levenshtein
+ *  is kept exported for tests. */
+export function damerauLevenshtein(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev2 = new Array(n + 1).fill(0);
+  let prev1 = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      let cost = prev1[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+      cost = Math.min(cost, prev1[j] + 1, cur[j - 1] + 1);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cost = Math.min(cost, prev2[j - 2] + 1);
+      }
+      cur[j] = cost;
+    }
+    prev2 = prev1;
+    prev1 = cur;
+  }
+  return prev1[n];
+}
+
+/** Alphabet for edit-1 candidate generation (normalized forms only —
+ *  the query word is already normalized, so ا/أ/إ etc. are all ا). */
+const EDIT_ALPHABET = "ابتثجحخدذرزسشصضطظعغفقكلمنهويىةءؤئ0123456789".split("");
+
+/** All strings at Damerau distance 1 from `w` (one deletion,
+ *  transposition, substitution, or insertion). The classic SymSpell
+ *  lookup, computed at query time instead of precomputed: a
+ *  precomputed delete dictionary for ~200k catalog words would be
+ *  ~4M rows — ~40 days of D1 write budget — while generating the
+ *  ~450 candidates for one word costs a single batched IN lookup.
+ *  Crucially this catches what the 3-letter-prefix filter cannot:
+ *  an error in the first 3 letters ("قان" -> "قران", deleted ر). */
+function edits1(w) {
+  const out = new Set();
+  for (let i = 0; i < w.length; i++) out.add(w.slice(0, i) + w.slice(i + 1)); // delete
+  for (let i = 0; i < w.length - 1; i++) { // transpose
+    out.add(w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2));
+  }
+  for (let i = 0; i < w.length; i++) { // substitute
+    for (const c of EDIT_ALPHABET) {
+      if (c !== w[i]) out.add(w.slice(0, i) + c + w.slice(i + 1));
+    }
+  }
+  for (let i = 0; i <= w.length; i++) { // insert
+    for (const c of EDIT_ALPHABET) out.add(w.slice(0, i) + c + w.slice(i));
+  }
+  out.delete(w);
+  return [...out];
+}
+
+/** Did-you-mean: for each query word (len>=3) that is NOT itself a
+ *  catalog word, find the closest catalog word. Pass 1 — SymSpell
+ *  edit-1 generation (all distance-1 neighbours, most frequent
+ *  wins). Pass 2 — for long words (len>=7) with no distance-1 hit,
+ *  the 3-letter-prefix scan with Damerau distance <=2. Returns the
+ *  corrected query string, or null when nothing is close. Never
+ *  throws (a missing vocab table -> null). */
+async function d1SuggestCorrection(db, words) {
+  try {
+    const inVocab = new Set();
+    for (const w of words) {
+      const row = await db.prepare("SELECT word FROM vocab WHERE word = ?").bind(w).first();
+      if (row) inVocab.add(w);
+    }
+    const unknown = words.filter((w) => w.length >= 3 && !inVocab.has(w));
+    if (unknown.length === 0) return null;
+    const corrected = [...words];
+    let changed = false;
+    for (const w of unknown) {
+      let best = null;
+      // Pass 1: edit-1 neighbours via one batched IN lookup
+      // (chunked at 90 params — D1's bound-parameter ceiling).
+      const cands = edits1(w);
+      for (let i = 0; i < cands.length; i += 90) {
+        const chunk = cands.slice(i, i + 90);
+        const placeholders = chunk.map(() => "?").join(",");
+        const { results } = await db
+          .prepare(`SELECT word, freq FROM vocab WHERE word IN (${placeholders})`)
+          .bind(...chunk)
+          .all();
+        for (const c of results || []) {
+          if (!best || c.freq > best.freq) best = { word: c.word, d: 1, freq: c.freq };
+        }
+      }
+      // Pass 2: long words only — prefix scan, Damerau <= 2.
+      if (!best && w.length >= 7) {
+        const prefix = w.slice(0, 3).replace(/[%_\\]/g, "\\$&");
+        const { results } = await db
+          .prepare("SELECT word, freq FROM vocab WHERE word LIKE ? ESCAPE '\\' LIMIT 60")
+          .bind(prefix + "%")
+          .all();
+        for (const c of results || []) {
+          const d = damerauLevenshtein(w, c.word);
+          if (d >= 1 && d <= 2 && (!best || d < best.d || (d === best.d && c.freq > best.freq))) {
+            best = { word: c.word, d, freq: c.freq };
+          }
+        }
+      }
+      if (best) {
+        corrected[corrected.indexOf(w)] = best.word;
+        changed = true;
+      }
+    }
+    return changed ? corrected.join(" ") : null;
+  } catch {
+    return null; // Vocab table absent (not built yet) — no suggestion.
+  }
+}
+
+/** Autocomplete: top real titles whose normalized title starts with
+ *  the given prefix (3 chars -> 3-char bucket, 4+ -> 4-char bucket).
+ *  Returns [{ title, author }] (at most `limit`). Empty for prefixes
+ *  under 3 chars. Never throws (a missing table -> []). */
+export async function d1Autocomplete(db, rawPrefix, limit = 10) {
+  try {
+    const p = normalizeQuery(rawPrefix || "");
+    if (p.length < 3) return [];
+    const key = p.slice(0, 4);
+    const { results } = await db
+      .prepare("SELECT title, author, cnt FROM prefix_counts WHERE prefix = ? ORDER BY cnt DESC, title ASC LIMIT ?")
+      .bind(key, limit)
+      .all();
+    return (results || []).map((r) => ({ title: r.title, author: r.author || null }));
+  } catch {
+    return [];
+  }
+}
+
+/** How many query words does this row match? A word matches when it
+ *  appears exactly in the normalized title+author words, or a title/
+ *  author word starts with it (prefix). Both sides use the same
+ *  stripAl as the index, so "كاتب" matches a title word "الكاتب".
+ *  Used by the nonsense guard. */
+function matchedWordCount(row, words) {
+  const hay = new Set(
+    `${normalizeArabic(row.title || "")} ${normalizeArabic(row.author || "")}`
+      .toLowerCase().split(/\s+/).filter(Boolean).map(stripAl),
+  );
+  let n = 0;
+  for (const w of words) {
+    if (hay.has(w)) { n++; continue; }
+    for (const h of hay) {
+      if (h.startsWith(w) || w.startsWith(h)) { n++; break; }
+    }
+  }
+  return n;
+}
+
+/** Character trigrams of one word (len>=3; shorter words pass through
+ *  unchanged). The FTS5 trigram tokenizer matches SUBSTRINGS, so a
+ *  whole-word phrase ("القان") only finds titles containing that exact
+ *  substring — it does NOT tolerate an interior deletion. OR-ing the
+ *  word's trigrams is the actual typo-tolerant query: a title sharing
+ *  more trigrams ranks higher. */
+function wordTrigrams(word) {
+  if (word.length < 3) return [word];
+  const out = [];
+  for (let i = 0; i <= word.length - 3; i++) out.push(word.slice(i, i + 3));
+  return out;
+}
+
+/** Trigram overlap score between the query's trigram set and one
+ *  row's title+author trigram set: shared / min(|query|, |row|).
+ *  A raw trigram-OR match is far too loose on its own — a single
+ *  common trigram ("lmo" in "almost") matches gibberish — so rescue
+ *  candidates are re-scored here and kept only at >= 0.25. */
+function trigramScore(row, queryTrigrams) {
+  const hay = new Set(
+    `${normalizeArabic(row.title || "")} ${normalizeArabic(row.author || "")}`
+      .toLowerCase().split(/\s+/).filter(Boolean).map(stripAl).flatMap(wordTrigrams),
+  );
+  if (hay.size === 0 || queryTrigrams.size === 0) return 0;
+  let shared = 0;
+  for (const t of queryTrigrams) if (hay.has(t)) shared++;
+  return shared / Math.min(queryTrigrams.size, hay.size);
+}
+
+/** Apply the smart path to a ladder result. Returns
+ *  { found: { total, rows, match }, suggestion: string|null }.
+ *  Never throws: any side-table failure degrades to the ladder.
+ *  v2 (measured 2026-11-24): the v1 trigram RERANK is removed — it
+ *  moved zero ranks on the eval set while adding ~40% p95 latency
+ *  and inflating `total`. What remains: (a) trigram rescue when the
+ *  ladder finds nothing, re-scored by trigram overlap (a raw
+ *  trigram-OR returns junk for gibberish — one shared trigram is
+ *  not a match), (b) the nonsense guard on OR-tier wins,
+ *  (c) did-you-mean on zero/weak results. */
+async function applySmartSearch(db, words, found, limit, offset, source, format) {
+  const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
+  try {
+    // Rescue: the ladder found nothing — try trigram similarity
+    // (OR of the query words' character trigrams), then keep only
+    // candidates sharing >=25% of the smaller trigram set.
+    if (found.total === 0) {
+      const triWords = [...new Set(words.flatMap(wordTrigrams))];
+      const tri = await d1SearchTrigram(db, triWords, fetchLimit, offset, source, format);
+      if (tri.total > 0) {
+        const qSet = new Set(triWords);
+        const kept = tri.rows
+          .map((r) => ({ row: r, score: trigramScore(r, qSet) }))
+          .filter((x) => x.score >= 0.25)
+          .sort((a, b) => b.score - a.score)
+          .map((x) => x.row);
+        if (kept.length > 0) {
+          return { found: { total: kept.length, rows: kept.slice(0, fetchLimit), match: "trigram" }, suggestion: null };
+        }
+      }
+      return { found, suggestion: await d1SuggestCorrection(db, words) };
+    }
+    // Nonsense guard: an OR-tier win whose top result matches less
+    // than half the query words is not a match — answer empty +
+    // a suggestion instead of junk. (Baseline: 4/5 nonsense queries
+    // returned junk via 'any'.) Only 'any' is gated; exact /
+    // prefix / typo wins are untouched.
+    if (found.match === "any" && found.rows.length > 0) {
+      const need = Math.max(1, Math.ceil(words.length / 2));
+      if (matchedWordCount(found.rows[0], words) < need) {
+        return {
+          found: { total: 0, rows: [], match: null },
+          suggestion: await d1SuggestCorrection(db, words),
+        };
+      }
+    }
+    // Did-you-mean on weak wins — but ONLY when the user got nothing
+    // useful: a single-word query whose ladder win is weak (the
+    // multi-word weak wins already return books — offering a
+    // correction on top of a rank-1-correct answer is noise, and
+    // the vocab scan costs ~5-30 ms per query: measured v2, running
+    // it on every typo/any/word win pushed p95 +83%). The caller
+    // shows "هل تقصد: X؟" — the query is never silently rewritten.
+    if (words.length === 1 && (found.match === "typo" || found.match === "any" || found.match === "word")) {
+      const suggestion = await d1SuggestCorrection(db, words);
+      return { found, suggestion };
+    }
+    return { found, suggestion: null };
+  } catch {
+    return { found, suggestion: null };
+  }
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -1051,6 +1436,14 @@ export async function onRequest(context) {
       { ok: false, error: "search unavailable (TG_D1 not bound)" },
       503,
     );
+  }
+
+  // Autocomplete (smart path): ?suggest=<prefix> returns up to 10
+  // real catalog titles starting with the prefix (3+ chars).
+  const suggestRaw = (url.searchParams.get("suggest") || "").trim();
+  if (suggestRaw) {
+    const suggestions = await d1Autocomplete(db, suggestRaw, 10);
+    return json({ ok: true, suggest: suggestRaw, results: suggestions });
   }
 
   // Only an authenticated bot caller gets the raw t.me post URL in
@@ -1119,18 +1512,30 @@ export async function onRequest(context) {
     }
   }
 
-  if (!q) {
-    // Empty query: without a source there is nothing to list; with a
-    // source, browse that library's books (id order, capped by limit).
+  // Format token: a trailing known-format word ("بيت الحرير epub")
+  // is a filter on books.ext, not a search word (see
+  // parseFormatToken). It is stripped before the ladder runs; the
+  // reply echoes it (`format: "epub"`) so callers can show the
+  // active filter.
+  const words = queryWords(q);
+  const { words: searchWords, format } = parseFormatToken(words);
+  const fmtField = format ? { format } : {};
+
+  if (!q || searchWords.length === 0) {
+    // Empty query — or a query of only a format token ("epub"):
+    // without a source there is nothing to list; with a source,
+    // browse that library's books (filtered to the format when one
+    // was given). A bare format token never browses the whole
+    // catalog.
     if (!source) {
-      return json({ ok: true, q: "", total: 0, limit, offset, ...cov, results: [] });
+      return json({ ok: true, q, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
     }
     try {
       // Browse over-fetches like search (see DEDUP_OVERFETCH): the
       // same title can be reposted inside one library too.
-      const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source);
+      const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source, format);
       if (found.total === 0) {
-        return json({ ok: true, q: "", source, total: 0, limit, offset, ...cov, results: [] });
+        return json({ ok: true, q, source, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
       }
       // Hidden rows (owner /hide) are dropped before the reply;
       // `total` is adjusted by the hidden rows on this page only.
@@ -1139,7 +1544,7 @@ export async function onRequest(context) {
       // reposts collapse to one tile (see visibleResults).
       const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit);
       return json({
-        ok: true, q: "", source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov,
+        ok: true, q, source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov, ...fmtField,
         flagStatus,
         results,
       });
@@ -1154,20 +1559,29 @@ export async function onRequest(context) {
     }
   }
 
-  const words = queryWords(q);
-  if (words.length === 0) {
-    return json({ ok: true, q, total: 0, limit, offset, ...cov, results: [] });
-  }
-
   try {
     // The search ladder (see ladderQueries): exact AND first, then
     // prefix / typo / OR / longest-word — each tier runs ONLY when
     // the previous returned 0; the first hit wins. `match` names
     // the winning tier (null when nothing matched) so callers can
-    // label non-exact results 'أقرب النتائج'.
-    const found = await d1SearchLadder(db, words, limit, offset, source);
+    // label non-exact results 'أقرب النتائج'. With ?smart=1 the
+    // trigram rescue/rerank + nonsense guard run on top (see
+    // applySmartSearch); without it the ladder is byte-identical
+    // to before. Every tier is constrained to the format token
+    // when one was given (see d1SearchLadder).
+    let found = await d1SearchLadder(db, searchWords, limit, offset, source, format);
+    let suggestion = null;
+    if (isSmartSearch(request, env)) {
+      const smart = await applySmartSearch(db, searchWords, found, limit, offset, source, format);
+      found = smart.found;
+      suggestion = smart.suggestion;
+    }
     if (found.total === 0) {
-      return json({ ok: true, q, match: null, total: 0, limit, offset, ...cov, results: [] });
+      return json({
+        ok: true, q, match: null, total: 0, limit, offset, ...cov, ...fmtField,
+        ...(suggestion ? { suggestion } : {}),
+        results: [],
+      });
     }
     // One denylist read for the page (the flags:all blob — see
     // visibleResults). Hidden rows (owner /hide) are dropped before
@@ -1186,7 +1600,9 @@ export async function onRequest(context) {
       limit,
       offset,
       ...cov,
+      ...fmtField,
       flagStatus,
+      ...(suggestion ? { suggestion } : {}),
       results,
     });
   } catch (e) {
