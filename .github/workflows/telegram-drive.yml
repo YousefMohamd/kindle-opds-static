@@ -1,4 +1,5 @@
-# Drive libraries: index a Google Drive folder + daily link-health check.
+# Drive libraries: index a Google Drive folder + daily link-health check
+# + AUTOMATED sweep (Build 1) + public-surfaces publish (Build 2).
 #
 # NOTE (project rule): workflow files cannot be pushed by any token —
 # the USER uploads this file via the GitHub web UI. The bot change that
@@ -11,15 +12,65 @@
 # shared only with Yousef's account cannot be indexed from Actions;
 # index those locally with the hatch client instead.
 #
-# D1 import is deliberately MANUAL: this workflow only generates the
-# batch SQL + state and uploads them as artifacts. The owner reviews
-# and runs: wrangler d1 execute rlibook-tg --remote --file <batch>
-# (<=25 batch files/day, 100k rows/day budget; a 2,000-book library
-# is 4,000 rows = one batch file).
+# BUILD 1 — submit -> index automatically (no manual step):
+# The bot already writes every Drive submission to the KV
+# `submissions` log at submit time (status "pending_index", title
+# "drive:<folderId>"). Every 2 hours the `sweep` job fetches that log
+# from KV (CLOUDFLARE_API_TOKEN KV-read scope, same as
+# telegram-static-rebuild's flags fetch), plans the pending folders
+# (telegram/tbi/drive_sweep.py --plan: newest record per folder wins,
+# skips already-indexed + failed-known folders), indexes each one
+# with drive_index.py (--client http --no-transaction --max-books
+# 10000), imports the batch + registry SQL into D1 with wrangler,
+# and commits the batch files + drive-libraries.json + state. A
+# folder that fails verification (not shared) gets a
+# `drive:failed:<folderId>` KV key and is skipped on later runs.
+# New libraries are PRIVATE to their submitter by default.
+#
+# BUILD 2 — approve -> visible EVERYWHERE automatically:
+# Approving in /libraries/monitor writes visibility='public' to D1
+# (search + /api/drive-libraries + /mylibraries read D1 live, so
+# they update at once) AND a `drive:surfaces-stale` KV marker. The
+# `publish-surfaces` job (needs: sweep, only when the marker was
+# seen) re-syncs drive-libraries.json from D1 (marker payload as
+# fallback), regenerates ALL public surfaces (drive_opds.py --all:
+# drive/search-index.json + per-library feeds + nav feed, and
+# scripts/generate-libraries.py: site/telegram/libraries.html) and
+# commits them, then deletes the marker. A public library's books
+# are in D1 from the sweep, so no re-listing is needed.
+#
+# D1 import is automatic for sweep-indexed libraries (wrangler d1
+# execute --remote; batches are INSERT OR IGNORE, idempotent; the
+# registry upsert keeps a stored visibility, so a re-index never
+# flips a public library private). Manual dispatch keeps the old
+# behaviour: it only generates the batch SQL + state and uploads
+# them as artifacts — the owner reviews and imports by hand.
+#
+# D1 write budget: one library of N books = 2N rows + 1 registry
+# row; --max-books 10000 caps a sweep run at ~20k rows (20% of the
+# 100k/day budget). A bigger folder is deferred for manual import.
+# D1 reads here are cheap indexed lookups only (SELECT MAX(id) and
+# one full SELECT of the tiny drive_libraries table) — never
+# COUNT(*) over books. If a D1 read fails (e.g. the daily read
+# limit), the sweep exits 0 and retries next run; the queue
+# persists in KV, so nothing is lost.
+#
+# Concurrency: `sweep` shares telegram-d1-incremental's group — both
+# allocate books.id from MAX(id), so they must never run together
+# (an overlap could assign the same ids twice; INSERT OR IGNORE
+# would then silently drop one set). `publish-surfaces` shares
+# telegram-sync's group — both write site/telegram/libraries.html.
+# A push race (another commit landing mid-run) is handled by
+# pull --rebase before push, never force-push.
 
 name: telegram-drive
 
 on:
+  schedule:
+    # 2-hourly sweep (Build 1) + 04:00 UTC health check (the health
+    # step gates on the hour — a workflow cannot tell which cron
+    # entry fired, and "0 */2 * * *" fires at 04:00 too).
+    - cron: "0 */2 * * *"
   workflow_dispatch:
     inputs:
       folder_url:
@@ -48,18 +99,19 @@ on:
         default: "private"
         type: choice
         options: [private, public, pending_public]
-  schedule:
-    # Daily link-health check (04:00 UTC) — marks dead Drive links
-    # "unavailable" without deleting metadata.
-    - cron: "0 4 * * *"
-
-permissions:
-  contents: read
 
 jobs:
-  drive:
+  sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    # Shares the D1 id-allocation lock with the incremental importer.
+    concurrency:
+      group: kindle-opds-static-telegram-d1-incremental
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    outputs:
+      surfaces_needed: ${{ steps.marker-check.outputs.surfaces_needed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,8 +120,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      # --- Manual dispatch: index one folder (unchanged behaviour) ---
       - name: Index one Drive folder
-        if: ${{ inputs.mode == 'index' && inputs.folder_url != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'index' && inputs.folder_url != '' }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
         run: |
@@ -80,7 +133,8 @@ jobs:
             --start-id "${{ inputs.start_id }}" \
             --submitter-tg-id "${{ inputs.submitter_tg_id }}" \
             --visibility "${{ inputs.visibility }}" \
-            --registry-json drive-libraries.json
+            --registry-json drive-libraries.json \
+            --no-transaction
           # Static surfaces for PUBLIC libraries only (drive_opds.py
           # skips private/pending): OPDS feeds + combined search index.
           # NOTE: commit drive/ + site/telegram/libraries.html to the
@@ -92,8 +146,9 @@ jobs:
             --books "$BOOKS_JSON" --registry drive-libraries.json --out drive || true
           python3 scripts/generate-libraries.py --drive-registry drive-libraries.json || true
 
+      # --- Health check: daily 04:00 UTC, or manual dispatch ---
       - name: Health check (all libraries)
-        if: ${{ inputs.mode == 'health' || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'health' }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
         run: |
@@ -101,6 +156,145 @@ jobs:
             --registry drive-libraries.json \
             --state drive-state.jsonl \
             --out-dir drive-health-out
+
+      - name: Health check (scheduled 04:00 UTC)
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
+        run: |
+          if [ "$(date -u +%H)" != "04" ]; then
+            echo "not 04:00 UTC — skipping the daily health check"
+            exit 0
+          fi
+          python3 telegram/tbi/drive_health.py --client http \
+            --registry drive-libraries.json \
+            --state drive-state.jsonl \
+            --out-dir drive-health-out
+
+      # --- Build 1: 2-hourly sweep of the KV pending queue ---
+      - name: Fetch pending queue + marker from KV
+        id: marker-check
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: |
+          KV="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values"
+          # The submissions log is the pending queue (bot writes it at
+          # submit time). 3 tries, then FAIL — without the queue the
+          # sweep cannot see anything; the queue persists in KV, so
+          # the next run retries.
+          for i in 1 2 3; do
+            if curl -fsS --max-time 20 \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$KV/submissions" -o submissions.json; then break; fi
+            echo "submissions fetch attempt $i failed — retrying"
+            sleep $((i * 10))
+          done
+          test -s submissions.json || { echo "::error::KV submissions fetch failed after 3 attempts"; exit 1; }
+          # Failed-known folders (drive:failed:<id> keys). Fail-soft:
+          # an empty set just means a failed folder gets retried once.
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$KV?prefix=drive%3Afailed%3A" -o failed.json \
+            || echo '{"keys":[]}' > failed.json
+          # Approve marker (Build 2). Fail-soft: absent = no approve
+          # happened since the last publish.
+          if curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$KV/drive%3Asurfaces-stale" -o marker.json; then
+            echo "surfaces_needed=true" >> "$GITHUB_OUTPUT"
+            echo "approve marker present: $(cat marker.json)"
+          else
+            echo "surfaces_needed=false" >> "$GITHUB_OUTPUT"
+            echo "no approve marker"
+            rm -f marker.json
+          fi
+
+      - name: Plan the sweep
+        id: plan
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          python3 telegram/tbi/drive_sweep.py --plan \
+            --submissions submissions.json \
+            --registry drive-libraries.json \
+            --failed failed.json --out sweep-plan.json
+          TO_INDEX=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_index']))")
+          echo "to_index=$TO_INDEX" >> "$GITHUB_OUTPUT"
+          echo "folders to index: $TO_INDEX"
+
+      - name: Index pending folders + import to D1
+        if: ${{ github.event_name == 'schedule' && steps.plan.outputs.to_index != '0' }}
+        env:
+          DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler@4
+          # Next free books.id (one indexed PK lookup — cheap; never
+          # a full-table scan). If D1 reads are down (daily limit),
+          # exit 0: the queue persists in KV and the next run retries.
+          if ! wrangler d1 execute rlibook-tg --remote \
+              --command "SELECT MAX(id) AS m FROM books" --json > maxid.json; then
+            echo "::warning::D1 read failed (daily limit?) — skipping this sweep, queue persists for the next run"
+            exit 0
+          fi
+          START_ID=$(python3 -c "import json; d=json.load(open('maxid.json')); r=d[0]['results'][0]; print((r['m'] or 0)+1)")
+          echo "start_id=$START_ID"
+          # Index each pending folder (Drive API + batch SQL + books
+          # JSON + registry upsert). --max-books 10000 caps the D1
+          # write budget a single run can consume.
+          python3 telegram/tbi/drive_sweep.py --run \
+            --submissions submissions.json \
+            --registry drive-libraries.json \
+            --failed failed.json \
+            --out-dir d1-batches-drive \
+            --state-file drive-state.jsonl \
+            --start-id "$START_ID" --max-books 10000 \
+            --manifest drive-sweep-manifest.json
+          # Import the manifest's batches into D1 (books first, then
+          # the registry upsert), in order, stopping on the first
+          # failure — a failed import commits nothing, and the next
+          # run re-indexes idempotently (INSERT OR IGNORE).
+          INDEXED=$(python3 -c "import json; print(len(json.load(open('drive-sweep-manifest.json'))['indexed']))")
+          if [ "$INDEXED" = "0" ]; then
+            echo "nothing indexed — skipping D1 import"
+          else
+            for f in $(python3 -c "import json; [print(e['batch_sql']) for e in json.load(open('drive-sweep-manifest.json'))['indexed'] if e['books'] > 0]"); do
+              echo "=== importing $f ==="
+              wrangler d1 execute rlibook-tg --remote --file "$f" || {
+                echo "::error::D1 import failed at $f — nothing committed; the next run re-imports the same books (idempotent)"
+                exit 1
+              }
+            done
+            for f in $(python3 -c "import json; [print(e['registry_sql']) for e in json.load(open('drive-sweep-manifest.json'))['indexed']]"); do
+              echo "=== importing $f ==="
+              wrangler d1 execute rlibook-tg --remote --file "$f" || {
+                echo "::error::registry import failed at $f"
+                exit 1
+              }
+            done
+          fi
+          # Record verification failures in KV so later runs skip
+          # them instead of re-hitting the Drive API every 2 hours.
+          for fid in $(python3 -c "import json; [print(e['folder_id']) for e in json.load(open('drive-sweep-manifest.json'))['failed']]"); do
+            curl -fsS --max-time 20 -X PUT \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values/drive%3Afailed%3A$fid" \
+              --data "{\"folder_id\":\"$fid\",\"reason\":\"not_shared_or_missing\",\"at\":\"$(date -u +%FT%TZ)\"}" \
+              && echo "marked failed: $fid" \
+              || echo "::warning::could not write drive:failed:$fid — the next run will retry it once"
+          done
+          # Commit the indexed batches + registry + state (never
+          # force-push; rebase before push like telegram-sync).
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add d1-batches-drive/ drive-libraries.json drive-state.jsonl
+          git commit -m "[telegram-drive] sweep: index pending Drive libraries" || echo "nothing to commit"
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the publish cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
+          git push
 
       - name: Upload artifacts
         if: always()
@@ -111,4 +305,126 @@ jobs:
             d1-batches-drive/
             drive-state.jsonl
             drive-health-out/
+            drive-sweep-manifest.json
+            sweep-plan.json
           if-no-files-found: warn
+
+  # --- Build 2: approve -> public surfaces, automatically ---
+  publish-surfaces:
+    needs: sweep
+    if: ${{ needs.sweep.outputs.surfaces_needed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Shares telegram-sync's group — both write
+    # site/telegram/libraries.html.
+    concurrency:
+      group: kindle-opds-static-telegram-sync
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch marker + D1 registry
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: |
+          KV="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values"
+          # The marker is the trigger AND the fallback payload (the
+          # monitor knows the new visibility at approve time). Absent
+          # is fine when D1 answers — the sweep only runs this job
+          # when it saw the marker, but a concurrent run may have
+          # consumed it already.
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$KV/drive%3Asurfaces-stale" -o marker.json \
+            || echo "no marker fetched — syncing from D1 only"
+          # D1 is the source of truth (the tiny registry table — one
+          # cheap full read, never a scan over books). Fail-soft: the
+          # marker payload covers the approve when D1 reads are down.
+          npm install -g wrangler@4
+          wrangler d1 execute rlibook-tg --remote \
+            --command "SELECT folder_id,title,added_by,added_at,status,submitter_tg_id,visibility FROM drive_libraries" \
+            --json > d1rows.json \
+            || { echo "::warning::D1 registry read failed — falling back to the marker payload"; rm -f d1rows.json; }
+
+      - name: Sync registry + regenerate public surfaces
+        id: surfaces
+        run: |
+          # Registry: D1 rows win; marker payload when D1 was down.
+          if [ -f d1rows.json ]; then
+            python3 telegram/tbi/drive_sweep.py --sync-registry \
+              --registry drive-libraries.json --d1-rows d1rows.json
+          elif [ -f marker.json ]; then
+            python3 telegram/tbi/drive_sweep.py --sync-registry \
+              --registry drive-libraries.json --marker marker.json
+          else
+            echo "::error::neither D1 rows nor the marker are available — nothing to sync from"
+            exit 1
+          fi
+          # OPDS + combined search index for ALL public libraries.
+          # Fail-soft with a flag: a library whose books artifacts
+          # are missing must not block the libraries-page refresh,
+          # and the marker stays so the next run retries the feeds.
+          OPDS_OK=true
+          python3 telegram/tbi/drive_opds.py --all \
+            --registry drive-libraries.json \
+            --batch-dir d1-batches-drive --out drive \
+            --counts-out /tmp/drive-counts.json || OPDS_OK=false
+          echo "opds_ok=$OPDS_OK" >> "$GITHUB_OUTPUT"
+          if [ "$OPDS_OK" = "false" ]; then
+            echo "::warning::drive_opds --all failed — regenerating the libraries page from the registry alone; the marker stays for a retry"
+            python3 - <<'PYEOF'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, "telegram/tbi")
+          from drive_opds import load_library_books, public_libraries
+          from drive_registry import load_registry
+          reg = load_registry(Path("drive-libraries.json"))
+          counts = {}
+          for lib in public_libraries(reg):
+              books = load_library_books(lib["folder_id"], Path("d1-batches-drive"))
+              if books is not None:
+                  counts[lib["folder_id"]] = len([b for b in books if b.get("file_id")])
+          Path("/tmp/drive-counts.json").write_text(json.dumps(counts), encoding="utf-8")
+          print(f"counts fallback: {counts}")
+          PYEOF
+          fi
+          # Libraries page (public libraries only — the generator
+          # filters private/pending itself).
+          python3 scripts/generate-libraries.py \
+            --manifest site/telegram/index.json \
+            --drive-registry drive-libraries.json \
+            --drive-counts /tmp/drive-counts.json \
+            --out site/telegram/libraries.html
+
+      - name: Commit surfaces
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add drive/ drive-libraries.json site/telegram/libraries.html
+          git commit -m "[telegram-drive] publish public surfaces after approve" || echo "nothing to commit"
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — the publish cannot be saved on top of the current remote head. Check the rebase output above; do not force-push."; exit 1; }
+          git push
+
+      - name: Clear the surfaces marker
+        # Only when the feeds regenerated: otherwise the next sweep
+        # retries the publish. Best-effort either way.
+        if: ${{ steps.surfaces.outputs.opds_ok == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
+        run: |
+          curl -fsS --max-time 20 -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$RLIBOOK_KV_ID/values/drive%3Asurfaces-stale" \
+            && echo "surfaces marker cleared" \
+            || echo "::warning::marker delete failed — the next sweep will retry the publish"
