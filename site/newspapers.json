@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T06:51:10.857771+00:00",
+  "generated_at": "2026-11-26T07:53:43.834681+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 12,
+      "entries": 17,
       "detail": ""
     },
     {
@@ -96,6 +96,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "Dt",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135215",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135215,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "Gdn",
       "country": "XX",
       "country_name": "غير محدد",
@@ -106,6 +119,45 @@
       "url": "https://t.me/Arabic_News_Papers/135209",
       "handle": "Arabic_News_Papers",
       "post_id": 135209,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "أخبار الخليج",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135214",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135214,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الايام",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135213",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135213,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "البلاد",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135211",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135211,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -161,6 +213,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "الوطن",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135212",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135212,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "عرب تايمز",
       "country": "XX",
       "country_name": "غير محدد",
@@ -210,11 +275,16 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 7
+      "count": 12
     }
   ],
   "empty": false,
   "unmatched": [
+    "Dt",
+    "أخبار الخليج",
+    "الايام",
+    "الوطن",
+    "البلاد",
     "Gdn",
     "عرب تايمز",
     "كويت تايمز",
@@ -305,6 +375,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف لندن  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "https://share.google/uNJQ0lOe38r02HYEr",
       "reason": "url",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -346,11 +421,6 @@
     },
     {
       "name": "😄😁😄  صحف العراق  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف لندن  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
