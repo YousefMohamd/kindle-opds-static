@@ -52,7 +52,7 @@ check("A2 hindawi bad id -> error", () => {
   assert.equal(Lib.resolveBookSource({ lib: "hindawi" }).kind, "error");
 });
 check("A3 drive libs -> google uc url + corsRisk", () => {
-  for (const lib of ["khazendar", "sahwa", "electronic"]) {
+  for (const lib of ["khazendar", "sahwa", "electronic", "drive"]) {
     const s = Lib.resolveBookSource({ lib, id: "1AbC2" });
     assert.equal(s.kind, "epub");
     assert.equal(s.url, "https://drive.google.com/uc?id=1AbC2&export=download");

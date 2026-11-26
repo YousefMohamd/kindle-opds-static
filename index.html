@@ -120,6 +120,15 @@
   القائمة لتصفّح كتبها وحدها، أو افتحها في تيليجرام. التصفح بلا حد يومي.</p>
 </div>
 
+<div class="card" id="drivecard">
+  <h2>مكتبات Drive</h2>
+  <p id="drivecount">مكتبات Google Drive مفهرسة كميتاداتا فقط.</p>
+  <div id="drivelibs" class="links"></div>
+  <p class="note">كتب Drive تُرسل بالإيميل أو تُقرأ أونلاين من صفحة الكتاب،
+  مثل كتب تيليجرام. مكتبة جديدة تُضاف من البوت وتبقى خاصة بصاحبها حتى
+  يوافق المالك على نشرها.</p>
+</div>
+
 <div class="card">
   <h2>المكتبات</h2>
   <div class="links">
@@ -129,6 +138,7 @@
     <a href="/electronic/">المكتبة الإلكترونية</a>
     <a href="/hindawi/">مكتبة صفحات — هنداوي</a>
     <a href="/doab/">DOAB</a>
+    <a href="/drive/index.xml">مكتبات Drive — الكتالوج (OPDS)</a>
     <a href="https://ws-export.wmcloud.org/opds/en/Ready_for_export.xml">Wikisource (English) — تصفّح فقط</a>
   </div>
   <p class="note">الكتالوج يعمل على Kindle وأي قارئ إلكتروني و iPad وتابلت —
@@ -353,7 +363,15 @@ function renderGroup(heading, items, tg) {
     // line at all — the endpoint populates `source` only for flagged
     // books, and the site never renders it (flagged books point at
     // the bot instead). OPDS library names are unchanged.
-    var lib = tg ? "" : (b.library || "");
+    // Drive-library books show their library's display name
+    // ("Oriental Music") from the registry — never the raw
+    // "drive:<folderId>" source (WAVE 4, WS8). Telegram rows
+    // keep source-hiding (no library line at all).
+    var lib = tg
+      ? (b.kind === "drive"
+        ? ("مكتبة Drive — " + (b.library || "Drive"))
+        : "")
+      : (b.library || "");
     // Titles open the book page (/book) — for Telegram AND for OPDS
     // titles alike. The book page is the Kindle path (Get on Kindle /
     // read online / send by email), because the Kindle browser blocks
@@ -679,6 +697,28 @@ fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(funct
       " ملف — من قنوات وجروبات تيليجرام العامة.";
   }
 }).catch(function () { /* keep the static numbers */ });
+
+// Public Drive libraries from /api/drive-libraries (WAVE 4, WS8).
+// Private/pending libraries never appear here — the endpoint lists
+// public ones only for an anonymous visitor. Each links to the
+// library's browse view (/telegram/?source=drive:<folderId>).
+fetch("/api/drive-libraries").then(function (r) { return r.json(); }).then(function (d) {
+  var libs = (d && d.ok && d.libraries) || [];
+  var box = document.getElementById("drivelibs");
+  if (!libs.length) {
+    document.getElementById("drivecard").style.display = "none";
+    return;
+  }
+  var total = 0, html = "";
+  for (var i = 0; i < libs.length; i++) {
+    total += libs[i].count || 0;
+    html += "<a href=\"/telegram/?source=" + encodeURIComponent("drive:" + libs[i].folder_id) + "\">"
+      + esc(libs[i].title || libs[i].folder_id) + " (" + (libs[i].count || 0) + " كتاب)</a>";
+  }
+  box.innerHTML = html;
+  document.getElementById("drivecount").textContent =
+    libs.length + (libs.length === 1 ? " مكتبة" : " مكتبات") + " — " + total + " كتاب.";
+}).catch(function () { /* keep the static note */ });
 
 // ?q= in the URL runs the search on load (deep links to a search).
 var startQ = (new URLSearchParams(location.search).get("q") || "").trim();

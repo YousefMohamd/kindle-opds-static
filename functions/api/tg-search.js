@@ -139,6 +139,32 @@
 // (h,p,f); the proxy checks the exact triple), not displayed text,
 // and stripping it would break every Telegram delivery link.
 //
+// Drive libraries (WAVE 4, WS8 — two-type model, user decision
+// 2026-11-26): a Drive library in D1 `drive_libraries` is PUBLIC
+// (everyone sees its books), PRIVATE (only its submitter, by Telegram
+// id), or PENDING_PUBLIC (submitter + owner only, while the owner
+// reviews the "make public" request). A kind='drive' row whose library
+// is NOT in the table (legacy: indexed before the registry existed) is
+// treated as PUBLIC. The table itself may not exist yet on an older D1
+// (created by the registry SQL); hasDriveRegistry() probes once per
+// request and the search falls back to the legacy no-filter queries
+// when it is absent, so search can never 500 on a missing table. The
+// viewer is identified by ?fp= (the catalog fingerprint): the same KV
+// lookup as functions/opds/[[fp]].js — fp:<token> -> { tg_id,
+// created_at }. No fp (or an unknown/revoked one) means an anonymous
+// viewer: public libraries only. The owner id comes from
+// env.RLIBOOK_OWNER_ID (same value as the bot's wrangler var).
+// `source=drive:<folderId>` browses one Drive library. Results carry
+// `kind: "drive"` and `library` (the display name from the registry,
+// e.g. "Oriental Music"; null when the library has no registry row).
+// Drive books have no t.me URL, so they use `flag:drive:<fileId>`
+// instead of `flag:<handle>:<post_id>` (the flags:all blob may also
+// carry `drive:<fileId>` entries); without it a flagged Drive book
+// could never be flagged at all. Delivery for Drive rows is
+// send-by-email + read-online only (`send` / `read` gated links);
+// there is no /kindle/get delivery page for Drive books and no bot
+// deep link for a flagged Drive book (the bot has no dl_drive_ link).
+//
 // Flagged books: the endpoint IDENTIFIES them, it does not
 // enforce the cap. It reads the shared denylist ONCE per search:
 // a single KV key `flags:all` = { flagged: ["handle:postId", ...],
@@ -251,7 +277,11 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const MAX_OFFSET = 10000;
 const MAX_Q_LEN = 200; // Longer than any real title/author query; a 400, not a search
-const SOURCE_RE = /^[A-Za-z0-9_]{1,64}$/; // A Telegram channel/group handle
+// A Telegram channel/group handle, or a Drive library source
+// (`drive:<folderId>` — the per-library browse for a Drive library,
+// e.g. ?source=drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP). The colon
+// form is the ONLY source value that may contain a colon.
+const SOURCE_RE = /^(?:[A-Za-z0-9_]{1,64}|drive:[A-Za-z0-9_-]{10,64})$/;
 
 // Same normalization as the indexer (tbi.books.normalize_arabic) and
 // the website search page: NFKC, strip tashkeel (U+064B-U+0652) +
@@ -475,6 +505,59 @@ export function parsePostUrl(url) {
   return { handle: m[1], postId: m[2] };
 }
 
+// Same fingerprint shape as the bot (src/catalog.ts isFingerprint)
+// and functions/opds/[[fp]].js: 22 URL-safe base64 chars.
+const FP_RE = /^[A-Za-z0-9_-]{22}$/;
+
+// Parse a Drive file URL into its file id, or null. Drive books have
+// no t.me post URL, so the flag key for them is `drive:<fileId>`
+// (see driveFlagKey) and the delivery identity is the file id.
+export function parseDriveFileUrl(url) {
+  const m = /^https:\/\/drive\.google\.com\/file\/d\/([A-Za-z0-9_-]+)/.exec(url || "");
+  if (!m) return null;
+  return { fileId: m[1] };
+}
+
+/** The denylist key for one Drive row (`drive:<fileId>`), or null
+ *  when the row is not a Drive book. Exported for tests. */
+export function driveFlagKey(url) {
+  const file = parseDriveFileUrl(url);
+  return file ? `drive:${file.fileId}` : null;
+}
+
+// The viewer is identified by ?fp= (the catalog fingerprint): the
+// same KV lookup as functions/opds/[[fp]].js — fp:<token> ->
+// { tg_id, created_at }. No fp (or an unknown/revoked one) means an
+// anonymous viewer (null). Never throws.
+async function verifyFingerprint(env, fp) {
+  if (!FP_RE.test(fp || "")) return null;
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const raw = await kv.get("fp:" + fp);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    const id = v && Number(v.tg_id);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// True when the D1 `drive_libraries` registry table exists. Probes
+// once per request; a missing table (older D1) means the search falls
+// back to the legacy no-filter queries, never a 500. Never throws.
+async function hasDriveRegistry(db) {
+  try {
+    const row = await db
+      .prepare("SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='drive_libraries'")
+      .bind().first();
+    return !!row;
+  } catch (e) {
+    return false;
+  }
+}
+
 // --- flags:all denylist blob (resilience batch, 2026-11-20) --------
 // The flag/hide denylist used to cost one KV get per result row
 // (up to ~101/search at limit 50) — and a KV failure failed OPEN,
@@ -523,8 +606,13 @@ export function parseFlagsBlob(value) {
     const out = new Set();
     for (const e of arr || []) {
       if (typeof e !== "string") continue;
-      const m = /^([A-Za-z0-9_]{1,64}):(\d{1,20})$/.exec(e.trim());
-      if (m) out.add(`${m[1]}:${m[2]}`);
+      const t = e.trim();
+      // Telegram entries ("handle:postId") and Drive entries
+      // ("drive:<fileId>") — the bot writer may put either in the blob.
+      const m = /^([A-Za-z0-9_]{1,64}):(\d{1,20})$/.exec(t);
+      if (m) { out.add(`${m[1]}:${m[2]}`); continue; }
+      const d = /^drive:([A-Za-z0-9_-]{1,64})$/.exec(t);
+      if (d) out.add(`drive:${d[1]}`);
     }
     return out;
   };
@@ -599,7 +687,27 @@ async function flagStateForRows(env, rows) {
     console.warn("[tg-search] flags:all lookup failed:", e && e.message);
     return { status: "degraded", flagged: new Set(), hidden: new Set() };
   }
-  if (blob) return { status: "ok", flagged: blob.flagged, hidden: blob.hidden };
+  // Drive rows are flagged through the per-row `flag:drive:<fileId>`
+  // key as well as the blob (the bot writer does not put drive entries
+  // in the blob yet — the per-row key is the source of truth for them,
+  // same as send-to-kindle.js checks). A Drive-row KV failure degrades
+  // the whole page, never a silent unflag.
+  const driveKeys = (rows || []).map((r) => driveFlagKey(r.url)).filter(Boolean);
+  if (blob) {
+    try {
+      const flagged = new Set(blob.flagged);
+      await Promise.all(
+        driveKeys.map(async (key) => {
+          const v = await kv.get(`flag:${key}`);
+          if (v !== null) flagged.add(key);
+        }),
+      );
+      return { status: "ok", flagged, hidden: blob.hidden };
+    } catch (e) {
+      console.warn("[tg-search] drive flag lookup failed:", e && e.message);
+      return { status: "degraded", flagged: new Set(), hidden: new Set() };
+    }
+  }
   // Blob missing/malformed: legacy per-row gets. Any KV failure
   // here degrades the whole page — never a silent unflag.
   try {
@@ -607,6 +715,12 @@ async function flagStateForRows(env, rows) {
     const hidden = new Set();
     await Promise.all(
       (rows || []).map(async (r) => {
+        const dkey = driveFlagKey(r.url);
+        if (dkey) {
+          const f = await kv.get(`flag:${dkey}`);
+          if (f !== null) flagged.add(dkey);
+          return;
+        }
         const parsed = parsePostUrl(r.url);
         if (!parsed) return;
         const key = `${parsed.handle}:${parsed.postId}`;
@@ -724,7 +838,9 @@ async function visibleResults(env, rows, includeUrl, limit) {
   let hiddenCount = 0;
   for (const r of rows || []) {
     const parsed = parsePostUrl(r.url);
-    const key = parsed ? `${parsed.handle}:${parsed.postId}` : null;
+    // Drive rows use the drive:<fileId> key; Telegram rows the
+    // handle:postId key. Anything else has no denylist identity.
+    const key = driveFlagKey(r.url) || (parsed ? `${parsed.handle}:${parsed.postId}` : null);
     if (key && state.hidden.has(key)) {
       hiddenCount++;
       continue;
@@ -883,7 +999,26 @@ async function d1Coverage(db, env) {
 // `source` (optional) restricts to one channel/group handle (exact match
 // on books.source). With no query words (empty q) and a source, it lists
 // that library's books by id order instead of FTS rank.
-async function d1Search(db, match, limit, offset, source, format) {
+// Drive-visibility clause (WAVE 4, WS8 — see the header docs). `vis`
+// is { hasRegistry, viewerTgId, isOwner } (built in onRequest). When
+// the registry is absent the join/clause are empty strings — the
+// legacy no-filter queries, so search can never 500 on an older D1.
+function driveVisibility(vis) {
+  if (!vis || !vis.hasRegistry) return { join: "", clause: "", params: [], libCol: "" };
+  return {
+    join:
+      " LEFT JOIN drive_libraries dl ON b.kind = 'drive' " +
+      "AND dl.folder_id = substr(b.source, 7)",
+    clause:
+      " AND (b.kind != 'drive' OR dl.folder_id IS NULL OR dl.visibility = 'public'" +
+      " OR (dl.visibility IN ('private', 'pending_public') AND dl.submitter_tg_id = ?)" +
+      " OR (dl.visibility = 'pending_public' AND ? = 1))",
+    params: [vis.viewerTgId || -1, vis.isOwner ? 1 : 0],
+    libCol: ", dl.title AS library_title",
+  };
+}
+
+async function d1Search(db, match, limit, offset, source, format, vis) {
   const hasSource = !!(source && source.trim());
   const srcClause = hasSource ? " AND b.source = ?" : "";
   const srcParams = hasSource ? [source.trim()] : [];
@@ -893,42 +1028,43 @@ async function d1Search(db, match, limit, offset, source, format) {
   const hasFormat = !!(format && typeof format === "string" && format.trim());
   const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
   const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
+  const dv = driveVisibility(vis);
   if (!match) {
     // Empty query + source: plain browse of one library.
     const countRes = await db
       .prepare(
-        "SELECT COUNT(*) AS n FROM books b WHERE 1=1" +
-          (hasSource ? " AND b.source = ?" : "") + fmtClause,
+        "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE 1=1" +
+          (hasSource ? " AND b.source = ?" : "") + fmtClause + dv.clause,
       )
-      .bind(...srcParams, ...fmtParams)
+      .bind(...srcParams, ...fmtParams, ...dv.params)
       .first();
     const total = countRes ? Number(countRes.n) || 0 : 0;
     if (total === 0) return { total: 0, rows: [] };
     const { results } = await db
       .prepare(
-        "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
-          "FROM books b WHERE 1=1" + srcClause + fmtClause + " ORDER BY b.id LIMIT ? OFFSET ?",
+        "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
+          " FROM books b" + dv.join + " WHERE 1=1" + srcClause + fmtClause + dv.clause + " ORDER BY b.id LIMIT ? OFFSET ?",
       )
-      .bind(...srcParams, ...fmtParams, limit, offset)
+      .bind(...srcParams, ...fmtParams, ...dv.params, limit, offset)
       .all();
     return { total, rows: results || [] };
   }
   const countRes = await db
     .prepare(
-      "SELECT COUNT(*) AS n FROM books b WHERE b.id IN " +
-        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause + fmtClause,
+      "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE b.id IN " +
+        "(SELECT rowid FROM books_fts WHERE books_fts MATCH ?)" + srcClause + fmtClause + dv.clause,
     )
-    .bind(match, ...srcParams, ...fmtParams)
+    .bind(match, ...srcParams, ...fmtParams, ...dv.params)
     .first();
   const total = countRes ? Number(countRes.n) || 0 : 0;
   if (total === 0) return { total: 0, rows: [] };
   const { results } = await db
     .prepare(
-      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
-        "FROM books_fts f JOIN books b ON b.id = f.rowid " +
-        "WHERE f.books_fts MATCH ?" + srcClause + fmtClause + " ORDER BY bm25(books_fts, 3.0, 1.0) LIMIT ? OFFSET ?",
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
+        " FROM books_fts f JOIN books b ON b.id = f.rowid " + dv.join +
+        " WHERE f.books_fts MATCH ?" + srcClause + fmtClause + dv.clause + " ORDER BY bm25(books_fts, 3.0, 1.0) LIMIT ? OFFSET ?",
     )
-    .bind(match, ...srcParams, ...fmtParams, limit, offset)
+    .bind(match, ...srcParams, ...fmtParams, ...dv.params, limit, offset)
     .all();
   return { total, rows: results || [] };
 }
@@ -941,10 +1077,10 @@ async function d1Search(db, match, limit, offset, source, format) {
 // visibleResults can collapse same-title reposts and still return
 // `limit` distinct books; `total` is the full match count, not the
 // fetched page. Exported for tests.
-export async function d1SearchLadder(db, words, limit, offset, source, format) {
+export async function d1SearchLadder(db, words, limit, offset, source, format, vis) {
   const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
   for (const tier of ladderQueries(words)) {
-    const found = await d1Search(db, tier.expr, fetchLimit, offset, source, format);
+    const found = await d1Search(db, tier.expr, fetchLimit, offset, source, format, vis);
     if (found.total > 0) return { ...found, match: tier.match };
   }
   return { total: 0, rows: [], match: null };
@@ -965,6 +1101,11 @@ function toResult(row, flagged, includeUrl) {
     // delivery identity, not displayed text.
     source: flagged ? row.source : null,
     kind: row.kind || "channel",
+    // Drive rows only: the library display name from the registry
+    // (e.g. "Oriental Music"); null for Telegram rows and for Drive
+    // rows whose library has no registry row. The website renders it
+    // (book.js formats line), never the raw drive:<folderId> source.
+    library: row.library_title || null,
     formats: ext ? [ext] : [],
     flagged: !!flagged,
     get: links.get,
@@ -1014,6 +1155,24 @@ const SENDABLE_FORMATS = new Set(["epub", "pdf", "doc", "docx", "txt"]);
 export function gatedLinks(row, flagged) {
   const none = { get: null, send: null, read: null };
   if (flagged) return none;
+  // Drive rows: send-by-email + read-online only. There is NO
+  // /kindle/get delivery page for Drive books (kindle/get.js knows
+  // only lib=tg), so `get` stays null — the website falls back to
+  // the direct send link for them (book.js), never to /kindle/get.
+  const drive = parseDriveFileUrl(row.url);
+  if (drive) {
+    const fmt = (row.ext || "").trim().toLowerCase();
+    const title = encodeURIComponent(row.title || "");
+    const base = `lib=drive&id=${encodeURIComponent(drive.fileId)}`;
+    const out = { ...none };
+    if (SENDABLE_FORMATS.has(fmt)) {
+      out.send = `/api/send-to-kindle?${base}&f=${fmt}&t=${title}`;
+    }
+    if (fmt === "epub") {
+      out.read = `/site/reader/?${base}&f=epub&title=${title}`;
+    }
+    return out;
+  }
   const parsed = parsePostUrl(row.url);
   if (!parsed || parsed.handle === "c") return none;
   const fmt = (row.ext || "").trim().toLowerCase();
@@ -1091,7 +1250,7 @@ export function isSmartSearch(request, env) {
 /** One trigram search: OR of the query words against books_trigram
  *  (substring match), rank order, bounded. Same row shape as
  *  d1Search. Returns { total, rows }. */
-async function d1SearchTrigram(db, words, limit, offset, source, format) {
+async function d1SearchTrigram(db, words, limit, offset, source, format, vis) {
   const match = words.map(ftsPhrase).join(" OR ");
   const hasSource = !!(source && source.trim());
   const srcClause = hasSource ? " AND b.source = ?" : "";
@@ -1099,22 +1258,23 @@ async function d1SearchTrigram(db, words, limit, offset, source, format) {
   const hasFormat = !!(format && typeof format === "string" && format.trim());
   const fmtClause = hasFormat ? " AND b.ext = ? COLLATE NOCASE" : "";
   const fmtParams = hasFormat ? [format.trim().toLowerCase()] : [];
+  const dv = driveVisibility(vis);
   const countRes = await db
     .prepare(
-      "SELECT COUNT(*) AS n FROM books b WHERE b.id IN " +
-        "(SELECT rowid FROM books_trigram WHERE books_trigram MATCH ?)" + srcClause + fmtClause,
+      "SELECT COUNT(*) AS n FROM books b" + dv.join + " WHERE b.id IN " +
+        "(SELECT rowid FROM books_trigram WHERE books_trigram MATCH ?)" + srcClause + fmtClause + dv.clause,
     )
-    .bind(match, ...srcParams, ...fmtParams)
+    .bind(match, ...srcParams, ...fmtParams, ...dv.params)
     .first();
   const total = countRes ? Number(countRes.n) || 0 : 0;
   if (total === 0) return { total: 0, rows: [] };
   const { results } = await db
     .prepare(
-      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date " +
-        "FROM books_trigram f JOIN books b ON b.id = f.rowid " +
-        "WHERE f.books_trigram MATCH ?" + srcClause + fmtClause + " ORDER BY f.rank LIMIT ? OFFSET ?",
+      "SELECT b.id, b.title, b.author, b.source, b.kind, b.ext, b.size, b.url, b.date" + dv.libCol +
+        " FROM books_trigram f JOIN books b ON b.id = f.rowid " + dv.join +
+        " WHERE f.books_trigram MATCH ?" + srcClause + fmtClause + dv.clause + " ORDER BY f.rank LIMIT ? OFFSET ?",
     )
-    .bind(match, ...srcParams, ...fmtParams, limit, offset)
+    .bind(match, ...srcParams, ...fmtParams, ...dv.params, limit, offset)
     .all();
   return { total, rows: results || [] };
 }
@@ -1330,7 +1490,7 @@ function trigramScore(row, queryTrigrams) {
  *  trigram-OR returns junk for gibberish — one shared trigram is
  *  not a match), (b) the nonsense guard on OR-tier wins,
  *  (c) did-you-mean on zero/weak results. */
-async function applySmartSearch(db, words, found, limit, offset, source, format) {
+async function applySmartSearch(db, words, found, limit, offset, source, format, vis) {
   const fetchLimit = Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH);
   try {
     // Rescue: the ladder found nothing — try trigram similarity
@@ -1338,7 +1498,7 @@ async function applySmartSearch(db, words, found, limit, offset, source, format)
     // candidates sharing >=25% of the smaller trigram set.
     if (found.total === 0) {
       const triWords = [...new Set(words.flatMap(wordTrigrams))];
-      const tri = await d1SearchTrigram(db, triWords, fetchLimit, offset, source, format);
+      const tri = await d1SearchTrigram(db, triWords, fetchLimit, offset, source, format, vis);
       if (tri.total > 0) {
         const qSet = new Set(triWords);
         const kept = tri.rows
@@ -1419,7 +1579,7 @@ export async function onRequest(context) {
   // long query is a 400 too — both used to reach the database unchecked.
   if (source && !SOURCE_RE.test(source)) {
     return json(
-      { ok: false, error: "bad source — use a channel or group handle (letters, digits, underscore)" },
+      { ok: false, error: "bad source — use a channel or group handle (letters, digits, underscore) or drive:<folderId>" },
       400,
     );
   }
@@ -1445,6 +1605,21 @@ export async function onRequest(context) {
     const suggestions = await d1Autocomplete(db, suggestRaw, 10);
     return json({ ok: true, suggest: suggestRaw, results: suggestions });
   }
+
+  // Drive-visibility context (WAVE 4, WS8 — see the header docs):
+  // the viewer is identified by ?fp= (the catalog fingerprint), the
+  // owner by env.RLIBOOK_OWNER_ID (same value as the bot's wrangler
+  // var; OWNER_TG_ID accepted as an alias). Anonymous viewers see
+  // public libraries only. The registry probe is one tiny
+  // sqlite_master lookup; when the table is absent the search falls
+  // back to the legacy no-filter queries.
+  const viewerTgId = await verifyFingerprint(env, (url.searchParams.get("fp") || "").trim());
+  const ownerId = Number(((env && (env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID)) || "").toString().trim());
+  const vis = {
+    hasRegistry: await hasDriveRegistry(db),
+    viewerTgId: viewerTgId || -1,
+    isOwner: viewerTgId !== null && Number.isSafeInteger(ownerId) && ownerId > 0 && ownerId === viewerTgId,
+  };
 
   // Only an authenticated bot caller gets the raw t.me post URL in
   // results (see isBotRequest). Everyone else gets the gated links.
@@ -1497,7 +1672,7 @@ export async function onRequest(context) {
         return json({ ok: true, ...cov, flagStatus: "degraded", book: out });
       }
       const parsed = parsePostUrl(row.url);
-      const key = parsed ? `${parsed.handle}:${parsed.postId}` : null;
+      const key = driveFlagKey(row.url) || (parsed ? `${parsed.handle}:${parsed.postId}` : null);
       if (key && state.hidden.has(key)) {
         return json({ ok: true, ...cov, flagStatus: state.status, book: null });
       }
@@ -1533,7 +1708,7 @@ export async function onRequest(context) {
     try {
       // Browse over-fetches like search (see DEDUP_OVERFETCH): the
       // same title can be reposted inside one library too.
-      const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source, format);
+      const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source, format, vis);
       if (found.total === 0) {
         return json({ ok: true, q, source, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
       }
@@ -1569,10 +1744,10 @@ export async function onRequest(context) {
     // applySmartSearch); without it the ladder is byte-identical
     // to before. Every tier is constrained to the format token
     // when one was given (see d1SearchLadder).
-    let found = await d1SearchLadder(db, searchWords, limit, offset, source, format);
+    let found = await d1SearchLadder(db, searchWords, limit, offset, source, format, vis);
     let suggestion = null;
     if (isSmartSearch(request, env)) {
-      const smart = await applySmartSearch(db, searchWords, found, limit, offset, source, format);
+      const smart = await applySmartSearch(db, searchWords, found, limit, offset, source, format, vis);
       found = smart.found;
       suggestion = smart.suggestion;
     }

@@ -10,9 +10,11 @@
 // URL contract (the /book owner links here — see README.md):
 //   /site/reader/?lib=hindawi&id=13028368
 //       -> Hindawi public-domain EPUB, direct from hindawi.org.
-//   /site/reader/?lib=khazendar|sahwa|electronic&id=<drive id>
+//   /site/reader/?lib=khazendar|sahwa|electronic|drive&id=<drive id>
 //       -> Google Drive file (CORS may block the in-browser fetch;
-//          the reader says so honestly — see corsRisk).
+//          the reader says so honestly — see corsRisk). lib=drive is
+//          a Drive-library book (kind='drive' in D1); the other three
+//          are the static Drive libraries.
 //   /site/reader/?lib=doab&id=<url-encoded full file URL>
 //       -> DOAB file URL (the DOAB index stores the full URL as id).
 //   /site/reader/?lib=tg&h=<handle>&p=<post>&f=epub
@@ -73,7 +75,7 @@
     "gutenberg.org",
   ];
 
-  var DRIVE_LIBS = { khazendar: 1, sahwa: 1, electronic: 1 };
+  var DRIVE_LIBS = { khazendar: 1, sahwa: 1, electronic: 1, drive: 1 };
   var SAMPLE_FILES = {
     "home-en": { url: "/files/RliBook-Home-en.epub", title: "RliBook — Home" },
     "home-ar": { url: "/files/RliBook-Home-ar.epub", title: "RliBook — Home" },

@@ -204,6 +204,12 @@ check("resolveAcquisitionUrl doab", resolveAcquisitionUrl("doab", "https://libra
   === "https://library.oapen.org/x.epub");
 check("resolveAcquisitionUrl bad lib", resolveAcquisitionUrl("nope", "123") === null);
 check("resolveAcquisitionUrl bad drive id", resolveAcquisitionUrl("khazendar", "a b") === null);
+// WAVE 4, WS8 — lib=drive (Drive-library books from /book): the file
+// id resolves through the same kind="drive" branch as the static libs.
+check("resolveAcquisitionUrl lib=drive", resolveAcquisitionUrl("drive", "1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX")
+  === "https://drive.google.com/uc?id=1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX&export=download");
+check("resolveAcquisitionUrl lib=drive bad id", resolveAcquisitionUrl("drive", "a b") === null);
+check("safeFilename lib=drive stamps drive", safeFilename("نزهة الزمان", "drive", "1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX", "pdf") === "نزهة_الزمان_RliBook_drive.pdf");
 check("resolveAcquisitionUrl bad hindawi id", resolveAcquisitionUrl("hindawi", "abc") === null);
 check("resolveAcquisitionUrl doab id over 2048 chars -> null",
   resolveAcquisitionUrl("doab", "https://example.com/" + "x".repeat(2040) + ".epub") === null);

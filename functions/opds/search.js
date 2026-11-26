@@ -114,6 +114,12 @@ export async function onRequest(context) {
     {slug: "electronic", label: "المكتبة الإلكترونية", kind: "drive"},
     {slug: "hindawi", label: "مكتبة صفحات - هنداوي", kind: "hindawi"},
     {slug: "doab", label: "DOAB", kind: "doab"},
+    // Drive libraries (WAVE 4, WS8): /drive/search-index.json is built
+    // by telegram/tbi/drive_opds.py from the D1 batch — PUBLIC
+    // libraries only (a private/pending library never enters it).
+    // Same kind="drive" branch below builds the uc download link
+    // from the Drive file id (b.i).
+    {slug: "drive", label: "مكتبات Drive", kind: "drive"},
   ];
   const needle = q.toLowerCase();
   const hits = [];

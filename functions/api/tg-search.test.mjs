@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey, parseDriveFileUrl, driveFlagKey } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -82,6 +82,12 @@ const FIXTURES = [
   ["اختبار التكرار الأول", "كاتب أ", "repchan1", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan1/63", "اختبار التكرار الأول.epub"],
   ["اختبار التكرار الثاني", "كاتب ب", "repchan2", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan2/64", "اختبار التكرار الثاني.epub"],
   ["اختبار التكرار الثالث", "كاتب ج", "repchan3", "channel", "epub", "1.0 MB", "2026-11-20", "https://t.me/repchan3/65", "اختبار التكرار الثالث.epub"],
+  // Drive fixtures (WAVE 4, WS8 §31): one book per visibility type.
+  // No shard book contains "درايف", so q=الدرايف matches only these.
+  ["كتاب الدرايف العام", "مؤلف الدرايف", "drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", "كتاب الدرايف العام.epub"],
+  ["كتاب الدرايف الخاص", "مؤلف الدرايف", "drive:PRIVFOLDERID1234567890", "drive", "pdf", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEPRIVFILEID01/view", "كتاب الدرايف الخاص.pdf"],
+  ["كتاب الدرايف المعلق", "مؤلف الدرايف", "drive:PENDFOLDERID1234567890", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEPENDFILEID01/view", "كتاب الدرايف المعلق.epub"],
+  ["كتاب الدرايف القديم", "مؤلف الدرايف", "drive:LEGACYFOLDER123456789", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVELEGFILEID001/view", "كتاب الدرايف القديم.epub"],
 ];
 const shard = JSON.parse(readFileSync(SHARD, "utf-8"));
 const rows = shard.books.slice(0, SAMPLE);
@@ -97,7 +103,24 @@ db.exec(`
   );
   CREATE VIRTUAL TABLE books_fts USING fts5(title, author, tokenize='unicode61 remove_diacritics 1');
   CREATE INDEX idx_books_source ON books(source);
+  CREATE TABLE drive_libraries (
+    folder_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
+    visibility TEXT NOT NULL DEFAULT 'public',
+    submitter_tg_id INTEGER, added_at TEXT NOT NULL DEFAULT ''
+  );
 `);
+// Drive registry rows (WAVE 4, WS8 §31): one of each visibility, plus
+// a legacy folder (F_LEG) with NO registry row — treated as public.
+const F_PUB = "1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP"; // Oriental Music (real)
+const F_PRIV = "PRIVFOLDERID1234567890";
+const F_PEND = "PENDFOLDERID1234567890";
+const F_LEG = "LEGACYFOLDER123456789";
+const insLib = db.prepare(
+  "INSERT INTO drive_libraries(folder_id,title,visibility,submitter_tg_id,added_at) VALUES (?,?,?,?,?)",
+);
+insLib.run(F_PUB, "Oriental Music", "public", null, "2026-11-22");
+insLib.run(F_PRIV, "مكتبة خاصة", "private", 111, "2026-11-26");
+insLib.run(F_PEND, "مكتبة معلقة", "pending_public", 111, "2026-11-26");
 // kind comes from the manifest; the test shard is one file, so resolve
 // kind from a tiny built-in map of the sources present in the sample
 // (channel unless the name is a known group in this sample).
@@ -113,6 +136,15 @@ const norm = (s) =>
 const insBook = db.prepare(
   "INSERT INTO books(id,title,author,source,kind,ext,size,date,url,filename) VALUES (?,?,?,?,?,?,?,?,?,?)",
 );
+// The live shard can list the same (url, filename) twice (a multi-file
+// post re-indexed — main HEAD index-0.json has 3 such pairs in the
+// first 5000 rows, all rwaiaty4); the UNIQUE(url, filename) constraint
+// used to crash the whole test run at setup. Shard rows use INSERT OR
+// IGNORE and the FTS row follows only when the book row landed.
+// Fixtures keep the strict INSERT (deterministic, unique).
+const insBookIgnore = db.prepare(
+  "INSERT OR IGNORE INTO books(id,title,author,source,kind,ext,size,date,url,filename) VALUES (?,?,?,?,?,?,?,?,?,?)",
+);
 const insFts = db.prepare("INSERT INTO books_fts(rowid,title,author) VALUES (?,?,?)");
 rows.forEach((b, i) => {
   const id = i + 1;
@@ -122,8 +154,8 @@ rows.forEach((b, i) => {
   const postUrl = typeof b[8] === "string" && b[8].startsWith("http")
     ? b[8]
     : (b[8] && b[9] ? `https://t.me/${b[8]}/${b[9]}` : "");
-  insBook.run(id, b[0], b[1] || "", b[5], KIND[b[5]] || "channel", b[3], b[4], b[7], postUrl, b[2] || "");
-  insFts.run(id, norm(b[0]), norm(b[1] || ""));
+  const res = insBookIgnore.run(id, b[0], b[1] || "", b[5], KIND[b[5]] || "channel", b[3], b[4], b[7], postUrl, b[2] || "");
+  if (res.changes) insFts.run(id, norm(b[0]), norm(b[1] || ""));
 });
 // Deterministic fixtures (see above) — high ids, never colliding
 // with the shard sample (1..SAMPLE).
@@ -132,7 +164,8 @@ FIXTURES.forEach((f, j) => {
   insBook.run(id, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]);
   insFts.run(id, norm(f[0]), norm(f[1]));
 });
-const TOTAL_ROWS = rows.length + FIXTURES.length;
+// Actual row count (OR IGNORE above may have skipped shard duplicates).
+const TOTAL_ROWS = db.prepare("SELECT COUNT(*) AS n FROM books").get().n;
 console.log(`test DB: ${rows.length} books from ${SHARD} + ${FIXTURES.length} fixtures`);
 
 // --- minimal D1 mock (the exact API the Function uses) ---------------
@@ -244,9 +277,9 @@ const D1 = mockD1(db);
   check("1i4 reader link present (EPUB)", hit && hit.read !== null && hit.read.startsWith("/site/reader/?lib=tg&h=kotobkhana&p=7559&f=epub"), hit && hit.read);
   check("1j flagged false without KV", hit && hit.flagged === false);
   check("1k result shape keys (bot + size allowed, optional)",
-    hit && ["title", "author", "source", "kind", "formats", "flagged", "get", "send", "read", "bot"].every((k) => k in hit)
+    hit && ["title", "author", "source", "kind", "library", "formats", "flagged", "get", "send", "read", "bot"].every((k) => k in hit)
     && !("url" in hit)
-    && Object.keys(hit).every((k) => ["title", "author", "source", "kind", "formats", "flagged", "get", "send", "read", "bot", "size"].includes(k)));
+    && Object.keys(hit).every((k) => ["title", "author", "source", "kind", "library", "formats", "flagged", "get", "send", "read", "bot", "size"].includes(k)));
 }
 
 // 2. Author search.
@@ -620,8 +653,13 @@ ZEBRA.forEach((f, j) => {
   check("13b hidden post -> its only matching file is gone (total 0)",
     bodyB.total === 0 && bodyB.results.length === 0, `total=${bodyB.total}`);
   const { body: bodyC } = await call({ TG_D1: D1, RLIBOOK_KV: kvZ }, "/api/tg-search?q=" + encodeURIComponent("Zebra"));
-  check("13c one hidden key drops BOTH files on the post (only the other post remains)",
-    bodyC.total === 1 && bodyC.results.length === 1 && bodyC.results[0].title === "Zebra Other Book",
+  // NOTE (2026-11-26): main HEAD's shard contains a real book
+  // "RM.DL.Z is for Zebra", so q=Zebra matches 3 books and hiding
+  // the 2-file post leaves 2, not 1 — the total is shard-dependent,
+  // the behaviour (both hidden files gone, other post remains) is not.
+  check("13c one hidden key drops BOTH files on the post (other fixture post remains)",
+    (bodyC.results || []).some((r) => r.title === "Zebra Other Book")
+    && !(bodyC.results || []).some((r) => r.title === "Zebra Control Panel Book" || r.title === "Zebra Second File Book"),
     `total=${bodyC.total} titles=${JSON.stringify((bodyC.results || []).map((r) => r.title))}`);
   const { body: bodyD } = await call({ TG_D1: D1, RLIBOOK_KV: kvZ }, "/api/tg-search?source=testchannel&limit=5");
   check("13d browse of a hidden library drops to total 0",
@@ -873,8 +911,9 @@ ZEBRA.forEach((f, j) => {
     bodyZ.total === 0 && bodyZ.results.length === 0, `total=${bodyZ.total}`);
   const { body: bodyZ2 } = await call({ TG_D1: D1, RLIBOOK_KV: countingKV({ "flags:all": blob }) },
     "/api/tg-search?q=" + encodeURIComponent("Zebra"));
-  check("20g blob-hidden post drops BOTH files on it (only the other post remains)",
-    bodyZ2.total === 1 && bodyZ2.results.length === 1 && bodyZ2.results[0].title === "Zebra Other Book",
+  check("20g blob-hidden post drops BOTH files on it (other fixture post remains)",
+    (bodyZ2.results || []).some((r) => r.title === "Zebra Other Book")
+    && !(bodyZ2.results || []).some((r) => r.title === "Zebra Control Panel Book" || r.title === "Zebra Second File Book"),
     `total=${bodyZ2.total}`);
   // The blob wins over a stale per-row key: a flag: key that is NOT
   // in the blob does not flag the book (the blob is the denylist).
@@ -1206,6 +1245,115 @@ ZEBRA.forEach((f, j) => {
     browseBody.format === "epub" && (browseBody.results || []).length > 0
     && (browseBody.results || []).every((r) => r.formats.includes("EPUB")),
     `format=${browseBody.format} total=${browseBody.total}`);
+}
+
+// 31. Drive libraries (WAVE 4, WS8 — two-type model): visibility via
+// the drive_libraries registry + the viewer's ?fp= fingerprint.
+//   public (Oriental Music) + legacy-no-registry-row: everyone.
+//   private: only its submitter (tg_id 111). pending_public:
+//   submitter + owner (RLIBOOK_OWNER_ID 999) only.
+// Fingerprints are 22-char tokens (same shape as the bot catalog
+// fingerprint); the KV fp:<token> value is { tg_id, created_at }.
+const FP_SUB = "1111111111111111111111"; // tg_id 111 (submitter)
+const FP_OTHER = "2222222222222222222222"; // tg_id 222 (stranger)
+const FP_OWNER = "3333333333333333333333"; // tg_id 999 (owner)
+const DRIVE_Q = "/api/tg-search?q=" + encodeURIComponent("الدرايف");
+function driveEnv(kvEntries = {}) {
+  return { TG_D1: D1, RLIBOOK_KV: mockKV(kvEntries), RLIBOOK_OWNER_ID: "999" };
+}
+function fpEntries() {
+  return {
+    ["fp:" + FP_SUB]: JSON.stringify({ tg_id: 111, created_at: 1760000000 }),
+    ["fp:" + FP_OTHER]: JSON.stringify({ tg_id: 222, created_at: 1760000000 }),
+    ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: 999, created_at: 1760000000 }),
+  };
+}
+const driveTitles = (body) => (body.results || []).map((r) => r.title);
+{
+  // 31a anonymous: public + legacy only.
+  const { body } = await call(driveEnv(fpEntries()), DRIVE_Q);
+  check("31a anonymous sees the public Drive book", driveTitles(body).includes("كتاب الدرايف العام"), JSON.stringify(driveTitles(body)));
+  check("31a2 anonymous sees the legacy (no registry row) Drive book", driveTitles(body).includes("كتاب الدرايف القديم"));
+  check("31a3 anonymous does NOT see the private Drive book", !driveTitles(body).includes("كتاب الدرايف الخاص"));
+  check("31a4 anonymous does NOT see the pending Drive book", !driveTitles(body).includes("كتاب الدرايف المعلق"));
+  check("31a5 anonymous total is 2", body.total === 2, `total=${body.total}`);
+  const pub = (body.results || []).find((r) => r.title === "كتاب الدرايف العام");
+  check("31a6 public Drive book: kind drive + library name, source hidden",
+    pub && pub.kind === "drive" && pub.library === "Oriental Music" && pub.source === null, JSON.stringify(pub));
+  const leg = (body.results || []).find((r) => r.title === "كتاب الدرايف القديم");
+  check("31a7 legacy Drive book: kind drive + library null (no registry row)",
+    leg && leg.kind === "drive" && leg.library === null, JSON.stringify(leg));
+  check("31a8 Drive EPUB: send link lib=drive, reader link, NO /kindle/get link",
+    pub && pub.send !== null && pub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub&t=")
+    && pub.read !== null && pub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub&title=")
+    && pub.get === null, JSON.stringify(pub));
+  // 31b submitter (fp=FP_SUB): all four.
+  const { body: subBody } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_SUB);
+  check("31b submitter sees all four Drive books",
+    ["كتاب الدرايف العام", "كتاب الدرايف الخاص", "كتاب الدرايف المعلق", "كتاب الدرايف القديم"].every((t) => driveTitles(subBody).includes(t)),
+    JSON.stringify(driveTitles(subBody)));
+  const priv = (subBody.results || []).find((r) => r.title === "كتاب الدرايف الخاص");
+  check("31b2 private Drive PDF: send link, no reader link (PDF is not readable online)",
+    priv && priv.send !== null && priv.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPRIVFILEID01&f=pdf&t=")
+    && priv.read === null && priv.get === null, JSON.stringify(priv));
+  // 31c stranger (fp=FP_OTHER): public + legacy only.
+  const { body: othBody } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_OTHER);
+  check("31c stranger sees public + legacy only",
+    driveTitles(othBody).includes("كتاب الدرايف العام") && driveTitles(othBody).includes("كتاب الدرايف القديم")
+    && !driveTitles(othBody).includes("كتاب الدرايف الخاص") && !driveTitles(othBody).includes("كتاب الدرايف المعلق"),
+    JSON.stringify(driveTitles(othBody)));
+  // 31d owner (fp=FP_OWNER): public + legacy + pending, NOT private.
+  const { body: ownBody } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_OWNER);
+  check("31d owner sees public + legacy + pending, NOT private",
+    driveTitles(ownBody).includes("كتاب الدرايف العام") && driveTitles(ownBody).includes("كتاب الدرايف القديم")
+    && driveTitles(ownBody).includes("كتاب الدرايف المعلق") && !driveTitles(ownBody).includes("كتاب الدرايف الخاص"),
+    JSON.stringify(driveTitles(ownBody)));
+  // 31e per-library browse (?source=drive:<folderId>, empty q).
+  const { body: brPub } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:" + F_PUB));
+  check("31e anonymous browses the public Drive library",
+    brPub.total === 1 && driveTitles(brPub).includes("كتاب الدرايف العام"), `total=${brPub.total}`);
+  const { body: brPriv } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:" + F_PRIV));
+  check("31e2 anonymous browsing the private Drive library gets nothing",
+    brPriv.total === 0 && (brPriv.results || []).length === 0, `total=${brPriv.total}`);
+  // 31f flagged Drive book (legacy per-row flag:drive:<fileId> key):
+  // shown with the flag, source populated, NO delivery links, and NO
+  // bot deep link (the bot has no dl_drive_ link).
+  const { body: flBody } = await call(
+    driveEnv({ ...fpEntries(), "flag:drive:DRIVEPUBFILEID001": "1" }), DRIVE_Q);
+  const fl = (flBody.results || []).find((r) => r.title === "كتاب الدرايف العام");
+  check("31f flagged Drive book: flagged + source populated + no links + no bot link",
+    fl && fl.flagged === true && fl.source === "drive:" + F_PUB
+    && fl.get === null && fl.send === null && fl.read === null && fl.bot === null, JSON.stringify(fl));
+  // 31g flagged Drive book via the flags:all blob (drive: entry).
+  const blob = JSON.stringify({ flagged: ["drive:DRIVEPUBFILEID001"], hidden: [] });
+  const { body: blBody } = await call(driveEnv({ ...fpEntries(), "flags:all": blob }), DRIVE_Q);
+  const bl = (blBody.results || []).find((r) => r.title === "كتاب الدرايف العام");
+  check("31g blob with a drive: entry flags the Drive book", bl && bl.flagged === true, JSON.stringify(bl && bl.flagged));
+  // 31h unit checks: parseFlagsBlob accepts drive: entries; the
+  // Drive URL helpers parse the file id and build the flag key.
+  const pb = parseFlagsBlob({ flagged: ["drive:DRIVEPUBFILEID001", "kotobkhana:7559"], hidden: [] });
+  check("31h parseFlagsBlob keeps drive: entries",
+    pb && pb.flagged.has("drive:DRIVEPUBFILEID001") && pb.flagged.has("kotobkhana:7559"), JSON.stringify(pb && [...pb.flagged]));
+  check("31h2 parseDriveFileUrl extracts the file id",
+    JSON.stringify(parseDriveFileUrl("https://drive.google.com/file/d/DRIVEPUBFILEID001/view")) === JSON.stringify({ fileId: "DRIVEPUBFILEID001" }));
+  check("31h3 parseDriveFileUrl returns null for a t.me URL",
+    parseDriveFileUrl("https://t.me/kotobkhana/7559") === null);
+  check("31h4 driveFlagKey builds drive:<fileId>",
+    driveFlagKey("https://drive.google.com/file/d/DRIVEPUBFILEID001/view") === "drive:DRIVEPUBFILEID001"
+    && driveFlagKey("https://t.me/kotobkhana/7559") === null);
+  // 31i unit checks: gatedLinks for Drive rows.
+  const gEpub = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, false);
+  check("31i gatedLinks Drive EPUB: send + read, get null",
+    gEpub.send !== null && gEpub.send.startsWith("/api/send-to-kindle?lib=drive&id=DRIVEPUBFILEID001&f=epub")
+    && gEpub.read !== null && gEpub.read.startsWith("/site/reader/?lib=drive&id=DRIVEPUBFILEID001&f=epub") && gEpub.get === null,
+    JSON.stringify(gEpub));
+  const gPdf = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPRIVFILEID01/view", ext: "pdf", title: "كتاب الدرايف الخاص" }, false);
+  check("31i2 gatedLinks Drive PDF: send only", gPdf.send !== null && gPdf.read === null && gPdf.get === null, JSON.stringify(gPdf));
+  const gFlag = gatedLinks({ url: "https://drive.google.com/file/d/DRIVEPUBFILEID001/view", ext: "epub", title: "كتاب الدرايف العام" }, true);
+  check("31i3 gatedLinks flagged Drive: all null", gFlag.get === null && gFlag.send === null && gFlag.read === null, JSON.stringify(gFlag));
+  // 31j bad Drive source: a folder id under 10 chars is a 400.
+  const { status: badStatus } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:short"));
+  check("31j source=drive:short -> 400", badStatus === 400, `status=${badStatus}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

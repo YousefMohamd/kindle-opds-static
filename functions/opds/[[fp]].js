@@ -59,9 +59,11 @@ const OSD_CT = "application/opensearchdescription+xml; charset=utf-8";
 // Same fingerprint shape as the bot (src/catalog.ts isFingerprint).
 const FP_RE = /^[A-Za-z0-9_-]{22}$/;
 
-// The six libraries, Arabic-first — same titles, ids, hrefs, counts and
+// The seven libraries, Arabic-first — same titles, ids, hrefs, counts and
 // updated dates as the combined catalog (index.xml). Counts are from the
 // 2026-11-03/05 snapshot; refresh them when the catalog snapshot is rebuilt.
+// The Drive entry is the public-libraries navigation feed built by
+// telegram/tbi/drive_opds.py (public libraries only).
 const LIBRARIES = [
   { title: "خازندار المكتبة العربية", id: "urn:static:libraries:khazendar", href: "/khazendar/index.xml", content: "6392 book", updated: "2026-11-04T00:00:00Z" },
   { title: "مكتبة صحوه", id: "urn:static:libraries:sahwa", href: "/sahwa/index.xml", content: "1593 book", updated: "2026-11-04T00:00:00Z" },
@@ -69,16 +71,19 @@ const LIBRARIES = [
   { title: "مكتبة صفحات - هنداوي", id: "urn:static:libraries:hindawi", href: "/hindawi/index.xml", content: "1745 book", updated: "2026-11-05T00:00:00Z" },
   { title: "DOAB", id: "urn:static:libraries:doab", href: "/doab/index.xml", content: "841 book", updated: "2026-11-05T00:00:00Z" },
   { title: "Wikisource (English)", id: "urn:static:libraries:wikisource", href: "https://ws-export.wmcloud.org/opds/en/Ready_for_export.xml", content: "OPDS catalog", updated: "2026-11-05T00:00:00Z" },
+  { title: "مكتبات Drive", id: "urn:static:libraries:drive", href: "/drive/index.xml", content: "397 book", updated: "2026-11-26T00:00:00Z" },
 ];
 
-// The five searchable libraries — same list, order and kinds as
+// The six searchable libraries — same list, order and kinds as
 // functions/opds/search.js (Wikisource is browse-only, no index).
+// The Drive entry searches /drive/search-index.json (public only).
 const SEARCH_LIBS = [
   { slug: "khazendar", label: "خازندار المكتبة العربية", kind: "drive" },
   { slug: "sahwa", label: "مكتبة صحوه", kind: "drive" },
   { slug: "electronic", label: "المكتبة الإلكترونية", kind: "drive" },
   { slug: "hindawi", label: "مكتبة صفحات - هنداوي", kind: "hindawi" },
   { slug: "doab", label: "DOAB", kind: "doab" },
+  { slug: "drive", label: "مكتبات Drive", kind: "drive" },
 ];
 
 const MAX_PUBLIC_RESULTS = 100; // same cap as the public search

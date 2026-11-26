@@ -221,7 +221,7 @@ wrangler d1 execute rlibook-tg --remote --file d1-batches/batch-0001.sql
 # Endpoint contract + search + flags, against a local SQLite built
 # from the real published shard (no network, no production D1/KV):
 node functions/api/tg-search.test.mjs
-# -> 25 passed, 0 failed (2026-11-12)
+# -> 246 passed, 0 failed (2026-11-26, after the Drive-visibility merge)
 
 # Population script end-to-end (schema + one generated batch -> the
 # real endpoint finds the books, normalization matches):
@@ -246,3 +246,28 @@ node verify-population.mjs        # (in the task working dir)
   odd ordering, consider boosting exact-title matches or newest-first.
 - **"Did you mean" in the endpoint:** the endpoint retries with the
   longest word only. The bot's own `suggestSearch` handles the rest.
+
+## Drive libraries (WAVE 4, WS8 — two-type model)
+
+- `source=drive:<folderId>` browses one Drive library (same `source`
+  param; empty `q` lists by id, capped by `limit`). A Drive library
+  is a `kind='drive'` row with `source='drive:<folderId>'`.
+- Results carry `kind: "drive"` and `library` (the display name from
+  the D1 `drive_libraries` registry, e.g. "Oriental Music"; null when
+  the library has no registry row). `source` stays hidden unless the
+  book is flagged, like every other result.
+- Visibility is enforced in SQL (count + rows agree): `public` for
+  everyone; `private` / `pending_public` only for the submitter
+  (identified by `?fp=` — the catalog fingerprint, verified against
+  KV `fp:`); `pending_public` also for the owner
+  (`RLIBOOK_OWNER_ID`). A library missing from the registry is
+  treated as public (legacy backfill). When the registry table does
+  not exist yet, the endpoint searches without the filter (never 500s).
+- Flagged Drive books use KV `flag:drive:<fileId>` (a t.me key cannot
+  address them); the flags:all blob may also carry `drive:<fileId>`
+  entries. `send-to-kindle.js` (lib=drive) checks the same key.
+- Delivery for Drive rows is send-by-email + read-online only
+  (`send` / `read` gated links); there is no `/kindle/get` delivery
+  page for Drive books and no bot deep link for a flagged Drive
+  book (the bot has no `dl_drive_` link — a flagged Drive book
+  shows 🚩 with the bot home link instead).

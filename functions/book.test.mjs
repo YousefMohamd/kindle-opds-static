@@ -131,7 +131,54 @@ const TG_PDF_RESULTS = [
   },
 ];
 
-let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | okMeta | xss | okPdf
+// Drive-library results (WAVE 4, WS8): the /api/tg-search reply shape
+// for kind="drive" rows — library name from the registry, gated links
+// pre-built (send + read for EPUB, send only for PDF, nothing when
+// flagged), get always null (no /kindle/get page for Drive books),
+// bot null for a flagged Drive book (the bot has no dl_drive_ link).
+const TG_DRIVE_RESULTS = [
+  {
+    title: "نزهة الزمان في تلحين محمد أفندي عثمان",
+    author: "محمد أفندي عثمان",
+    source: "drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP",
+    kind: "drive",
+    library: "Oriental Music",
+    formats: ["EPUB"],
+    flagged: false,
+    get: null,
+    send: "/api/send-to-kindle?lib=drive&id=DRIVEFILEEPUB123456&f=epub&t=%D9%86%D8%B2%D9%87%D8%A9%20%D8%A7%D9%84%D8%B2%D9%85%D8%A7%D9%86",
+    read: "/site/reader/?lib=drive&id=DRIVEFILEEPUB123456&f=epub&title=%D9%86%D8%B2%D9%87%D8%A9%20%D8%A7%D9%84%D8%B2%D9%85%D8%A7%D9%86",
+    bot: null,
+  },
+  {
+    title: "مجموعة قطع موسيقية شرقية",
+    author: "مؤلف مجهول",
+    source: "drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP",
+    kind: "drive",
+    library: "Oriental Music",
+    formats: ["PDF"],
+    flagged: false,
+    get: null,
+    send: "/api/send-to-kindle?lib=drive&id=1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX&f=pdf&t=%D9%85%D8%AC%D9%85%D9%88%D8%B9%D8%A9%20%D9%82%D8%B7%D8%B9",
+    read: null,
+    bot: null,
+  },
+  {
+    title: "كتاب درايف معلم",
+    author: "مؤلف تجريبي",
+    source: "drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP",
+    kind: "drive",
+    library: "Oriental Music",
+    formats: ["EPUB"],
+    flagged: true,
+    get: null,
+    send: null,
+    read: null,
+    bot: null,
+  },
+];
+
+let tgMode = "throw"; // throw | 503 | 500 | malformed | empty | ok | okMeta | xss | okPdf | okDrive
 let tgCalls = 0;
 let lastTgUrl = "";
 // Ratings mock (Blocks 9): "ok" serves a rating+description for the
@@ -175,6 +222,7 @@ globalThis.fetch = async (u) => {
     if (tgMode === "emptyFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 0, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: [] });
     if (tgMode === "okFull") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 42, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_OK_RESULTS });
     if (tgMode === "okPdf") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_PDF_RESULTS });
+    if (tgMode === "okDrive") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 3, limit: 10, offset: 0, coverage: { indexed: 422821, target: 422821, partial: false }, results: TG_DRIVE_RESULTS });
     if (tgMode === "okMeta") return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 5, limit: 10, offset: 0, coverage: { indexed: 323325, target: 323325, partial: false }, results: TG_META_RESULTS });
     if (tgMode === "xss") {
       return jsonRes({ ok: true, q: url.searchParams.get("q"), total: 1, limit: 10, offset: 0, results: [
@@ -1555,6 +1603,65 @@ const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
     && isTelegramUA("Kobo Touch 0390/4.45.23684") === false
     && isTelegramUA(DESKTOP_UA) === false && isTelegramUA("") === false
     && isTelegramUA(null) === false);
+}
+
+// ================= J. Drive-library results (WAVE 4, WS8) ===========
+console.log("J. Drive-library results:");
+tgMode = "okDrive";
+
+{
+  const r = await getBook("نزهة الزمان");
+  check("J1 drive cards render (both books, library name, no raw folder id)",
+    r.status === 200
+    && r.body.includes("نزهة الزمان في تلحين محمد أفندي عثمان")
+    && r.body.includes("مجموعة قطع موسيقية شرقية")
+    && r.body.includes("Oriental Music")
+    && !r.body.includes("drive:1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP"),
+    "status " + r.status);
+  check("J2 drive EPUB: send button lib=drive with the file id",
+    r.body.includes("/api/send-to-kindle?lib=drive")
+    && r.body.includes("id=DRIVEFILEEPUB123456")
+    && r.body.includes("f=epub"));
+  check("J3 drive EPUB: Read online button lib=drive (reader fetches Drive directly)",
+    r.body.includes("/site/reader/?lib=drive")
+    && r.body.includes("id=DRIVEFILEEPUB123456"));
+  check("J4 drive PDF: send button present, NO Read online button (EPUB only)",
+    r.body.includes("id=1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX")
+    && !r.body.includes("/site/reader/?lib=drive&amp;id=1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX"));
+  check("J5 flagged drive book: no send, no reader, flag note + bot home link (no dl_ deep link)",
+    r.body.includes("هذا الكتاب عليه علامة")
+    && !r.body.includes("id=DRIVEFILEFLAG123456")
+    && r.body.includes("https://t.me/RliBook_bot")
+    && !r.body.includes("start=dl_drive_"),
+    "status " + r.status);
+  check("J6 drive cards count as 3 results",
+    r.body.includes("وجدنا 3 نتيجة لـ"));
+  check("J7 email button for a Drive book is the DIRECT send link (no bot deep link — botSendLink needs h/p)",
+    r.body.includes("/api/send-to-kindle?lib=drive&amp;id=DRIVEFILEEPUB123456")
+    && !r.body.includes("start=send_"));
+}
+
+{
+  // fetchTelegramResults keeps Drive rows (the old t.me-only check
+  // dropped them — the Oriental Music gap) and keeps the library name.
+  const fetched = await fetchTelegramResults("https://rlibook.tech", "نزهة الزمان");
+  check("J8 fetchTelegramResults keeps drive rows",
+    fetched.available && fetched.results.some((x) => x.kind === "drive" && x.title.includes("نزهة الزمان")),
+    JSON.stringify(fetched.results.map((x) => x.kind)));
+  check("J8b fetchTelegramResults keeps the library name",
+    fetched.results.some((x) => x.kind === "drive" && x.library === "Oriental Music"));
+  // With a fingerprint, Telegram rows get the tg-send + Convert
+  // buttons — Drive rows must NOT (both endpoints accept lib=tg only).
+  const res = await onRequest({
+    request: new Request("https://rlibook.tech/book?q=" + encodeURIComponent("نزهة الزمان"),
+      { headers: { Cookie: "rlb_fp=cookie-fingerprint" } }),
+    env: {},
+  });
+  const bodyFp = await res.text();
+  check("J9 Drive rows: NO tg-send button even with a fingerprint",
+    !bodyFp.includes("/api/tg-send?"));
+  check("J9b Drive rows: NO Convert button even with a fingerprint",
+    !bodyFp.includes("حوّل إلى EPUB"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

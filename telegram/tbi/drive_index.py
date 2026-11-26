@@ -31,7 +31,13 @@ How a Drive book reaches the catalog:
      txt/doc/docx/cbz/cbr), and emits D1 batch SQL in the SAME format
      as telegram/tbi/d1_sync.py batch_sql(): one row in `books` + one
      in `books_fts` per book. kind='drive', source='drive:<folderId>',
-     url='https://drive.google.com/file/d/<fileId>/view'.
+     url='https://drive.google.com/file/d/<fileId>/view'. It also
+     emits a books JSON (--books-json, for drive_opds.py) and a
+     drive_libraries registry upsert (--registry-sql). NEW libraries
+     are PRIVATE to their submitter by default (--visibility private,
+     --submitter-tg-id <tg id>); see drive_registry.py for the
+     two-type model. Only PUBLIC libraries enter the static OPDS /
+     search-index files (drive_opds.py enforces that).
   4. Download: Drive files shared "Anyone with the link" can be
      fetched WITHOUT user OAuth — via the Drive API with an API key
      (files.get?alt=media) or via https://drive.usercontent.google.com/
@@ -64,6 +70,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -243,6 +250,7 @@ def to_book(item: dict, folder_id: str) -> dict:
         "date": (item.get("modifiedTime") or "")[:10],
         "url": f"https://drive.google.com/file/d/{file_id}/view",
         "filename": name,
+        "file_id": file_id,
     }
 
 
@@ -262,6 +270,27 @@ def main() -> int:
                     help="append one JSON line per indexed file "
                          "(folder_id, file_id, url, filename) — read back "
                          "by drive_health.py")
+    # Two-type model (WAVE 4, WS8): a newly submitted library is
+    # PRIVATE to its submitter by default; the owner makes it public
+    # from the monitor page. The indexer records the submitter +
+    # visibility in the D1 drive_libraries registry (registry SQL) and
+    # in drive-libraries.json, and writes a books JSON for the static
+    # OPDS/search-index generator (drive_opds.py) — which emits those
+    # files ONLY for public libraries.
+    ap.add_argument("--submitter-tg-id", type=int, default=0,
+                    help="Telegram user id of the submitter (0 = owner/unknown)")
+    ap.add_argument("--visibility", default="private",
+                    choices=["public", "private", "pending_public"],
+                    help="registry visibility for this library (default: private)")
+    ap.add_argument("--books-json", default="",
+                    help="also write the book list as JSON (default: "
+                         "<out-dir>/drive-<folder12>-books.json)")
+    ap.add_argument("--registry-sql", default="",
+                    help="also write the drive_libraries upsert SQL (default: "
+                         "<out-dir>/drive-<folder12>-registry.sql)")
+    ap.add_argument("--registry-json", default="",
+                    help="also upsert this library into a drive-libraries.json "
+                         "file (default: skip — pass the repo file to update it)")
     args = ap.parse_args()
 
     folder_id = parse_drive_folder_id(args.folder)
@@ -325,6 +354,39 @@ def main() -> int:
     out_file = out_dir / f"drive-{folder_id[:12]}.sql"
     out_file.write_text(sql, encoding="utf-8")
     print(f"Wrote {out_file} ({len(books)} books, {len(books) * 2} D1 rows)")
+    # Books JSON for the static OPDS/search-index generator
+    # (drive_opds.py emits those files only for public libraries).
+    books_json = Path(args.books_json) if args.books_json else \
+        out_dir / f"drive-{folder_id[:12]}-books.json"
+    books_json.parent.mkdir(parents=True, exist_ok=True)
+    books_json.write_text(json.dumps(
+        [{**b, "folder_id": folder_id, "library_title": meta.get("name", "")}
+         for b in books], ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Wrote {books_json} ({len(books)} books)")
+    # Registry upsert (D1 drive_libraries) + optional JSON mirror.
+    from drive_registry import (SCHEMA_SQL as REG_SCHEMA, load_registry,
+                                registry_upsert_sql, upsert_registry_json)
+    lib = {
+        "folder_id": folder_id,
+        "title": meta.get("name", ""),
+        "added_by": "owner" if not args.submitter_tg_id else str(args.submitter_tg_id),
+        "added_at": date.today().isoformat(),
+        "status": "active",
+        "submitter_tg_id": args.submitter_tg_id or None,
+        "visibility": args.visibility,
+    }
+    reg_sql = Path(args.registry_sql) if args.registry_sql else \
+        out_dir / f"drive-{folder_id[:12]}-registry.sql"
+    reg_sql.write_text(REG_SCHEMA.strip() + "\n" + registry_upsert_sql(lib) + "\n",
+                       encoding="utf-8")
+    print(f"Wrote {reg_sql} (visibility={args.visibility})")
+    if args.registry_json:
+        reg_path = Path(args.registry_json)
+        registry = load_registry(reg_path)
+        upsert_registry_json(registry, lib)
+        reg_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8")
+        print(f"Updated {reg_path}")
     if args.state_file:
         with open(args.state_file, "a", encoding="utf-8") as fh:
             for f in files:

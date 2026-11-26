@@ -32,7 +32,7 @@ function check(name, cond, extra = "") {
 }
 
 const idx = {};
-for (const s of ["khazendar", "sahwa", "electronic", "hindawi", "doab"]) {
+for (const s of ["khazendar", "sahwa", "electronic", "hindawi", "doab", "drive"]) {
   idx["/" + s + "/search-index.json"] = readFileSync(
     new URL("../../" + s + "/search-index.json", import.meta.url),
     "utf8",
@@ -85,6 +85,12 @@ async function call(fn, method, path, env = {}) {
   check("2 khazendar search: 200 + results",
     kh.status === 200 && kh.body.includes("<feed") && kh.body.includes("opds:totalResults"),
     `status=${kh.status}`);
+  // WAVE 4, WS8 — the sixth index: a Drive-library book (Oriental
+  // Music) appears in the combined OPDS feed with a Drive uc link.
+  const rd = await call(combinedSearch, "GET", "/opds/search?q=" + encodeURIComponent("نزهة الزمان"));
+  check("2b combined search: Drive book found in the OPDS feed",
+    rd.status === 200 && rd.body.includes("نزهة الزمان") && rd.body.includes("drive.google.com/uc?id=1I7rOn96NuAgIUQBdCjmGcZnM3BCwH6uX"),
+    `status=${rd.status}`);
 }
 
 // 3. Missing / malformed index -> 500 naming the index, never a throw.
@@ -212,7 +218,7 @@ async function call(fn, method, path, env = {}) {
   const referenceTitles = (q) => {
     const needle = q.toLowerCase();
     const out = [];
-    for (const s of ["khazendar", "sahwa", "electronic", "hindawi", "doab"]) {
+    for (const s of ["khazendar", "sahwa", "electronic", "hindawi", "doab", "drive"]) {
       const books = JSON.parse(idx["/" + s + "/search-index.json"]);
       for (const b of books) {
         if (((b.t || "") + " " + (b.a || "")).toLowerCase().includes(needle)) {

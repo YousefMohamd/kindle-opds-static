@@ -133,6 +133,12 @@ const LIBS = {
   electronic: { kind: "drive", label: "المكتبة الإلكترونية" },
   hindawi: { kind: "hindawi", label: "هنداوي" },
   doab: { kind: "doab", label: "DOAB" },
+  // Drive-library books (WAVE 4, WS8): lib=drive&id=<Drive file id>,
+  // linked from /book for kind='drive' results. The kind="drive"
+  // branch of resolveAcquisitionUrl builds the uc download URL, so
+  // no new fetch path is needed — the file comes straight from
+  // Drive, with the same magic-bytes + HTML-rejection guards.
+  drive: { kind: "drive", label: "مكتبة Drive" },
 };
 
 const FORMAT_MIME = {
@@ -472,18 +478,32 @@ export async function onRequest(context) {
     emailSource = "typed";
   }
 
-  // ---- flagged check, Telegram books only (W3/W6) --------------------
+  // ---- flagged check, Telegram + Drive books (W3/W6, WS8) ----------
   // Defense in depth: the website hides the send button for flagged
   // books, but a direct link to this endpoint must not bypass that.
   // Same denylist as tg-search.js / dl-token.js: a KV key
-  // flag:<handle>:<post_id> means flagged -> no send, no
-  // reading here; the book is reachable via the bot. OPDS books are
-  // public-domain / CC libraries and are never flagged. Placed BEFORE
-  // the dedupe claim so a refused book never occupies the window.
+  // flag:<handle>:<post_id> (Telegram) or flag:drive:<fileId> (Drive
+  // library) means flagged -> no send, no reading here; the book is
+  // reachable via the bot. OPDS books are public-domain / CC libraries
+  // and are never flagged. Placed BEFORE the dedupe claim so a refused
+  // book never occupies the window.
   if (isTg) {
     let flagged = false;
     try {
       flagged = (await env.RLIBOOK_KV.get(`flag:${tgHandle}:${tgPostId}`)) !== null;
+    } catch { flagged = false; }
+    if (flagged) {
+      return page("🚩 كتاب عليه علامة",
+        "<p>🚩 هذا الكتاب عليه علامة — الموقع لا يتيح تحميله أو إرساله.</p>\n"
+        + "<p>للوصول إليه، اطلبه من قناة النشر عبر بوت تليجرام "
+        + "<a href=\"https://t.me/RliBook_bot\">@RliBook_bot</a>.</p>\n"
+        + "<p><a href=\"/book?q=" + encodeURIComponent(title) + "\">← رجوع إلى البحث</a></p>\n", 403);
+    }
+  }
+  if (lib === "drive") {
+    let flagged = false;
+    try {
+      flagged = (await env.RLIBOOK_KV.get(`flag:drive:${id}`)) !== null;
     } catch { flagged = false; }
     if (flagged) {
       return page("🚩 كتاب عليه علامة",

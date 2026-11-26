@@ -472,7 +472,12 @@ export async function fetchTelegramResults(origin, q, limit = TG_LIMIT) {
         title: r.title,
         author: typeof r.author === "string" ? r.author : "",
         source: typeof r.source === "string" ? r.source : "",
-        kind: r.kind === "group" ? "group" : "channel",
+        // WAVE 4, WS8 — Drive rows keep kind="drive" (they used to
+        // be coerced to "channel", which dropped them from the
+        // Drive-aware rendering below) and carry `library`, the
+        // display name from the registry (e.g. "Oriental Music").
+        kind: r.kind === "group" ? "group" : r.kind === "drive" ? "drive" : "channel",
+        library: typeof r.library === "string" ? r.library : "",
         formats: Array.isArray(r.formats)
           ? r.formats.filter((f) => typeof f === "string")
           : [],
@@ -1039,7 +1044,11 @@ export async function onRequest(context) {
       }
       // Formats only — no "تيليجرام" label (source-hiding,
       // 2026-11-21: the word Telegram never appears in the UI).
-      const tgFmtLine = (r.formats.length ? esc(r.formats.join("، ")) : "")
+      // Drive rows (WAVE 4, WS8) lead with the library display name
+      // ("Oriental Music · PDF") — the raw drive:<folderId> source
+      // is never shown.
+      const tgFmtLine = (r.kind === "drive" && r.library ? esc(r.library) + " · " : "")
+        + (r.formats.length ? esc(r.formats.join("، ")) : "")
         + (r.flagged ? " · 🚩" : "");
       if (tgFmtLine) body += "<p>" + tgFmtLine + "</p>\n";
       // Metadata (Workstream 3): file size + page count UNDER the format
@@ -1103,7 +1112,7 @@ export async function onRequest(context) {
         // show the identity page). Flagged books never reach this
         // branch; OPDS cards have no r.send and no Telegram
         // identity, so they get no button either.
-        if (sendUrl && fp && r.send.indexOf("/api/send-to-kindle?") === 0) {
+        if (sendUrl && fp && r.kind !== "drive" && r.send.indexOf("/api/send-to-kindle?") === 0) {
           const tgSendUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/tg-send?"))
             + "&amp;s=" + encodeURIComponent(r.size || "") + fpQ;
           actions += "<p><a class=\"btn\" href=\"" + tgSendUrl + "\">أرسله لي في تيليجرام</a></p>\n";
@@ -1120,7 +1129,7 @@ export async function onRequest(context) {
         // (tg-search toResult), so "PDF" is the check.
         const hasPdf = Array.isArray(r.formats)
           && r.formats.some((f) => String(f).trim().toLowerCase() === "pdf");
-        if (sendUrl && hasPdf && r.send.indexOf("/api/send-to-kindle?") === 0) {
+        if (sendUrl && hasPdf && r.kind !== "drive" && r.send.indexOf("/api/send-to-kindle?") === 0) {
           const convertUrl = esc(r.send.replace("/api/send-to-kindle?", "/api/convert-book?")) + fpQ;
           actions += "<p><a class=\"btn\" href=\"" + convertUrl + "\">حوّل إلى EPUB</a></p>\n";
         }
