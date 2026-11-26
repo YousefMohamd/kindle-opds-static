@@ -1,0 +1,331 @@
+# Sync death watch (RliBook dispatcher-death alert).
+#
+# Problem: the realtime sync is triggered by a Muse cron
+# (`rlibook-realtime-trigger`, every 10 min) that dispatches the
+# `telegram-realtime` + `telegram-newspapers` workflows and checks bot
+# /health. If that dispatcher cron itself dies, nothing dispatches, no
+# runs happen, /health goes stale — and nobody is alerted, because the
+# alerter *is* the dead cron.
+#
+# This watcher runs on GitHub's own scheduler (independent of the Muse
+# cron) every 30 min and checks three signals: bot /health, the latest
+# telegram-realtime run, and the latest telegram-newspapers run.
+#
+# Alert condition (all must hold, 2 consecutive watcher runs = ~1 h of
+# confirmation): cursor_age_seconds > 90 min AND no successful realtime
+# run in the last 90 min. /health unreachable is an alert too, with a
+# distinct message ("bot unreachable"). First alert ~2 h after death
+# (90 min staleness + confirmation).
+#
+# Action (idempotent, no spam): search open issues labelled `sync-death`;
+# if none, create one issue with the evidence; if one exists, append a
+# comment with fresh evidence (at most one watch comment per 2 h).
+# Escalation: a comment (not a new issue) if still dead after 6 h.
+# Auto-close: the issue is closed with a recovery comment when health
+# recovers (cursor_age < 10 min + a successful run). GitHub emails the
+# repo owner on issue creation (existing channel, zero setup).
+#
+# State (first_dead_at, last_alert_at) persists between runs in the
+# Actions cache; losing the cache only delays the next alert by one
+# run (a fresh first_dead_at is recorded).
+#
+# Deliberately NOT a Telegram DM alert: the watcher has no bot token.
+# Layer 2 (Healthchecks.io dead-man's switch) is a separate, optional
+# decision — it needs a user signup, no card.
+#
+# Upload: this file goes to .github/workflows/ via the GitHub web UI
+# (workflow files cannot be pushed by any token).
+name: sync-death-watch
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: sync-death-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Restore watcher state
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: sync-death-watch-state-v1
+          restore-keys: |
+            sync-death-watch-state-v1-
+
+      - name: Check sync health and alert if dead
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, urllib.request, urllib.error
+          from datetime import datetime, timezone, timedelta
+
+          REPO = os.environ["GITHUB_REPOSITORY"]
+          TOKEN = os.environ["GITHUB_TOKEN"]
+          HEALTH_URL = "https://rlibook-bot.mohamedyou1357.workers.dev/health"
+          STATE_PATH = "state/state.json"
+          LABEL = "sync-death"
+          ISSUE_TITLE = "🚨 Sync dead — dispatcher or session down"
+          MARKER = "<!-- sync-death-watch -->"
+          STALE_SECONDS = 90 * 60          # 90 min cursor age
+          WINDOW = timedelta(minutes=90)   # no successful run in window
+          CONFIRM_MINUTES = 25             # 2nd consecutive watcher run
+          RECOVER_SECONDS = 10 * 60        # cursor age for auto-close
+          ESCALATE_AFTER = timedelta(hours=6)
+          COMMENT_MIN_GAP = timedelta(hours=2)
+
+          os.makedirs("state", exist_ok=True)
+
+          def now():
+              return datetime.now(timezone.utc)
+
+          def parse_iso(s):
+              if not s:
+                  return None
+              try:
+                  return datetime.fromisoformat(s.replace("Z", "+00:00"))
+              except ValueError:
+                  return None
+
+          def ago(dt):
+              if dt is None:
+                  return "unknown"
+              mins = int((now() - dt).total_seconds() // 60)
+              if mins < 1:
+                  return "just now"
+              if mins < 60:
+                  return f"{mins} min ago"
+              return f"{mins // 60} h {mins % 60} min ago"
+
+          def gh(method, path, body=None):
+              url = "https://api.github.com" + path
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method)
+              req.add_header("Authorization", "Bearer " + TOKEN)
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("User-Agent", "rlibook-sync-death-watch")
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return r.status, json.loads(r.read().decode() or "{}")
+              except urllib.error.HTTPError as e:
+                  try:
+                      return e.code, json.loads(e.read().decode() or "{}")
+                  except Exception:
+                      return e.code, {}
+              except Exception as e:
+                  return 0, {"error": str(e)}
+
+          # ---- load state ----
+          state = {}
+          try:
+              with open(STATE_PATH) as f:
+                  state = json.load(f)
+          except Exception:
+              state = {}
+
+          def save_state():
+              with open(STATE_PATH, "w") as f:
+                  json.dump(state, f)
+
+          # ---- signal 1: bot /health ----
+          health = None
+          health_raw = ""
+          health_unreachable = False
+          try:
+              req = urllib.request.Request(HEALTH_URL, method="GET")
+              req.add_header("User-Agent", "rlibook-sync-death-watch")
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  health_raw = r.read().decode()
+                  health = json.loads(health_raw)
+          except Exception as e:
+              health_unreachable = True
+              health_raw = f"fetch failed: {e}"
+
+          cursor_age = None
+          stale_flag = False
+          last_scan_at = None
+          if isinstance(health, dict):
+              try:
+                  cursor_age = int(health.get("cursor_age_seconds"))
+              except (TypeError, ValueError):
+                  cursor_age = None
+              stale_flag = bool(health.get("stale"))
+              ls = health.get("last_scan") or {}
+              last_scan_at = parse_iso(ls.get("finished_at"))
+
+          # ---- signals 2+3: latest workflow runs ----
+          def latest_runs(workflow, per_page=5):
+              status, data = gh("GET", f"/repos/{REPO}/actions/workflows/{workflow}/runs?per_page={per_page}")
+              if status != 200:
+                  print(f"WARN: runs API for {workflow} returned {status}: {data}")
+                  return [], None
+              runs = data.get("workflow_runs", [])
+              success = None
+              for r in runs:
+                  if r.get("conclusion") == "success":
+                      success = r
+                      break
+              return runs, success
+
+          rt_runs, rt_success = latest_runs("telegram-realtime.yml", 5)
+          np_runs, np_success = latest_runs("telegram-newspapers.yml", 3)
+
+          def run_line(runs, label):
+              if not runs:
+                  return f"{label}: no runs returned by API"
+              r = runs[0]
+              return (f"{label}: #{r.get('id')} {r.get('status')}/{r.get('conclusion')} "
+                      f"updated {r.get('updated_at')} ({ago(parse_iso(r.get('updated_at')))}) "
+                      f"{r.get('html_url', '')}")
+
+          success_90m = False
+          if rt_success:
+              t = parse_iso(rt_success.get("updated_at"))
+              success_90m = bool(t and now() - t <= WINDOW)
+
+          # ---- verdict ----
+          stale_sync = (cursor_age is not None and cursor_age > STALE_SECONDS) or stale_flag
+          dead = health_unreachable or (stale_sync and not success_90m)
+          dead_kind = "unreachable" if health_unreachable else "stale"
+          print(f"health: unreachable={health_unreachable} cursor_age={cursor_age} "
+                f"stale={stale_flag} last_scan={last_scan_at}")
+          print(run_line(rt_runs, "realtime"))
+          print(run_line(np_runs, "newspapers"))
+          print(f"success_in_90m={success_90m} dead={dead} kind={dead_kind}")
+
+          # ---- issue helpers ----
+          def ensure_label():
+              status, _ = gh("GET", f"/repos/{REPO}/labels/{LABEL}")
+              if status == 404:
+                  s, d = gh("POST", f"/repos/{REPO}/labels",
+                            {"name": LABEL, "color": "d73a4a",
+                             "description": "Sync-death-watch alert (dispatcher or session down)"})
+                  print(f"ensure label: {s} {d.get('name', d)}")
+
+          def open_issue():
+              status, data = gh("GET", f"/repos/{REPO}/issues?labels={LABEL}&state=open&per_page=10")
+              if status != 200:
+                  print(f"WARN: issues list returned {status}: {data}")
+                  return None
+              issues = data if isinstance(data, list) else []
+              issues.sort(key=lambda i: i.get("created_at", ""))
+              return issues[0] if issues else None
+
+          def evidence_body(prefix):
+              lines = [MARKER, prefix, "",
+                       f"**Detected:** {now().isoformat()} UTC",
+                       f"**Kind:** {'bot /health unreachable' if dead_kind == 'unreachable' else 'sync stale (cursor old, no successful realtime run in 90 min)'}",
+                       f"**Cursor age:** {cursor_age if cursor_age is not None else 'unknown'} s (alert threshold {STALE_SECONDS} s)",
+                       f"**Last scan finished:** {last_scan_at.isoformat() if last_scan_at else 'unknown'} ({ago(last_scan_at)})",
+                       f"**{run_line(rt_runs, 'Latest realtime run')}**",
+                       f"**{run_line(np_runs, 'Latest newspapers run')}**",
+                       "",
+                       "<details><summary>/health body (truncated)</summary>",
+                       "",
+                       "```",
+                       (health_raw or "")[:1500],
+                       "```",
+                       "</details>",
+                       "",
+                       "Watcher: `sync-death-watch` (every 30 min). This issue auto-closes when "
+                       "health recovers (cursor age < 10 min + a successful realtime run)."]
+              return "\n".join(lines)
+
+          if dead:
+              first = parse_iso(state.get("first_dead_at"))
+              if first is None:
+                  state["first_dead_at"] = now().isoformat()
+                  save_state()
+                  print(f"SUSPECT: first dead sighting recorded at {state['first_dead_at']}; "
+                        "no alert yet (needs a 2nd consecutive watcher run).")
+                  sys.exit(0)
+              if now() - first < timedelta(minutes=CONFIRM_MINUTES):
+                  print(f"AWAITING CONFIRMATION: dead since {first.isoformat()} "
+                        f"({ago(first)}); alert on the next watcher run.")
+                  sys.exit(0)
+              # Confirmed dead.
+              ensure_label()
+              issue = open_issue()
+              if issue is None:
+                  title = ISSUE_TITLE
+                  body = evidence_body(
+                      "🚨 **Sync is dead.** The dispatcher cron (or the Telegram session) "
+                      "has stopped producing realtime syncs.")
+                  status, data = gh("POST", f"/repos/{REPO}/issues",
+                                    {"title": title, "body": body, "labels": [LABEL]})
+                  print(f"ALERT: created issue #{data.get('number')} (HTTP {status})")
+                  state["last_alert_at"] = now().isoformat()
+                  save_state()
+                  sys.exit(0)
+              num = issue["number"]
+              # Existing open issue: comment fresh evidence (max 1 per 2 h),
+              # escalate once if still dead after 6 h.
+              status, comments = gh("GET", f"/repos/{REPO}/issues/{num}/comments?per_page=30")
+              comments = comments if isinstance(comments, list) else []
+              watch_comments = [c for c in comments if MARKER in (c.get("body") or "")]
+              escalated = any("ESCALATION" in (c.get("body") or "") for c in watch_comments)
+              last_watch = None
+              if watch_comments:
+                  last_watch = parse_iso(watch_comments[-1].get("created_at"))
+              if now() - first >= ESCALATE_AFTER and not escalated:
+                  body = evidence_body(
+                      "⬆️ **ESCALATION — still dead after 6 h.** Dispatcher or session "
+                      "has not recovered; manual intervention needed.")
+                  s, d = gh("POST", f"/repos/{REPO}/issues/{num}/comments", {"body": body})
+                  print(f"ESCALATED: comment on issue #{num} (HTTP {s})")
+                  state["last_alert_at"] = now().isoformat()
+                  save_state()
+                  sys.exit(0)
+              if last_watch is None or now() - last_watch >= COMMENT_MIN_GAP:
+                  body = evidence_body("🔁 **Still dead** — fresh evidence from the watcher.")
+                  s, d = gh("POST", f"/repos/{REPO}/issues/{num}/comments", {"body": body})
+                  print(f"UPDATE: commented on issue #{num} (HTTP {s})")
+                  state["last_alert_at"] = now().isoformat()
+                  save_state()
+              else:
+                  print(f"QUIET: issue #{num} already has a watch comment from "
+                        f"{ago(last_watch)}; skipping.")
+              sys.exit(0)
+
+          # ---- healthy: reset confirmation, auto-close on recovery ----
+          state.pop("first_dead_at", None)
+          issue = open_issue()
+          if issue is None:
+              print("HEALTHY: no open sync-death issue. State reset.")
+              save_state()
+              sys.exit(0)
+          num = issue["number"]
+          recovered = (cursor_age is not None and cursor_age < RECOVER_SECONDS and success_90m)
+          if recovered:
+              body = (MARKER + "\n✅ **Recovered.** Cursor age is "
+                      f"{cursor_age} s (< {RECOVER_SECONDS} s) and a realtime run succeeded "
+                      f"in the last 90 min. Auto-closing this alert.")
+              s, _ = gh("POST", f"/repos/{REPO}/issues/{num}/comments", {"body": body})
+              s, _ = gh("PATCH", f"/repos/{REPO}/issues/{num}", {"state": "closed"})
+              print(f"RECOVERED: closed issue #{num} (HTTP {s})")
+          else:
+              print(f"HEALTHY-ish: issue #{num} stays open (cursor_age={cursor_age}, "
+                    f"success_in_90m={success_90m}); recovery needs age < "
+                    f"{RECOVER_SECONDS} s + a successful run.")
+          save_state()
+          PYEOF
+
+      - name: Save watcher state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: sync-death-watch-state-v1-${{ github.run_id }}
