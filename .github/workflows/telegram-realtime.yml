@@ -1,23 +1,44 @@
-# Telegram real-time sync — frequent new-only check (v1.0).
+# Telegram real-time sync — frequent new-only check (v2.1, sync-fix).
 #
-# Runs `tbi.live_sync` every 5 minutes: checks every configured
-# channel/group for posts newer than the last check (Telegram API,
-# `min_id` — covers groups too, which the public preview cannot see)
-# and writes any new book posts to the bot Worker's Durable Object
-# live-additions key (`live:additions`) immediately, through the
-# bot's /api/live-state endpoint (Bearer LIVE_SYNC_TOKEN). The bot's
-# /resources and the Telegram search endpoint read that key, so a new
-# book is visible within ~5-7 minutes of being posted (cron 5 min +
-# check ~1-2 min + DO write ~instant) — without waiting for the daily
+# Runs `tbi.live_sync` and writes any new book posts to the bot
+# Worker's Durable Object live-additions key (`live:additions`)
+# immediately, through the bot's /api/live-state/batch endpoint
+# (Bearer LIVE_SYNC_TOKEN). The bot's /resources and the Telegram
+# search endpoint read that key, so a new book is visible within
+# ~10-12 minutes of being posted — without waiting for the daily
 # 03:00 UTC sync and its Pages deploy.
 #
-# This is the DEPLOYABLE real-time path (no always-on host, no card,
-# $0 — public repo, unlimited Actions minutes). It does NOT meet the
-# strict 1-minute goal: only the Telethon listener (`tbi.listener`,
-# event-driven, ~2 seconds) can do that, and it needs an always-on
-# host (see rlibook-realtime-sync/DESIGN.md — no card-free always-on
-# host exists for it). This check is also the safety net that catches
-# anything the listener missed while it was down.
+# TRIGGER OF TRUTH (v2.1 — the radical fix): there is NO `schedule:`
+# in this file anymore. The ONLY trigger is the 10-minute dispatcher
+# cron (Muse cron rlibook-realtime-trigger), which dispatches this
+# workflow via workflow_dispatch AND skips the dispatch while the
+# previous run is still in_progress. The old YAML `*/5` schedule
+# was a SECOND trigger firing on top of the dispatcher: with a
+# ~10.75-minute worst-case scan against a 10-minute trigger, the
+# two triggers queued overlapping identical scans against the same
+# DO cursor and the same Telegram session. GitHub's own cron also
+# drifts 5-30 minutes, which is why the dispatcher exists at all.
+# If the dispatcher ever dies, trigger this workflow manually
+# (workflow_dispatch) — do NOT re-add a YAML schedule without
+# removing the dispatcher first. One trigger, never two.
+#
+# OVERLAP DEDUP (three layers, cheapest first):
+#   1. The dispatcher skips while the previous run is in_progress.
+#   2. The "Skip if another run is in progress" step below sets
+#      skip=true and the rest of the job does not run (a skip is
+#      quiet success, not a failure — the next tick retries).
+#   3. The runner claims a DO lease (live:lease) before connecting;
+#      a live lease refuses the run (exit 3, skip not failure).
+# The concurrency group stays cancel-in-progress: false — a scan is
+# never killed mid-write, it is skipped before it starts.
+#
+# SESSIONS (v2.1): this workflow uses TELEGRAM_SESSION_STRING only.
+# Newspapers uses TELEGRAM_SESSION_STRING_NEWS (a separate auth key
+# for the same account, owner-generated). The runner refuses to
+# start when both secrets hold the same value, and the lease
+# refuses a second simultaneous session of either role — the
+# AuthKeyDuplicatedError that killed realtime #702+ and newspapers
+# #508+ on 2026-11-24, when one session was shared by both.
 #
 # Durability: this workflow does NOT commit index.db (the runner is
 # ephemeral and committing every 5 minutes would flood the repo). The
@@ -27,6 +48,17 @@
 # found by both this check and the daily sync is never counted twice.
 # The daily sync resets `live:additions` after it publishes, so the
 # key always holds "books added since the last daily publish".
+#
+# What IS committed here, and only when it changed (v2.1):
+#   * telegram/entity-cache.json — the runner auto-refreshes stale
+#     entries (TTL 30 days) inside its resolve budget; a commit
+#     happens only on runs where the file actually changed (a few
+#     times a week at most, never every run).
+#   * telegram/live-outbox.jsonl — written ONLY when the DO batch
+#     PUT failed; the next run replays it before scanning.
+#   * telegram/sql/entities.sql — regenerated whenever the cache
+#     changed (the D1 entities table's source; applying it to D1
+#     stays a manual owner step via wrangler).
 #
 # History: before v4.8.57 the two live keys lived in Cloudflare KV.
 # KV's free tier allows 1,000 writes/day/account and the runs
@@ -45,15 +77,22 @@
 name: telegram-realtime
 
 on:
-  schedule:
-    # GitHub Actions cron minimum is 5 minutes.
-    - cron: "*/5 * * * *"
+  # NO schedule: the 10-minute dispatcher cron is the only trigger.
   workflow_dispatch:
+    inputs:
+      catch_up:
+        description: "Re-scan the sources the last scan failed before the normal check"
+        required: false
+        default: false
+        type: boolean
 
 # Two realtime runs must never overlap: they share the DO cursor.
 concurrency:
   group: kindle-opds-static-telegram-realtime
   cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   live-sync:
@@ -66,7 +105,28 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
+      - name: Skip if another run is in progress
+        # Layer 2 of the overlap dedup (v2.1): the dispatcher
+        # already skips, but a manual dispatch can still collide
+        # with a running scan. The current run itself is
+        # in_progress, so exclude our own run id. Sets skip=true
+        # and the steps below do not run (quiet success — the next
+        # tick retries); it never fails the job.
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          other=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/telegram-realtime.yml/runs?status=in_progress&per_page=10" --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id] | length")
+          if [ "$other" != "0" ]; then
+            echo "another telegram-realtime run is already in progress ($other) — skipping this dispatch"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no other telegram-realtime run in progress"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python
+        if: steps.guard.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -74,6 +134,7 @@ jobs:
           cache-dependency-path: telegram/requirements.txt
 
       - name: Install dependencies
+        if: steps.guard.outputs.skip != 'true'
         run: pip install -r requirements.txt
 
       - name: Decompress the seed DB (for the cursor seed)
@@ -83,6 +144,7 @@ jobs:
         # daily sync). The decompressed DB is never committed here —
         # this workflow only writes the live state; the daily sync owns the
         # durable index.db.
+        if: steps.guard.outputs.skip != 'true'
         run: |
           if [ -f index.db.gz ]; then
             gunzip -f index.db.gz
@@ -93,9 +155,55 @@ jobs:
           fi
 
       - name: Live sync (new-only -> DO live-additions)
+        if: steps.guard.outputs.skip != 'true'
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
           LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
-        run: python -m tbi.live_sync --config channels.yaml --db index.db
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.catch_up }}" = "true" ]; then FLAGS="$FLAGS --catch-up"; fi
+          python -m tbi.live_sync --config channels.yaml --db index.db $FLAGS
+
+      - name: Commit entity cache + outbox when changed
+        # v2.1: the runner auto-refreshes stale cache entries and
+        # saves the outbox file ONLY when the DO push failed. Both
+        # files are committed ONLY when they actually changed —
+        # never every run (a commit every 10 minutes would flood
+        # the repo). The D1 entities SQL is regenerated alongside
+        # the cache so the table can be refreshed with one wrangler
+        # call (applying it stays a manual owner step).
+        if: always() && steps.guard.outputs.skip != 'true'
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cd telegram
+          if [ -f entity-cache.json ]; then
+            python3 -m tbi.d1_entities export --cache entity-cache.json --out sql/entities.sql || echo "::warning::entities.sql regeneration failed — committing the cache without it"
+          fi
+          cd ..
+          git add telegram/entity-cache.json telegram/live-outbox.jsonl telegram/sql/entities.sql 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "live-sync: no cache/outbox change — nothing to commit"
+            exit 0
+          fi
+          git commit -m "[live-sync] entity cache / outbox update"
+          git pull --rebase --autostash origin main || { echo "::error::Rebase before push failed — check the output; do not force-push."; exit 1; }
+          git push
+
+      - name: Check bot /health (cursor age)
+        # v2.0: after the sync, verify the bot actually holds a
+        # fresh cursor — /health returns 200 while the cursor is
+        # fresh and 503 when it is stale (>3600s) or never written.
+        # Always runs (even if the sync step failed) and never fails
+        # the job on its own — it only annotates.
+        if: always() && steps.guard.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 15 https://rlibook-bot.mohamedyou1357.workers.dev/health)
+          echo "bot /health HTTP $code: $(cat /tmp/health.json)"
+          if [ "$code" != "200" ]; then
+            echo "::warning::bot /health returned HTTP $code (expected 200) — cursor may be stale"
+          fi
