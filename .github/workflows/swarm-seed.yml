@@ -122,11 +122,16 @@ jobs:
 
       - name: Verify via swarm metrics (best effort)
         # Needs the ADMIN_TOKEN repo secret; skips silently when unset.
-        if: ${{ secrets.ADMIN_TOKEN != '' }}
+        # NOTE: `secrets` is not usable in `if:` (GitHub rejects the
+        # workflow at dispatch) — the skip is done in shell instead.
         continue-on-error: true
         env:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
+          if [ -z "${ADMIN_TOKEN}" ]; then
+            echo "ADMIN_TOKEN not set — skipping metrics verification"
+            exit 0
+          fi
           curl -sS --fail "${BOT_URL}/api/swarm/metrics" \
             -H "Authorization: Bearer ${ADMIN_TOKEN}" \
             -o metrics.json
