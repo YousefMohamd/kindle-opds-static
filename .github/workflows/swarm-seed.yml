@@ -1,0 +1,133 @@
+# Swarm seeding — one-off, manual only (bot v4.8.76, applier v1)
+#
+# Registers the swarm's sources ({sourceId, maxKnownId}) on the live bot
+# Worker via POST /api/swarm/seed. Seeding is idempotent: re-running only
+# raises maxKnownId on already-known sources.
+#
+# DESIGN (why this shape):
+# - The seed script (scripts/swarm-seed.mjs) and the 215-source payload
+#   (seed-sources.json) live ONLY in the workspace (~/workspace/tmp-fox/),
+#   NOT in this repo — so "check out the repo and run the script" is not
+#   workable without first committing those files by an approved push.
+# - Instead this workflow calls the live endpoint directly, deriving the
+#   payload at run time from the PUBLIC live cursor:
+#   GET /api/live-state?key=live:cursor returns {handle: newest post_id}
+#   with no auth (bot src/index.ts: GET /api/live-state is a public read),
+#   so the payload is always as fresh as the last sync — fresher than the
+#   2026-11-26 workspace snapshot. The 215-source snapshot was already
+#   cross-checked against telegram/sql/entities.sql when it was built.
+# - The ONLY secret used is LIVE_SYNC_TOKEN, taken from the repo secret
+#   by NAME only (secrets.LIVE_SYNC_TOKEN). Its VALUE is never printed,
+#   logged, or written to any file: it travels only as an env var into
+#   the curl Authorization header. Never rotate it; never paste it.
+#
+# HOW TO RUN (after upload — see footer):
+#   GitHub repo -> Actions -> "Swarm seed sources" -> Run workflow.
+#   Expected: "seed complete: registered N of N" with N = source count
+#   (215 when this was written). Verify afterwards with the metrics
+#   endpoint (step below, needs the ADMIN_TOKEN repo secret if set).
+#
+# UPLOAD (web UI only — NEVER push .github/workflows by token):
+#   Place this file at .github/workflows/swarm-seed.yml in
+#   YousefMohamd/kindle-opds-static via the GitHub web UI
+#   (Add file -> Create new file), commit to main.
+
+name: Swarm seed sources
+
+on:
+  workflow_dispatch: # manual only — no schedule, no push trigger
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    env:
+      BOT_URL: https://rlibook-bot.mohamedyou1357.workers.dev
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Build seed payload from the live cursor
+        id: build
+        run: |
+          set -euo pipefail
+          curl -sS --fail "${BOT_URL}/api/live-state?key=live:cursor" -o cursor.json
+          python3 - <<'PY'
+          import json
+          with open("cursor.json", encoding="utf-8") as f:
+              cursor = json.load(f)
+          if not isinstance(cursor, dict) or not cursor:
+              raise SystemExit("live:cursor is empty or not an object — refusing to seed")
+          sources = []
+          for handle, max_id in sorted(cursor.items()):
+              if not isinstance(max_id, int) or max_id < 0:
+                  raise SystemExit(f"bad maxKnownId for {handle!r}: {max_id!r}")
+              sources.append({"sourceId": handle, "maxKnownId": max_id})
+          with open("seed-payload.json", "w", encoding="utf-8") as f:
+              json.dump({"sources": sources}, f, ensure_ascii=False)
+          print(f"payload built: {len(sources)} sources")
+          with open("count.txt", "w", encoding="utf-8") as f:
+              f.write(str(len(sources)))
+          PY
+          # Best-effort cross-check vs entities.sql, if this repo has it.
+          # Warn-only: the cursor is authoritative; a mismatch must not
+          # block seeding (entities.sql lives in the sync repo, and the
+          # 215-source snapshot was already cross-checked when built).
+          if [ -f telegram/sql/entities.sql ]; then
+            python3 - <<'PY'
+          import json, re
+          sql = open("telegram/sql/entities.sql", encoding="utf-8").read()
+          handles = set(re.findall(r"'([A-Za-z0-9_]+)'", sql))
+          payload = json.load(open("seed-payload.json", encoding="utf-8"))
+          seeded = {s["sourceId"] for s in payload["sources"]}
+          print(f"entities.sql handles: {len(handles)}; seeded: {len(seeded)}")
+          only_cursor = sorted(seeded - handles)
+          only_sql = sorted(handles - seeded)
+          if only_cursor:
+              print(f"::warning::in cursor but not entities.sql: {only_cursor[:20]}")
+          if only_sql:
+              print(f"::warning::in entities.sql but not cursor: {only_sql[:20]}")
+          PY
+          else
+            echo "telegram/sql/entities.sql not in this repo — skipping cross-check (snapshot was cross-checked at build time)"
+          fi
+
+      - name: POST seed payload to the live bot
+        env:
+          LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LIVE_SYNC_TOKEN}" ]; then
+            echo "::error::LIVE_SYNC_TOKEN repo secret is not set — cannot seed" >&2
+            exit 2
+          fi
+          COUNT="$(cat count.txt)"
+          curl -sS --fail -X POST "${BOT_URL}/api/swarm/seed" \
+            -H "Authorization: Bearer ${LIVE_SYNC_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @seed-payload.json \
+            -o seed-response.json
+          python3 - <<PY
+          import json, sys
+          body = json.load(open("seed-response.json", encoding="utf-8"))
+          print(json.dumps(body, indent=2)[:2000])
+          count = int("$COUNT")
+          if body.get("ok") is not True or body.get("registered") != count:
+              print(f"::error::seed mismatch: registered={body.get('registered')} expected={count}")
+              sys.exit(1)
+          print(f"seed complete: registered {body['registered']} of {count}")
+          PY
+
+      - name: Verify via swarm metrics (best effort)
+        # Needs the ADMIN_TOKEN repo secret; skips silently when unset.
+        if: ${{ secrets.ADMIN_TOKEN != '' }}
+        continue-on-error: true
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          curl -sS --fail "${BOT_URL}/api/swarm/metrics" \
+            -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+            -o metrics.json
+          python3 -c "import json; m=json.load(open('metrics.json')); print('metrics sources:', len(m.get('metrics', m).get('sources', [])) if isinstance(m.get('metrics', m), dict) else 'n/a'); print(json.dumps(m, indent=2)[:1500])"
