@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T09:30:56.065328+00:00",
+  "generated_at": "2026-11-26T09:44:09.769117+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 31,
+      "entries": 34,
       "detail": ""
     },
     {
@@ -76,9 +76,9 @@
       "region": "egypt",
       "edition": "morning",
       "date": "2026-11-26",
-      "url": "https://t.me/Arabic_News_Papers/135228",
+      "url": "https://t.me/Arabic_News_Papers/135234",
       "handle": "Arabic_News_Papers",
-      "post_id": 135228,
+      "post_id": 135234,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -305,6 +305,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "الزمان",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135232",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135232,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "الشاهد",
       "country": "XX",
       "country_name": "غير محدد",
@@ -315,6 +328,19 @@
       "url": "https://t.me/Arabic_News_Papers/135201",
       "handle": "Arabic_News_Papers",
       "post_id": 135201,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الصباح",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135233",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135233,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -470,11 +496,13 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 17
+      "count": 19
     }
   ],
   "empty": false,
   "unmatched": [
+    "الصباح",
+    "الزمان",
     "العالم اليوم",
     "تقرير حادث الدائري",
     "الاخبار",
