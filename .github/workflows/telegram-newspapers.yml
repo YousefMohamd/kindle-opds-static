@@ -1,11 +1,35 @@
 # Newspapers — SMART publishing: watch (every 10 min) + backstop.
 #
 # The watch publishes within ~10-12 min of the hub posting a batch
-# (04:00 / 07:00 / Egypt ~10:00 Cairo — no fixed time). The backstops
-# are insurance only, for when the trigger is down: 09:30 UTC
-# (11:30 Cairo — the observed "morning complete" time, 4 days
-# straight) and 15:00 UTC (17:00 Cairo, straggler catch). The 06:00
-# UTC run is removed: it fires before Egypt papers exist.
+# (04:00 / 07:00 / Egypt ~10:00 Cairo — no fixed time).
+#
+# TRIGGER OF TRUTH (v2.1 — sync-fix): there is NO `schedule:` in
+# this file anymore. The ONLY trigger is the 10-minute dispatcher
+# cron (Muse cron rlibook-realtime-trigger), which dispatches this
+# workflow via workflow_dispatch (mode=watch, 5 minutes after the
+# realtime dispatch) and skips while the previous run is
+# in_progress. The backstops (09:30 UTC = 11:30 Cairo, the observed
+# "morning complete" time; 15:00 UTC = 17:00 Cairo, straggler catch)
+# moved to the dispatcher cron too — one trigger for both workflows,
+# never a YAML schedule beside it. If the dispatcher ever dies,
+# trigger manually (workflow_dispatch, mode=watch or backstop).
+# The 06:00 UTC run stays removed: it fires before Egypt papers exist.
+#
+# SESSIONS (v2.1): this workflow uses TELEGRAM_SESSION_STRING_NEWS —
+# a DEDICATED session (a separate auth key for the same account,
+# owner-generated with his Telegram code), NOT the realtime session.
+# Sharing one session between the two workflows is the
+# AuthKeyDuplicatedError that killed realtime #702+ and newspapers
+# #508+ on 2026-11-24. The runner refuses to start when both secrets
+# hold the same value, claims a DO lease before collecting, and
+# refuses while a realtime run holds the lease.
+# TRANSITION: until TELEGRAM_SESSION_STRING_NEWS exists (the owner
+# currently receives no Telegram login code anywhere), the code falls
+# back to the shared TELEGRAM_SESSION_STRING — loudly (::warning::)
+# and ONLY under the lease, which makes sequential reuse safe.
+# Both secrets are passed below so the fallback can work; remove
+# TELEGRAM_SESSION_STRING from this env block once the NEWS secret
+# exists. See tbi.newspapers._load_news_credentials.
 #
 # The generator NEVER overwrites a good page with a much smaller one:
 # see guard_publish() in telegram/tbi/newspapers.py (steep-drop <50%,
@@ -16,13 +40,15 @@
 #
 # Sources, links, and the no-download rule are unchanged (see
 # telegram/tbi/newspapers.py). The generator never joins anything.
-# Secrets: the same 3 Telegram secrets as before. No new secrets.
+# Secrets: TELEGRAM_API_ID, TELEGRAM_API_HASH,
+# TELEGRAM_SESSION_STRING_NEWS (new), TELEGRAM_SESSION_STRING
+# (transition fallback only), LIVE_SYNC_TOKEN (DO lease only — the
+# same value as the bot Worker's LIVE_SYNC_TOKEN secret).
 name: telegram-newspapers
 
 on:
-  schedule:
-    - cron: "30 9 * * *"
-    - cron: "0 15 * * *"
+  # NO schedule: the 10-minute dispatcher cron is the only trigger
+  # (watch every 10 min; backstops 09:30 + 15:00 UTC from the same cron).
   workflow_dispatch:
     inputs:
       mode:
@@ -49,18 +75,40 @@ jobs:
     env:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      TELEGRAM_SESSION_STRING_NEWS: ${{ secrets.TELEGRAM_SESSION_STRING_NEWS }}
       TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+      LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Skip if another run is in progress
+        # Same dedup as telegram-realtime (v2.1): the dispatcher
+        # already skips, but a manual dispatch can still collide
+        # with a running watch. Quiet skip, not a failure.
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          other=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/telegram-newspapers.yml/runs?status=in_progress&per_page=10" --jq "[.workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id] | length")
+          if [ "$other" != "0" ]; then
+            echo "another telegram-newspapers run is already in progress ($other) — skipping this dispatch"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no other telegram-newspapers run in progress"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.guard.outputs.skip != 'true'
         with:
           python-version: "3.12"
 
       - name: Install the generator (+ Telethon for the API path)
+        if: steps.guard.outputs.skip != 'true'
         run: pip install -e ".[api]"
 
       - name: Generate today's newspapers
+        if: steps.guard.outputs.skip != 'true'
         run: |
           if [ "${{ inputs.mode }}" = "watch" ]; then
             python3 -m tbi.newspapers --out ../site/newspapers.json --watch
@@ -69,6 +117,10 @@ jobs:
           fi
 
       - name: Commit + push (only when the files changed)
+        # Success-only (unlike realtime's commit step): there is no
+        # failure artifact to save here, and a crashed generate must
+        # never commit a half-written page.
+        if: steps.guard.outputs.skip != 'true'
         working-directory: .
         run: |
           git config user.name "github-actions[bot]"
