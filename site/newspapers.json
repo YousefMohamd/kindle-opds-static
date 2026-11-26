@@ -1,14 +1,14 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T11:43:49.870157+00:00",
+  "generated_at": "2026-11-26T11:53:51.652040+00:00",
   "sources": [
     {
       "key": "arabJournalism",
       "label": "الصحافة العربية",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 36,
+      "entries": 51,
       "detail": ""
     },
     {
@@ -162,6 +162,19 @@
       "source": "arabJournalism"
     },
     {
+      "name": "Bahrain Dt",
+      "country": "BH",
+      "country_name": "البحرين",
+      "flag": "🇧🇭",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252288",
+      "handle": "arabJournalism",
+      "post_id": 252288,
+      "source": "arabJournalism"
+    },
+    {
       "name": "KUWAIT Arab Times",
       "country": "KW",
       "country_name": "الكويت",
@@ -240,6 +253,45 @@
       "source": "arabJournalism"
     },
     {
+      "name": "أخبار الخليج",
+      "country": "BH",
+      "country_name": "البحرين",
+      "flag": "🇧🇭",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252289",
+      "handle": "arabJournalism",
+      "post_id": 252289,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الاتحاد",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252301",
+      "handle": "arabJournalism",
+      "post_id": 252301,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الإمارات اليوم",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252300",
+      "handle": "arabJournalism",
+      "post_id": 252300,
+      "source": "arabJournalism"
+    },
+    {
       "name": "الأنباء",
       "country": "KW",
       "country_name": "الكويت",
@@ -250,6 +302,58 @@
       "url": "https://t.me/arabJournalism/252282",
       "handle": "arabJournalism",
       "post_id": 252282,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الأيام",
+      "country": "BH",
+      "country_name": "البحرين",
+      "flag": "🇧🇭",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252291",
+      "handle": "arabJournalism",
+      "post_id": 252291,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "البلاد",
+      "country": "BH",
+      "country_name": "البحرين",
+      "flag": "🇧🇭",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252292",
+      "handle": "arabJournalism",
+      "post_id": 252292,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "البيان",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252298",
+      "handle": "arabJournalism",
+      "post_id": 252298,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "البيان الاقتصادي",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252303",
+      "handle": "arabJournalism",
+      "post_id": 252303,
       "source": "arabJournalism"
     },
     {
@@ -276,6 +380,32 @@
       "url": "https://t.me/arabJournalism/252256",
       "handle": "arabJournalism",
       "post_id": 252256,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الخليج",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252294",
+      "handle": "arabJournalism",
+      "post_id": 252294,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الخليج الاقتصادي",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252302",
+      "handle": "arabJournalism",
+      "post_id": 252302,
       "source": "arabJournalism"
     },
     {
@@ -383,6 +513,32 @@
       "source": "arabJournalism"
     },
     {
+      "name": "الفجر",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252296",
+      "handle": "arabJournalism",
+      "post_id": 252296,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الفجر منوعات",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252297",
+      "handle": "arabJournalism",
+      "post_id": 252297,
+      "source": "arabJournalism"
+    },
+    {
       "name": "القبس",
       "country": "KW",
       "country_name": "الكويت",
@@ -422,6 +578,19 @@
       "source": "arabJournalism"
     },
     {
+      "name": "الوحدة",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252299",
+      "handle": "arabJournalism",
+      "post_id": 252299,
+      "source": "arabJournalism"
+    },
+    {
       "name": "الوسط",
       "country": "KW",
       "country_name": "الكويت",
@@ -432,6 +601,32 @@
       "url": "https://t.me/arabJournalism/252279",
       "handle": "arabJournalism",
       "post_id": 252279,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الوطن",
+      "country": "AE",
+      "country_name": "الإمارات",
+      "flag": "🇦🇪",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252295",
+      "handle": "arabJournalism",
+      "post_id": 252295,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الوطن",
+      "country": "BH",
+      "country_name": "البحرين",
+      "flag": "🇧🇭",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-26",
+      "url": "https://t.me/arabJournalism/252290",
+      "handle": "arabJournalism",
+      "post_id": 252290,
       "source": "arabJournalism"
     },
     {
@@ -891,6 +1086,12 @@
       "count": 6
     },
     {
+      "code": "AE",
+      "name": "الإمارات",
+      "flag": "🇦🇪",
+      "count": 10
+    },
+    {
       "code": "QA",
       "name": "قطر",
       "flag": "🇶🇦",
@@ -901,6 +1102,12 @@
       "name": "الكويت",
       "flag": "🇰🇼",
       "count": 10
+    },
+    {
+      "code": "BH",
+      "name": "البحرين",
+      "flag": "🇧🇭",
+      "count": 5
     },
     {
       "code": "OM",
@@ -969,6 +1176,16 @@
   ],
   "dropped": [
     {
+      "name": "🇦🇪",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
+    {
+      "name": "🇧🇭",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
+    {
       "name": "🇰🇼",
       "reason": "flag_or_emoji_only",
       "source": "arabJournalism"
@@ -1020,16 +1237,6 @@
     },
     {
       "name": "🇮🇶",
-      "reason": "flag_or_emoji_only",
-      "source": "arabJournalism"
-    },
-    {
-      "name": "🇦🇪",
-      "reason": "flag_or_emoji_only",
-      "source": "arabJournalism"
-    },
-    {
-      "name": "🇧🇭",
       "reason": "flag_or_emoji_only",
       "source": "arabJournalism"
     },
