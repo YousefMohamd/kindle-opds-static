@@ -228,6 +228,24 @@ def test_d1client_without_env_raises(monkeypatch):
         di.D1Client()
 
 
+def test_strip_transaction_removes_wrapper_only():
+    sql = (
+        "BEGIN TRANSACTION;\n"
+        "INSERT INTO books(id) VALUES (1);\n"
+        "INSERT INTO books(id) VALUES (2); -- COMMIT; in a comment\n"
+        "  commit;  \n"
+        "SAVEPOINT sp1;\n"
+        "COMMIT;\n"
+    )
+    out = di.strip_transaction(sql)
+    assert "BEGIN TRANSACTION;" not in out
+    assert out.count("INSERT INTO books(id) VALUES") == 2
+    # A line that merely mentions COMMIT inside a statement survives.
+    assert "-- COMMIT; in a comment" in out
+    assert out.endswith("\n")
+    assert di.strip_transaction("BEGIN TRANSACTION;\nCOMMIT;\n") == "\n"
+
+
 # --- run() end to end -------------------------------------------------------
 
 
@@ -267,8 +285,12 @@ def test_run_emits_batches_and_watermark_with_ids_from_max_id(tmp_path):
     assert "INSERT OR IGNORE INTO books(" in sql
     assert "INSERT OR IGNORE INTO books_fts(" in sql
     assert "422851" in sql and "422852" in sql
-    assert "BEGIN TRANSACTION;" in sql and "COMMIT;" in sql
+    # wrangler d1 execute --remote refuses explicit transaction
+    # statements (live failure 2026-11-26, run 45821910503): the
+    # emitted files must carry plain statements only.
+    assert "BEGIN TRANSACTION;" not in sql and "COMMIT;" not in sql
     wm = (out / "watermark.sql").read_text(encoding="utf-8")
+    assert "BEGIN TRANSACTION;" not in wm and "COMMIT;" not in wm
     for key in ("incr_last_run_at", "incr_last_new", "incr_last_changed",
                 "incr_last_skipped", "incr_last_max_date", "incr_shard_date",
                 "incr_next_free_id", "incr_live_since"):

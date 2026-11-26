@@ -408,6 +408,38 @@ def shard_candidates(
     return fresh, newest_full
 
 
+def strip_transaction(sql: str) -> str:
+    """Drop explicit transaction statements from emitted SQL.
+
+    ``d1_sync.batch_sql`` wraps every batch in ``BEGIN TRANSACTION;``
+    ... ``COMMIT;`` (correct for local SQLite / the one-shot delta),
+    but ``wrangler d1 execute --remote`` REJECTS explicit transaction
+    statements — observed live 2026-11-26, run 45821910503, wrangler
+    4.168.0: "To execute a transaction, please use the
+    state.storage.transaction() ... APIs instead of the SQL BEGIN
+    TRANSACTION or SAVEPOINT statements." The whole file is refused
+    before any statement runs, so the import fails with nothing
+    written (and the watermark never advances — the next run retries
+    the same books, idempotently).
+
+    The emitted files therefore carry plain statements only. D1
+    executes each statement atomically; idempotency is preserved by
+    ``INSERT OR IGNORE`` / the content-hash check, and the watermark
+    is still written last, after every batch succeeded. Only whole
+    lines that ARE a transaction statement are dropped — a title
+    containing the word inside an INSERT line is untouched.
+    """
+    drop = ("BEGIN TRANSACTION;", "COMMIT;")
+    kept = []
+    for line in sql.splitlines():
+        s = line.strip().upper()
+        if s in drop or s.startswith("SAVEPOINT ") or s.startswith("RELEASE "):
+            continue
+        kept.append(line)
+    out = "\n".join(kept)
+    return out + "\n" if sql.endswith("\n") else out
+
+
 def watermark_sql(summary: dict[str, Any]) -> str:
     """``d1_sync_meta`` upserts for one run. Executed LAST by the
     workflow, after every batch file succeeded — so a failed run
@@ -571,20 +603,22 @@ def run(
         pending_changed = []
         sql, next_id = d1_sync.batch_sql(chunk, next_id, changed=take_changed)
         path = out_dir / f"batch-{nfiles + 1:04d}.sql"
-        path.write_text(sql, encoding="utf-8")
+        # wrangler d1 execute --remote refuses BEGIN TRANSACTION
+        # (see strip_transaction); emit plain statements only.
+        path.write_text(strip_transaction(sql), encoding="utf-8")
         print(f"wrote {path} ({len(chunk)} books"
               + (f" + {len(take_changed)} changed" if take_changed else "") + ")")
         nfiles += 1
     if pending_changed:
         sql, next_id = d1_sync.batch_sql([], next_id, changed=pending_changed)
         path = out_dir / f"batch-{nfiles + 1:04d}.sql"
-        path.write_text(sql, encoding="utf-8")
+        path.write_text(strip_transaction(sql), encoding="utf-8")
         print(f"wrote {path} (0 new books, {len(pending_changed)} changed)")
         nfiles += 1
     summary["next_free_id"] = next_id
     summary["files"] = [f"batch-{n + 1:04d}.sql" for n in range(nfiles)]
     (out_dir / "watermark.sql").write_text(
-        watermark_sql(summary), encoding="utf-8"
+        strip_transaction(watermark_sql(summary)), encoding="utf-8"
     )
     print(f"wrote {out_dir / 'watermark.sql'} (execute LAST, after all batches)")
     print(f"total: {len(emit_new) + len(emit_changed)} books in {nfiles} batch file(s); "
