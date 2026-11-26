@@ -39,6 +39,14 @@
 # commits them, then deletes the marker. A public library's books
 # are in D1 from the sweep, so no re-listing is needed.
 #
+# Make-public backstop (WAVE 7, SWEEP_SPEC_pubreq.md): the sweep
+# job also applies the manifest's `publish_sql` statements (guarded
+# UPDATE ... AND visibility='private') after the D1 import — for
+# folders indexed in this run from a pending_public trigger, and for
+# indexed libraries whose /api/drive-pubreq endpoint call could not
+# apply the request. The plan step reports both to_index and
+# to_publish; the index step runs when either is non-zero.
+#
 # D1 import is automatic for sweep-indexed libraries (wrangler d1
 # execute --remote; batches are INSERT OR IGNORE, idempotent; the
 # registry upsert keeps a stored visibility, so a re-index never
@@ -223,9 +231,12 @@ jobs:
           TO_INDEX=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_index']))")
           echo "to_index=$TO_INDEX" >> "$GITHUB_OUTPUT"
           echo "folders to index: $TO_INDEX"
+          TO_PUBLISH=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_publish']))")
+          echo "to_publish=$TO_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "folders to publish (backstop): $TO_PUBLISH"
 
       - name: Index pending folders + import to D1
-        if: ${{ github.event_name == 'schedule' && steps.plan.outputs.to_index != '0' }}
+        if: ${{ github.event_name == 'schedule' && (steps.plan.outputs.to_index != '0' || steps.plan.outputs.to_publish != '0') }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -275,6 +286,32 @@ jobs:
                 exit 1
               }
             done
+          fi
+          # Pending-public backstop (WAVE 7, SWEEP_SPEC_pubreq.md):
+          # apply the manifest's guarded UPDATEs — for folders indexed
+          # in this run from a pending_public trigger, and for indexed
+          # libraries whose publish request the /api/drive-pubreq
+          # endpoint could not apply (not indexed when asked, or the
+          # endpoint call failed). The UPDATE is guarded
+          # (AND visibility='private'), so a stale entry is a
+          # harmless 0-row no-op; a failure here only warns — the
+          # next sweep retries, and nothing else in this step depends
+          # on it. Runs AFTER the batch + registry import, so the
+          # rows it UPDATEs already exist.
+          PUBLISH_N=$(python3 -c "import json; m=json.load(open('drive-sweep-manifest.json')); print(len([e for e in m.get('indexed', []) if e.get('publish_sql')]) + len(m.get('to_publish', [])))")
+          if [ "$PUBLISH_N" = "0" ]; then
+            echo "no pending_public backstop to apply"
+          else
+            python3 - <<'PYEOF'
+          import json
+          m = json.load(open('drive-sweep-manifest.json'))
+          sqls = [e['publish_sql'] for e in m.get('indexed', []) if e.get('publish_sql')]
+          sqls += [e['publish_sql'] for e in m.get('to_publish', [])]
+          open('drive-publish.sql', 'w').write('\n'.join(sqls) + '\n')
+          print(f'{len(sqls)} publish UPDATE(s)')
+          PYEOF
+            wrangler d1 execute rlibook-tg --remote --file drive-publish.sql \
+              || echo "::warning::publish backstop failed — the next sweep retries (guarded UPDATE, idempotent)"
           fi
           # Record verification failures in KV so later runs skip
           # them instead of re-hitting the Drive API every 2 hours.
