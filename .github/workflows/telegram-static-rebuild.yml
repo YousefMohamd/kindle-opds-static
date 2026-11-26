@@ -109,7 +109,19 @@ jobs:
           # TODAY), FALLBACK to the previous newest.json — never publish
           # a broken feed. Non-blocking throughout: a newest.json
           # failure must never kill the rebuild.
-          PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
+          # Live snapshot for newest.json (newest-fix 2026-11-26): the
+          # shards top out days behind the real catalog (groups never
+          # enter the seed; the preview scrape found 0 new book files
+          # Nov 23-25), while the bot Worker's Durable Object key
+          # live:additions holds today's books. Public GET, no secret;
+          # fail-soft — a failed fetch just builds from shards alone.
+          curl -fsS --max-time 20 \
+            "https://rlibook-bot.mohamedyou1357.workers.dev/api/live-state?key=live:additions" \
+            -o live-additions.json \
+            && echo "live snapshot: $(python3 -c "import json; print(len(json.load(open('live-additions.json'))['books']))") books" \
+            || echo "live snapshot fetch failed — building newest.json from shards alone"
+          PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 --live-json live-additions.json \
+            || PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 --live-json live-additions.json \
             || PYTHONPATH=.. python3 -m telegram.tbi.newest --shard-dir ../site/telegram.new --out ../site/telegram.new/newest.json --limit 30 \
             || echo "newest.json regeneration failed twice — keeping the previous newest.json"
           python3 - <<'PYEOF' || true
