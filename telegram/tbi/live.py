@@ -77,6 +77,16 @@ LIVE_CURSOR_KEY = "live:cursor"
 # there, so a scan record can only ever land next to the scan it
 # describes.
 LIVE_LAST_SCAN_KEY = "live:last_scan"
+# Outbox + lease keys (sync-fix v2, 2026-11-24) — see tbi.outbox and
+# tbi.session_guard. They need the companion Worker patch
+# (bot-companion/) before the DO accepts them: until it is deployed
+# the single-key PUT answers 400 for these keys (the client surfaces
+# that, live_sync falls back to the repo-file outbox + workflow
+# guards), and the batch PUT silently ignores the extra fields.
+# The Python side is written against the NEW contract either way,
+# so no second code change is needed when the Worker lands.
+LIVE_OUTBOX_KEY = "live:outbox"
+LIVE_LEASE_KEY = "live:lease"
 # Batch payload ceiling (v4.8.63): the endpoint caps bodies at
 # 2 MB; stay under it. A merged additions doc is capped at 500
 # books (~300 KB worst case), so the batch fits with wide margin —
@@ -160,7 +170,32 @@ def merge_live_books(
     first (newest first); a book already present (same ``id``) is NOT
     duplicated — the existing entry is kept. The list is capped at
     ``max_books`` (oldest dropped). Returns the merged list.
+
+    NOTE (sync-fix v2): the cap is a LOSSY window — books dropped
+    here vanish from the bot's live view until the daily sync
+    publishes them (up to 24 h later). The cap stays for the
+    bot-facing window (the bot reads this one key), but the LOSS is
+    now closed by the outbox (tbi.outbox): every book is ALSO
+    enqueued with a sequence number, and the cursor-based
+    pagination in tbi.outbox.paginate_books walks the outbox
+    gap-free. Use merge_live_books_with_dropped when you need to
+    know what the cap dropped, so the caller can enqueue exactly
+    those books.
     """
+    merged, _ = merge_live_books_with_dropped(existing, new, max_books=max_books)
+    return merged
+
+
+def merge_live_books_with_dropped(
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+    *,
+    max_books: int = MAX_LIVE_BOOKS,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Like merge_live_books, but also returns the books the cap
+    dropped (oldest first out). The caller enqueues the dropped
+    books into the outbox — that is what turns the lossy 500-window
+    into a lossless pipeline."""
     seen = {b["id"] for b in existing}
     merged = list(existing)
     fresh: list[dict[str, Any]] = []
@@ -170,7 +205,25 @@ def merge_live_books(
             fresh.append(b)
     # Newest first: fresh books first, then the existing list.
     merged = fresh + merged
-    return merged[:max_books]
+    return merged[:max_books], merged[max_books:]
+
+
+def assign_seq(books: list[dict[str, Any]], start: int) -> list[dict[str, Any]]:
+    """Assign monotonic sequence numbers to ``books`` (in list
+    order), starting at ``start``. The caller derives ``start``
+    from the outbox's highest seq + 1 (tbi.outbox.next_seq), so
+    numbers never repeat across runs. Returns new dicts (the
+    inputs are not mutated). A book that already carries a seq
+    keeps it — replayed outbox books are never re-numbered."""
+    out: list[dict[str, Any]] = []
+    seq = int(start)
+    for book in books:
+        copy = dict(book)
+        if not copy.get("seq"):
+            copy["seq"] = seq
+            seq += 1
+        out.append(copy)
+    return out
 
 
 def parse_live(data: Any) -> dict[str, Any]:
@@ -406,6 +459,26 @@ class LiveStateClient:
                 f"live-state PUT live:batch: HTTP {status}: {payload[:200]!r}"
             )
 
+    def get_lease(self) -> Optional[str]:
+        """Read the live:lease key (sync-fix v2, session guard).
+
+        Returns the raw JSON (or None when absent). Raises
+        RuntimeError on a 400 — the Worker answers 400 for this
+        key until the companion patch lands — so the caller can
+        tell "lease unavailable" apart from "no lease held"."""
+        return self.get(LIVE_LEASE_KEY)
+
+    def put_lease(self, value: str) -> None:
+        """Write the live:lease key (sync-fix v2). Raises on
+        failure, including the Worker's 400 while the companion
+        patch is not deployed yet."""
+        self.put(LIVE_LEASE_KEY, value)
+
+    def get_outbox(self) -> Optional[str]:
+        """Read the live:outbox key (sync-fix v2). Same 400
+        semantics as get_lease before the companion patch."""
+        return self.get(LIVE_OUTBOX_KEY)
+
 
 def read_live(store: LiveStateStore) -> dict[str, Any]:
     """Read the live-additions value (empty when the key is absent)."""
@@ -464,18 +537,44 @@ def write_cursor(store: LiveStateStore, cursor: dict[str, int]) -> None:
     store.put(LIVE_CURSOR_KEY, json.dumps(cursor, ensure_ascii=False))
 
 
+def read_outbox(store: LiveStateStore) -> list[dict[str, Any]]:
+    """Read the live:outbox value (empty when the key is absent or
+    malformed). The companion Worker patch is needed for the DO
+    copy; before it lands this returns [] and the repo-file copy
+    (tbi.outbox.load_outbox_file) is the outbox."""
+    from .outbox import parse_outbox
+
+    raw = store.get(LIVE_OUTBOX_KEY)
+    if raw is None:
+        return []
+    try:
+        return parse_outbox(json.loads(raw))
+    except ValueError:
+        return []
+
+
 def put_live_batch(
     store: LiveStateStore,
     additions_value: dict[str, Any],
     cursor: dict[str, int],
     scan_run_id: str,
     stats: Optional[dict[str, Any]] = None,
+    outbox: Optional[dict[str, Any]] = None,
 ) -> bool:
     """Write the merged additions + cursor (+ scan record) in ONE
     atomic batch PUT (v4.8.63) — the DO writes all three keys in
     one transaction, so a crash or timeout can never leave a new
     book list with an old cursor (the #632 mode: the additions
     PUT landed and the cursor PUT timed out).
+
+    ``outbox`` (sync-fix v2): the outbox document
+    (tbi.outbox.outbox_document) to write as ``live:outbox`` in
+    the SAME transaction — the batch is the outbox's durable
+    commit. The current Worker IGNORES unknown batch fields, so
+    until the companion patch (bot-companion/) deploys, the
+    outbox field is inert in the DO and the repo-file copy is the
+    backstop; the Python side needs no change when the Worker
+    lands.
 
     Returns True when the atomic batch landed, False when the
     fallback ran: an oversize payload (over LIVE_BATCH_MAX_BYTES)
@@ -493,6 +592,8 @@ def put_live_batch(
         "scan_run_id": scan_run_id,
         "stats": dict(stats or {}),
     }
+    if outbox is not None:
+        batch["outbox"] = outbox
     body = json.dumps(batch, ensure_ascii=False).encode("utf-8")
     put_batch = getattr(store, "put_batch", None)
     if put_batch is not None and len(body) <= LIVE_BATCH_MAX_BYTES:

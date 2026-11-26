@@ -57,12 +57,29 @@ from typing import AsyncIterator, Optional
 
 from .books import format_size
 from .config import Config
-from .entity_cache import EntityCache, _is_channel_invalid, resolve_entity
+from .entity_cache import (
+    EntityCache,
+    ResolveBudget,
+    _is_channel_invalid,
+    resolve_entity,
+)
 from .scrape import FileMeta, Post, normalize_link
 
 API_ID_ENV = "TELEGRAM_API_ID"
 API_HASH_ENV = "TELEGRAM_API_HASH"
 SESSION_ENV = "TELEGRAM_SESSION_STRING"
+# Second dedicated session (sync-fix v2, 2026-11-24): the newspapers
+# workflow uses its OWN Telegram session, generated from the owner's
+# second login, so the two MTProto sessions are never the same auth
+# key used from two processes/IPs at once (the AuthKeyDuplicatedError
+# that killed realtime #702+ and newspapers #508+ on 2026-11-24 — the
+# single TELEGRAM_SESSION_STRING was shared by both workflows and the
+# account was revoked). The two secrets are created by the OWNER with
+# his Telegram code (never generated here, never in the repo); the
+# code only selects WHICH env var to read. A session-guard
+# (tbi.session_guard) refuses to start when both vars hold the SAME
+# value (the same secret pasted into both by mistake).
+SESSION_ENV_NEWS = "TELEGRAM_SESSION_STRING_NEWS"
 
 # Messages are fetched in chunks of this size; a chunk is also the unit
 # a flood-wait retry re-fetches (idempotent — the store upserts by
@@ -87,18 +104,25 @@ class ApiCredentialsError(ValueError):
     """
 
 
-def load_api_credentials(env: Optional[dict] = None) -> tuple[int, str, str]:
+def load_api_credentials(env: Optional[dict] = None, session_env: str = SESSION_ENV) -> tuple[int, str, str]:
     """Read (api_id, api_hash, session_string) from the environment.
 
     ``env`` is injectable for tests (defaults to ``os.environ``).
-    Raises :class:`ApiCredentialsError` when anything is missing or
-    ``api_id`` is not an integer. Values are never logged or returned
-    anywhere except to the caller (the client constructor).
+    ``session_env`` selects WHICH session to use (sync-fix v2):
+    ``TELEGRAM_SESSION_STRING`` (realtime / backfill, the default)
+    or ``TELEGRAM_SESSION_STRING_NEWS`` (newspapers). The two
+    sessions are DIFFERENT auth keys for the same account, created
+    by the owner — one per workflow — so Telegram never sees the
+    same session from two processes at once (AuthKeyDuplicatedError,
+    2026-11-24). Raises :class:`ApiCredentialsError` when anything
+    is missing or ``api_id`` is not an integer. Values are never
+    logged or returned anywhere except to the caller (the client
+    constructor).
     """
     source = env if env is not None else os.environ
     missing = [
         name
-        for name in (API_ID_ENV, API_HASH_ENV, SESSION_ENV)
+        for name in (API_ID_ENV, API_HASH_ENV, session_env)
         if not (source.get(name) or "").strip()
     ]
     if missing:
@@ -120,7 +144,7 @@ def load_api_credentials(env: Optional[dict] = None) -> tuple[int, str, str]:
     return (
         api_id,
         str(source[API_HASH_ENV]).strip(),
-        str(source[SESSION_ENV]).strip(),
+        str(source[session_env]).strip(),
     )
 
 
@@ -235,6 +259,7 @@ async def iter_api_posts(
     handle: str,
     *,
     cache: Optional[EntityCache] = None,
+    budget: Optional[ResolveBudget] = None,
     limit: Optional[int] = None,
     min_id: Optional[int] = None,
     start_before: Optional[int] = None,
@@ -257,6 +282,12 @@ async def iter_api_posts(
     and stores the result. Without a cache the behaviour is exactly
     as before (resolve every time).
 
+    ``budget`` (sync-fix v2) caps fresh resolves for this call: when
+    it is spent, a cache miss raises ResolveBudgetExhausted instead
+    of resolving (the caller skips the source). A stale cached entry
+    is still USED (no resolve) — staleness schedules an
+    opportunistic refresh, it never blocks the read.
+
     Flood waits (Telegram's rate limit) are honoured: an exception
     with a ``seconds`` attribute (Telethon's ``FloodWaitError``) pauses
     the chunk — capped at ``_MAX_FLOOD_WAIT_S`` — and the chunk is
@@ -275,7 +306,7 @@ async def iter_api_posts(
     re-resolved ONCE, the cache is updated, and the chunk is retried
     once with the fresh entity. Never a loop.
     """
-    entity, from_cache = await resolve_entity(client, handle, cache)
+    entity, from_cache = await resolve_entity(client, handle, cache, budget=budget)
     # offset_id must NEVER be None: real Telethon's iterator does
     # offset_id = max(offset_id, max_id) with max_id defaulting to 0,
     # so offset_id=None raises TypeError: '>' not supported between
@@ -314,7 +345,7 @@ async def iter_api_posts(
                         flush=True,
                     )
                     entity, from_cache = await resolve_entity(
-                        client, handle, cache
+                        client, handle, cache, budget=budget
                     )
                     re_resolved = True
                     continue

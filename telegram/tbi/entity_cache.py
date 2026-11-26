@@ -74,6 +74,94 @@ DEFAULT_ENTITY_CACHE = "entity-cache.json"
 # Cache file format version (bump only if the entry shape changes).
 CACHE_VERSION = 1
 
+# --- sync-fix v2 (2026-11-24): the cache had NO update path -----------
+# The file held 215 entries for 215 configured sources (43 channels
+# + 172 groups, verified 2026-11-24) — coverage was complete, but
+# every entry dated from 2026-11-08/10/15 and nothing ever refreshed
+# them: a new handle added to channels.yaml, or a stale id/access
+# hash, forced a live ResolveUsernameRequest on the hot path, and the
+# refreshed value died with the ephemeral runner (the workflow
+# deliberately never committed the file — a commit every 5 minutes
+# would flood the repo). The fix, in three layers:
+#   * TTL + opportunistic refresh: entries older than ENTITY_TTL_DAYS
+#     are re-resolved oldest-first, inside a bounded per-run budget
+#     (ResolveBudget) — live_sync does this, so the file heals
+#     itself a few entries per run instead of all at once.
+#   * Negative cache: a handle that fails to resolve is remembered
+#     (failed_at + failures) for NEGATIVE_TTL_HOURS, so a dead handle
+#     is not re-resolved every run (each attempt counts toward the
+#     account's resolve rate limit).
+#   * Durable truth: the D1 `entities` table (telegram/sql/
+#     entities-schema.sql, tbi.d1_entities) holds the same mapping
+#     by numeric id; the weekly refresh workflow commits the file
+#     ONLY when it changed, and regenerates entities.sql alongside.
+ENTITY_TTL_DAYS = 30
+# A stale entry is re-resolved at most this often even when the TTL
+# has passed and the budget is free — a source that keeps failing
+# must not be retried every run.
+NEGATIVE_TTL_HOURS = 24
+# Fresh resolves per live_sync run (misses first, then stale
+# refresh). 8 is deliberately small: at ~144 runs/day the whole
+# 215-entry cache can turn over in under a day when it comes due,
+# while a single run can never spend 8 resolves' worth of the
+# account's resolve budget, let alone trip a FloodWait by itself.
+DEFAULT_RESOLVE_BUDGET = 8
+
+
+class ResolveBudgetExhausted(Exception):
+    """Raised by resolve_entity when the run's resolve budget is
+    spent. The caller SKIPS the handle (records it as
+    failed:resolve-budget) instead of resolving — a skipped source
+    keeps its old cursor and is retried next run; a resolve past
+    the budget is how the account earns a FloodWait."""
+
+
+def _parse_ts(value) -> Optional[datetime]:
+    """Parse an ISO timestamp, or None when absent/unparseable."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def entry_age_days(entry: dict, now: Optional[datetime] = None) -> Optional[float]:
+    """Days since the entry was last resolved (None when unknown —
+    an entry with no resolved_at is treated as infinitely old)."""
+    ts = _parse_ts(entry.get("resolved_at"))
+    if ts is None:
+        return None
+    ref = now or datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (ref - ts).total_seconds() / 86400.0
+
+
+def is_stale(entry: dict, ttl_days: float = ENTITY_TTL_DAYS,
+             now: Optional[datetime] = None) -> bool:
+    """True when the entry is older than the TTL (or has no
+    timestamp at all). Stale does NOT mean unusable: the cached
+    InputChannel is still tried first — staleness only schedules
+    an opportunistic re-resolve inside the budget."""
+    age = entry_age_days(entry, now)
+    return age is None or age > ttl_days
+
+
+def is_negative_cached(entry: dict, ttl_hours: float = NEGATIVE_TTL_HOURS,
+                       now: Optional[datetime] = None) -> bool:
+    """True when the entry records a recent resolve FAILURE
+    (failed_at within the negative TTL). Such a handle is skipped
+    without a resolve attempt — retrying a dead handle every run
+    burns the account's resolve budget for nothing."""
+    ts = _parse_ts(entry.get("failed_at"))
+    if ts is None:
+        return False
+    ref = now or datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (ref - ts).total_seconds() < ttl_hours * 3600
+
 
 class ResolveFloodWait(Exception):
     """A FloodWaitError raised by ResolveUsernameRequest (get_entity).
@@ -259,6 +347,130 @@ class EntityCache:
         """The cached entry for ``handle``, or None (cache miss)."""
         return self.entries.get(_normalize_handle(handle))
 
+    def lookup_valid(self, handle: str, ttl_days: float = ENTITY_TTL_DAYS,
+                     now: Optional[datetime] = None) -> Optional[dict]:
+        """The cached entry when it is usable WITHOUT a resolve:
+        present, not negatively cached (recent failure), and not
+        stale. Returns None when a resolve (or a skip) is the right
+        move — the caller decides between the two via the budget.
+        A stale entry is NOT returned here: the caller should use
+        the cached peer for the read and schedule a refresh, not
+        block the read on a re-resolve."""
+        entry = self.lookup(handle)
+        if entry is None:
+            return None
+        if is_negative_cached(entry, now=now):
+            return None
+        if is_stale(entry, ttl_days, now):
+            return None
+        return entry
+
+    def refresh_due(self, handles=None, ttl_days: float = ENTITY_TTL_DAYS,
+                    limit: int = DEFAULT_RESOLVE_BUDGET,
+                    now: Optional[datetime] = None) -> list[str]:
+        """Handles whose entries are stale and due a re-resolve,
+        oldest first, capped at ``limit``. ``handles`` defaults to
+        every cached handle. Negatively cached handles are never
+        due (a recent failure is not retried until its TTL lapses).
+        Pure selection — resolving is the caller's job, inside the
+        budget."""
+        ref = now or datetime.now(timezone.utc)
+        keys = [_normalize_handle(h) for h in handles] if handles is not None else list(self.entries)
+        due: list[tuple[float, str]] = []
+        for key in keys:
+            entry = self.entries.get(key)
+            if entry is None:
+                continue
+            if is_negative_cached(entry, now=ref):
+                continue
+            if not is_stale(entry, ttl_days, ref):
+                continue
+            age = entry_age_days(entry, ref)
+            # Return the entry's ORIGINAL handle spelling (not the
+            # lowercased cache key): the re-resolve stores it back,
+            # so the display spelling never degrades to lowercase.
+            due.append((age if age is not None else float("inf"),
+                        str(entry.get("handle") or key)))
+        due.sort(key=lambda t: -t[0])
+        return [handle for _, handle in due[:limit]]
+
+    def record_failure(self, handle: str, exc: Exception) -> None:
+        """Remember a failed resolve (negative cache): the handle
+        keeps any good entry it had (a failure does not delete a
+        working id/access hash), but gains failed_at + a failures
+        counter, so the next runs skip it for NEGATIVE_TTL_HOURS
+        instead of re-resolving a dead handle every run. A
+        ResolveFloodWait is NOT recorded here — a flood is
+        account-wide and the run stops anyway (live_sync handles
+        it); recording it per-handle would be wrong."""
+        if isinstance(exc, ResolveFloodWait):
+            return
+        key = _normalize_handle(handle)
+        entry = self.entries.get(key)
+        if entry is None:
+            entry = {
+                "handle": handle,
+                "id": 0,
+                "access_hash": None,
+                "type": "unknown",
+                "resolved_at": None,
+            }
+            self.entries[key] = entry
+        entry["failed_at"] = _now_iso()
+        entry["failures"] = int(entry.get("failures") or 0) + 1
+        self.save()
+
+    def merge(self, entries: dict) -> int:
+        """Merge entries from another source of truth (the D1
+        entities export — see tbi.d1_entities): an incoming entry
+        wins only when it is NEWER (resolved_at) than the one held,
+        so a stale export can never overwrite a fresher resolve.
+        Returns the number of entries added or updated. Entries
+        with id 0 (negative-cache placeholders) are never merged
+        in and never overwrite a good entry."""
+        changed = 0
+        for key, incoming in (entries or {}).items():
+            if not isinstance(incoming, dict):
+                continue
+            try:
+                incoming_id = int(incoming.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if incoming_id == 0:
+                continue
+            norm = _normalize_handle(str(key))
+            current = self.entries.get(norm)
+            if current is not None:
+                cur_ts = _parse_ts(current.get("resolved_at"))
+                inc_ts = _parse_ts(incoming.get("resolved_at"))
+                same_peer = (
+                    current.get("id") == incoming_id
+                    and current.get("access_hash") == incoming.get("access_hash")
+                )
+                # Skip only when nothing is newer: same peer AND
+                # the incoming timestamp is not newer. A newer
+                # timestamp for the SAME peer still updates (it
+                # refreshes the TTL — that is the whole point of
+                # the refresh), and a different peer always wins
+                # when newer.
+                if same_peer and (
+                    inc_ts is None
+                    or (cur_ts is not None and inc_ts <= cur_ts)
+                ):
+                    continue
+                if (
+                    not same_peer
+                    and cur_ts is not None
+                    and inc_ts is not None
+                    and inc_ts <= cur_ts
+                ):
+                    continue
+            self.entries[norm] = dict(incoming)
+            changed += 1
+        if changed:
+            self.save()
+        return changed
+
     def store(self, handle: str, entity) -> Optional[dict]:
         """Record a freshly resolved entity and save the file
         immediately (a timeout kill must not lose the entry).
@@ -268,6 +480,10 @@ class EntityCache:
         entry = _entry_from_entity(handle, entity)
         if entry is None:
             return None
+        # A successful resolve clears any negative-cache markers
+        # the handle carried (it is alive again).
+        entry.pop("failed_at", None)
+        entry.pop("failures", None)
         self.entries[_normalize_handle(handle)] = entry
         self.save()
         return entry
@@ -300,9 +516,72 @@ class EntityCache:
         os.replace(tmp, self.path)
 
 
+# --- the resolve budget (sync-fix v2) --------------------------------------
+
+class ResolveBudget:
+    """Bounded fresh resolves per run (sync-fix v2).
+
+    The account's ResolveUsernameRequest budget is the scarcest
+    resource in the sync: one flood wait there stops the whole run
+    for hours. The budget caps how many NEW resolves a run may
+    spend (cache misses first, stale refresh with what is left).
+    Cache HITS cost nothing. When the budget is spent the run
+    SKIPS the remaining unknown handles instead of resolving them
+    — a skipped source keeps its old cursor for the next run.
+    """
+
+    def __init__(self, max_fresh: int = DEFAULT_RESOLVE_BUDGET):
+        self.max_fresh = max(0, int(max_fresh))
+        self.spent = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.max_fresh - self.spent)
+
+    @property
+    def exhausted(self) -> bool:
+        return self.remaining <= 0
+
+    def try_acquire(self) -> bool:
+        """Spend one resolve, or False when the budget is gone."""
+        if self.exhausted:
+            return False
+        self.spent += 1
+        return True
+
+
+async def refresh_entry(client, handle: str, cache: EntityCache):
+    """Force a re-resolve of ``handle`` (stale-entry refresh):
+    calls ``client.get_entity`` even when the cache holds the
+    handle, stores the fresh entity, and returns (entity, True)
+    — or (None, False) when the entity cannot be cached (the
+    caller still proceeds; the entry is simply not refreshed).
+    Raises ResolveFloodWait on a resolve flood (the caller stops
+    the run) and ValueError for a personal chat. Any other failure
+    is recorded as a negative-cache failure and re-raised.
+    Unlike resolve_entity, this NEVER returns the cached peer:
+    its whole point is to replace a stale one."""
+    try:
+        entity = await client.get_entity(handle)
+    except Exception as exc:  # noqa: BLE001 - flood wait is re-raised typed
+        seconds = _flood_wait_seconds(exc)
+        if seconds is not None:
+            raise ResolveFloodWait(handle, seconds) from exc
+        cache.record_failure(handle, exc)
+        raise
+    if _is_user_entity(entity):
+        raise ValueError(
+            f"@{handle} resolved to a personal chat — the API paths "
+            "only read configured channels/groups, never personal chats."
+        )
+    stored = cache.store(handle, entity)
+    return entity, stored is not None
+
+
 # --- the resolver ------------------------------------------------------------
 
-async def resolve_entity(client, handle: str, cache: Optional[EntityCache] = None):
+async def resolve_entity(client, handle: str, cache: Optional[EntityCache] = None,
+                         budget: Optional[ResolveBudget] = None):
     """Resolve ``handle`` to an entity (or input peer), via the cache.
 
     Returns ``(entity, from_cache)``. A cache hit returns an
@@ -311,6 +590,13 @@ async def resolve_entity(client, handle: str, cache: Optional[EntityCache] = Non
     miss calls ``client.get_entity(handle)`` once, stores the result
     (and saves the cache file immediately), and returns the fresh
     entity.
+
+    ``budget`` (sync-fix v2): when given, a cache miss first spends
+    one unit; when the budget is exhausted it raises
+    :class:`ResolveBudgetExhausted` INSTEAD of resolving (the
+    caller skips the handle). A negatively cached handle (failed
+    recently) also raises ResolveBudgetExhausted without spending
+    — there is nothing to gain by retrying it this run.
 
     Raises :class:`ResolveFloodWait` when the resolve itself is
     flood-limited (the caller must stop the run), and ValueError
@@ -321,13 +607,27 @@ async def resolve_entity(client, handle: str, cache: Optional[EntityCache] = Non
     if cache is not None:
         entry = cache.lookup(handle)
         if entry is not None:
+            if is_negative_cached(entry):
+                raise ResolveBudgetExhausted(
+                    f"@{handle}: resolve failed recently — negative "
+                    "cache, skipping this run"
+                )
             return _input_peer_from_entry(entry), True
+    if budget is not None and not budget.try_acquire():
+        raise ResolveBudgetExhausted(
+            f"@{handle}: per-run resolve budget spent "
+            f"({budget.max_fresh}) — skipping, cursor kept for next run"
+        )
     try:
         entity = await client.get_entity(handle)
+    except ResolveBudgetExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001 - flood wait is re-raised typed
         seconds = _flood_wait_seconds(exc)
         if seconds is not None:
             raise ResolveFloodWait(handle, seconds) from exc
+        if cache is not None:
+            cache.record_failure(handle, exc)
         raise
     if _is_user_entity(entity):
         raise ValueError(

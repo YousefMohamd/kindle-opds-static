@@ -1171,11 +1171,48 @@ async def collect_api_client(client, today: date, source: dict, limit: int = 60)
                    "posts_seen": len(posts), "entries": 0, "detail": ""}
 
 
-def _api_credentials_available() -> bool:
-    from .api_history import load_api_credentials
+def _load_news_credentials(env=None):
+    """Newspapers' Telegram credentials (sync-fix v2, 2026-11-24).
 
+    Uses the DEDICATED newspapers session
+    (TELEGRAM_SESSION_STRING_NEWS — a separate auth key from the
+    realtime session, owner-generated with his Telegram code), so
+    the two workflows never share one session
+    (AuthKeyDuplicatedError, 2026-11-24). Refuses when both
+    secrets hold the same value (SessionRefused — the exact
+    misconfiguration that killed both workflows).
+
+    TRANSITION: while TELEGRAM_SESSION_STRING_NEWS does not exist
+    yet (the owner currently receives no login code anywhere),
+    falls back to the shared TELEGRAM_SESSION_STRING — loudly
+    (::warning::) and ONLY under the DO lease, which the workflow
+    claims before running and which refuses while a realtime run
+    holds it. Sequential reuse is safe; simultaneous use is what
+    kills sessions. Remove this fallback once the NEWS secret
+    exists (delete the warning branch — the function then just
+    loads the NEWS session).
+    """
+    from .api_history import SESSION_ENV, SESSION_ENV_NEWS, load_api_credentials
+    from .session_guard import check_sessions_distinct
+
+    source = env if env is not None else os.environ
+    session_env = check_sessions_distinct(source)
+    if session_env == SESSION_ENV_NEWS:
+        return load_api_credentials(source, session_env=SESSION_ENV_NEWS)
+    print(
+        "::warning::TELEGRAM_SESSION_STRING_NEWS is not set — "
+        "newspapers is using the SHARED session in transition mode "
+        "(lease-guarded, never simultaneous with realtime). Create "
+        "the dedicated NEWS session as soon as the owner receives "
+        "a Telegram code, and store it as its own secret.",
+        flush=True,
+    )
+    return load_api_credentials(source, session_env=SESSION_ENV)
+
+
+def _api_credentials_available() -> bool:
     try:
-        load_api_credentials(os.environ)
+        _load_news_credentials(os.environ)
         return True
     except Exception:
         return False
@@ -1183,9 +1220,9 @@ def _api_credentials_available() -> bool:
 
 async def _collect_api_all(today: date, sources: list[dict], limit: int = 60):
     """API pass over the sources that still need one. Returns {key: (posts, report)}."""
-    from .api_history import create_client, load_api_credentials
+    from .api_history import create_client
 
-    api_id, api_hash, session = load_api_credentials(os.environ)
+    api_id, api_hash, session = _load_news_credentials(os.environ)
     client = create_client(api_id, api_hash, session)
     await client.connect()
     try:
@@ -1400,9 +1437,9 @@ async def _watch_api_all(today: date, sources: list[dict], limit: int = 15):
     """API pass for the watch: ONE Telethon client, hub + fallback,
     ``limit`` recent messages each, disconnect immediately. Returns
     {key: (posts, report)} — same shape as :func:`_collect_api_all`."""
-    from .api_history import create_client, load_api_credentials
+    from .api_history import create_client
 
-    api_id, api_hash, session = load_api_credentials(os.environ)
+    api_id, api_hash, session = _load_news_credentials(os.environ)
     client = create_client(api_id, api_hash, session)
     await client.connect()
     try:
@@ -1656,7 +1693,78 @@ def _print_source_reports(data: dict) -> None:
               + ", ".join(f"{d['name']} ({d['reason']})" for d in data["dropped"]))
 
 
+def _acquire_news_lease():
+    """Claim the DO lease for this newspapers run (sync-fix v2).
+
+    Returns (store, run_id, held). The lease is what makes the
+    transition fallback safe: while TELEGRAM_SESSION_STRING_NEWS
+    does not exist yet and newspapers shares the realtime session,
+    the lease refuses to start while a realtime run holds it (and
+    vice versa). When LIVE_SYNC_TOKEN is absent (local runs) there
+    is no DO to lease from — returns (None, None, False) and the
+    run proceeds unguarded. Raises SessionRefused when the lease
+    is live (caller exits 3) or when both session secrets hold
+    the same value. A Worker that answers 400 (companion patch
+    not deployed yet) only warns — the dispatcher stagger +
+    workflow in_progress checks still apply.
+    """
+    from .api_history import SESSION_ENV_NEWS
+    from .live import LiveStateClient
+    from .session_guard import (
+        SessionRefused,
+        acquire_lease,
+        check_sessions_distinct,
+    )
+
+    if not (os.environ.get("LIVE_SYNC_TOKEN") or "").strip():
+        return None, None, False
+    session_env = check_sessions_distinct(os.environ)  # raises if same value
+    holder = (
+        "newspapers-news"
+        if session_env == SESSION_ENV_NEWS
+        else "newspapers-shared"
+    )
+    run_id = (
+        os.environ.get("GITHUB_RUN_ID") or "local"
+    ) + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    store = LiveStateClient()
+    try:
+        acquire_lease(store, holder, run_id)
+    except SessionRefused:
+        raise
+    except Exception as exc:
+        print(
+            f"::warning::newspapers lease unavailable ({exc}) — "
+            "proceeding without the DO lease; dispatcher + workflow "
+            "guards apply",
+            flush=True,
+        )
+        return store, run_id, False
+    print(f"newspapers lease acquired ({holder}, {run_id})", flush=True)
+    return store, run_id, True
+
+
 def main(argv=None) -> int:
+    """Newspapers entry point — wraps _main_inner with the DO
+    lease (sync-fix v2). Exit 3 = refused to start (lease live
+    or same session in both roles); the dispatcher retries next
+    tick. The lease is released on every exit path, including
+    the early returns inside _main_inner."""
+    from .session_guard import EXIT_REFUSED, SessionRefused, release_lease
+
+    try:
+        store, run_id, held = _acquire_news_lease()
+    except SessionRefused as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    try:
+        return _main_inner(argv)
+    finally:
+        if held and store is not None:
+            release_lease(store, run_id)
+
+
+def _main_inner(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate site/newspapers.json and bake the day's papers as static HTML "
                     "into index.html and site/newspapers/index.html (no fetch — Kindle browser)."

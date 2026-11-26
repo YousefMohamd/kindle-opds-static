@@ -1365,6 +1365,26 @@ def test_workflow_has_no_write_empty_step_and_new_schedule():
                          if not line.strip().startswith("#"))
     assert "--write-empty" not in runnable
     assert '"0 6 * * *"' not in text
-    assert '"30 9 * * *"' in text
-    assert '"0 15 * * *"' in text
+    # Sync-fix v2.1 (2026-11-24): SINGLE TRIGGER OF TRUTH — the YAML
+    # schedules are GONE (the 09:30 + 15:00 backstops moved to the
+    # 10-minute dispatcher cron, which is the only trigger for both
+    # workflows). The backstop times stay documented in the header
+    # comment; the workflow itself must have no `schedule:` block.
+    assert '"30 9 * * *"' not in text
+    assert '"0 15 * * *"' not in text
+    assert "\n  schedule:" not in text
+    assert "09:30" in text and "15:00" in text  # backstops documented
     assert "mode" in text and "watch" in text
+
+
+def test_realtime_workflow_has_no_yaml_schedule():
+    # Sync-fix v2.1: the realtime workflow's `*/5` YAML schedule was
+    # a second trigger on top of the dispatcher cron — with a
+    # ~10.75-min worst-case scan against a 10-min trigger, the two
+    # triggers queued overlapping identical scans. The dispatcher
+    # cron is the only trigger now.
+    text = (REPO_ROOT / ".github" / "workflows" / "telegram-realtime.yml"
+            ).read_text(encoding="utf-8")
+    assert '"*/5 * * * *"' not in text
+    assert "\n  schedule:" not in text
+    assert "workflow_dispatch" in text
