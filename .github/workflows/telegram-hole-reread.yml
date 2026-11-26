@@ -1,0 +1,302 @@
+# Nov 19-23 hole re-read — MANUAL-ONLY MTProto history recovery.
+#
+# Recovers the books posted 2026-11-19 .. 2026-11-24T07:40Z that are in
+# NEITHER D1 (delta stopped at 2026-11-18) NOR the DO live window
+# (500-cap, now holds only Nov 24-26). See
+# ~/workspace/tmp-fox/nov19-23-hole/PLAN.md for the full evidence,
+# scope estimate (~1,160 books), and runbook.
+#
+# HOW TO SHIP THIS FILE: workflows cannot be pushed by any token —
+# upload via the GitHub web UI only:
+#   repo -> .github/workflows -> Add file -> Create new file
+#   -> name: telegram-hole-reread.yml -> paste this file -> Commit.
+# The code it runs (telegram/tbi/hole_reread.py) must be merged to
+# main FIRST through the normal push route (it is not in the repo
+# until then — dispatching before that fails at the import).
+#
+# RUN ORDER (each step is a separate, reviewed decision):
+#   1. Dispatch with dry_run=true (default): fetch + generate the
+#      D1 batches + counts, write NOTHING to D1. Review the artifact
+#      (hole-out/counts.json + hole-report.md): recovered count
+#      should be ~900-1,400, per-date ~230-270/day, 0 failed
+#      sources ideally (a few are OK — re-dispatch covers them).
+#   2. Dispatch again with dry_run=false AND execute_d1=true: the
+#      same fetch runs, then the batches are applied to D1 via the
+#      Cloudflare D1 REST /batch endpoint, then verified
+#      (window count must equal recovered + pre-existing).
+#   3. If EITHER dispatch exits with "lease held" (exit 3 -> the job
+#      goes green with a warning), a realtime/newspapers run owns
+#      the session lease — wait ~15 min and re-dispatch. Do NOT
+#      force it, do NOT run with --no-lease.
+#
+# SESSION SAFETY: this workflow uses the MAIN Telegram session
+# ALONE, under the DO lease (holder "hole-reread", TTL 90 min).
+# While it runs, realtime/newspapers ticks exit 3 (skip, not
+# failure) and /new freezes for ~15-35 min, then catches up
+# automatically (cursor-based). If this run crashes, the lease
+# expires on its own (<=90 min) and realtime resumes — never a
+# permanent block. The script is FAIL-CLOSED: if the Worker
+# answers 400 for live:lease it aborts instead of proceeding
+# unguarded.
+#
+# SECRETS (already in the repo — same as telegram-realtime.yml /
+# telegram-sync.yml; never add values here):
+#   TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
+#   LIVE_SYNC_TOKEN (bot Worker live-state token)
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID (D1 gate + execute)
+# D1 database id below is the same one d1_query.py uses (a UUID,
+# not a secret).
+name: telegram-hole-reread
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run: fetch + generate batches, write nothing to D1"
+        required: false
+        default: true
+        type: boolean
+      window_start:
+        description: "Inclusive window start (ISO UTC)"
+        required: false
+        default: "2026-11-19T00:00:00Z"
+        type: string
+      window_end:
+        description: "Exclusive window end (ISO UTC) — last pre-outage scan"
+        required: false
+        default: "2026-11-24T07:40:28Z"
+        type: string
+      lease_ttl:
+        description: "DO lease TTL in seconds (must cover the fetch)"
+        required: false
+        default: "5400"
+        type: string
+      execute_d1:
+        description: "Apply the batches to D1 (only when dry_run=false)"
+        required: false
+        default: false
+        type: boolean
+
+# Own concurrency group (NOT the realtime one): the DO lease — not
+# the queue — is what serialises this against realtime/newspapers.
+# A second dispatch while one runs waits instead of racing it.
+concurrency:
+  group: kindle-opds-static-hole-reread
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  D1_DATABASE_ID: ba378afe-4a2e-4d79-b6e9-ad73cf51e8fa
+
+jobs:
+  hole-reread:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: telegram
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: telegram/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: D1 gate — window count, next id, existing keys
+        id: gate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WINDOW_START: ${{ inputs.window_start }}
+          WINDOW_END: ${{ inputs.window_end }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          tok = os.environ["CLOUDFLARE_API_TOKEN"]
+          acct = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          # D1 dates are YYYY-MM-DD. The gate covers the whole Nov 24
+          # calendar day: the re-read only generates Nov 24 00:00-07:40
+          # rows, and D1 holds 0 rows >= Nov 19 today, so the wider
+          # day bound only matters on a re-run (exact dedupe keys).
+          start_day = os.environ["WINDOW_START"][:10]
+          end_day = os.environ["WINDOW_END"][:10]
+          url = (f"https://api.cloudflare.com/client/v4/accounts/{acct}"
+                 f"/d1/database/{db}/query")
+          def q(sql):
+              req = urllib.request.Request(
+                  url, method="POST",
+                  data=json.dumps({"sql": sql}).encode(),
+                  headers={"Authorization": f"Bearer {tok}",
+                           "Content-Type": "application/json"})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  payload = json.load(r)
+              if not payload.get("success"):
+                  raise SystemExit(f"D1 query failed: {payload}")
+              return payload["result"][0]["results"]
+          window = q(
+              "SELECT COUNT(*) AS n, MAX(id) AS max_id FROM books "
+              f"WHERE date >= '{start_day}' AND date < '2026-11-25'")
+          total = q("SELECT COUNT(*) AS n, MAX(id) AS max_id FROM books")
+          rows = q(
+              "SELECT url, filename FROM books "
+              f"WHERE date >= '{start_day}' AND date < '2026-11-25'")
+          print(f"D1 total rows: {total[0]['n']}, MAX(id): {total[0]['max_id']}")
+          print(f"D1 rows already in window: {window[0]['n']}")
+          start_id = int(total[0]["max_id"] or 0) + 1
+          print(f"start_id for batches: {start_id}")
+          with open("hole-existing-keys.json", "w", encoding="utf-8") as f:
+              json.dump([f"{r['url']}|{r['filename']}" for r in rows], f)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"start_id={start_id}\n")
+              f.write(f"window_existing={window[0]['n']}\n")
+          PY
+
+      - name: Re-read the window (lease-guarded, main session alone)
+        id: reread
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
+          LIVE_SYNC_TOKEN: ${{ secrets.LIVE_SYNC_TOKEN }}
+          WINDOW_START: ${{ inputs.window_start }}
+          WINDOW_END: ${{ inputs.window_end }}
+          LEASE_TTL: ${{ inputs.lease_ttl }}
+          START_ID: ${{ steps.gate.outputs.start_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set +e
+          if [ "$DRY_RUN" = "true" ]; then DRY_FLAG="--dry-run"; else DRY_FLAG="--no-dry-run"; fi
+          python -m tbi.hole_reread --config channels.yaml \
+            --window-start "$WINDOW_START" --window-end "$WINDOW_END" \
+            --start-id "$START_ID" --existing-keys hole-existing-keys.json \
+            --lease-ttl "$LEASE_TTL" --out-dir hole-out $DRY_FLAG
+          code=$?
+          set -e
+          if [ "$code" -eq 3 ]; then
+            echo "::warning::DO lease held by another run (realtime/newspapers) — skipped, not failed. Wait ~15 min and re-dispatch."
+            echo "lease_held=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "lease_held=false" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hole-reread-${{ github.run_id }}
+          path: telegram/hole-out/
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Nov 19-23 hole re-read"
+            echo ""
+            echo "- Window: ${{ inputs.window_start }} .. ${{ inputs.window_end }}"
+            echo "- Dry-run: ${{ inputs.dry_run }}; execute_d1: ${{ inputs.execute_d1 }}"
+            echo "- D1 rows already in window (gate): ${{ steps.gate.outputs.window_existing }}"
+            echo "- Lease held by another run: ${{ steps.reread.outputs.lease_held }}"
+            if [ -f hole-out/hole-report.md ]; then cat hole-out/hole-report.md; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply batches to D1
+        if: inputs.execute_d1 == true && inputs.dry_run == false && steps.reread.outputs.lease_held != 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          # Apply hole-batch-*.sql to D1 via the REST /batch endpoint,
+          # 100 statements per call. INSERT OR IGNORE + the (url,
+          # filename) UNIQUE key make a re-apply safe (adds nothing).
+          # On any chunk failure: stop immediately — the partial
+          # application is consistent (per-chunk transactions) and a
+          # re-dispatch resumes cleanly (gate + dedupe skip what's in).
+          import glob, json, os, re, urllib.request, urllib.error
+          tok = os.environ["CLOUDFLARE_API_TOKEN"]
+          acct = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          url = (f"https://api.cloudflare.com/client/v4/accounts/{acct}"
+                 f"/d1/database/{db}/batch")
+          files = sorted(glob.glob("hole-out/hole-batch-*.sql"))
+          assert files, "no batch files — nothing to apply"
+          stmts = []
+          for path in files:
+              text = open(path, encoding="utf-8").read()
+              for s in text.split(";\n"):
+                  s = s.strip()
+                  if not s or s.upper() in ("BEGIN TRANSACTION", "COMMIT"):
+                      continue
+                  stmts.append(s + ";")
+          print(f"{len(files)} batch file(s), {len(stmts)} statements")
+          def post(chunk):
+              req = urllib.request.Request(
+                  url, method="POST",
+                  data=json.dumps({"sql": chunk}).encode(),
+                  headers={"Authorization": f"Bearer {tok}",
+                           "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=120) as r:
+                      payload = json.load(r)
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f"D1 /batch HTTP {e.code}: {e.read()[:500]}")
+              if not payload.get("success"):
+                  raise SystemExit(f"D1 /batch failed: {json.dumps(payload)[:1000]}")
+              return payload
+          for i in range(0, len(stmts), 100):
+              chunk = stmts[i:i + 100]
+              post(chunk)
+              print(f"applied statements {i + 1}-{i + len(chunk)}")
+          print("D1 apply complete")
+          PY
+
+      - name: Verify D1 after apply
+        if: inputs.execute_d1 == true && inputs.dry_run == false && steps.reread.outputs.lease_held != 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          tok = os.environ["CLOUDFLARE_API_TOKEN"]
+          acct = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          url = (f"https://api.cloudflare.com/client/v4/accounts/{acct}"
+                 f"/d1/database/{db}/query")
+          def q(sql):
+              req = urllib.request.Request(
+                  url, method="POST",
+                  data=json.dumps({"sql": sql}).encode(),
+                  headers={"Authorization": f"Bearer {tok}",
+                           "Content-Type": "application/json"})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  payload = json.load(r)
+              if not payload.get("success"):
+                  raise SystemExit(f"D1 query failed: {payload}")
+              return payload["result"][0]["results"]
+          counts = json.load(open("hole-out/counts.json"))
+          expected = counts["books_recovered"] + int("${{ steps.gate.outputs.window_existing }}")
+          got = q("SELECT COUNT(*) AS n, MAX(date) AS max_date FROM books "
+                  "WHERE date >= '2026-11-19' AND date < '2026-11-25'")[0]
+          total = q("SELECT COUNT(*) AS n FROM books")[0]
+          print(f"window rows in D1 now: {got['n']} (expected {expected})")
+          print(f"MAX(date) in window: {got['max_date']}")
+          print(f"D1 total rows now: {total['n']}")
+          assert got["n"] == expected, (
+              f"window count mismatch: got {got['n']}, expected {expected}")
+          assert (got["max_date"] or "") >= "2026-11-23", (
+              f"MAX(date) too old: {got['max_date']}")
+          print("VERIFY OK")
+          PY
