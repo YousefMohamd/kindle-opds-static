@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-26",
-  "generated_at": "2026-11-26T11:03:50.472422+00:00",
+  "generated_at": "2026-11-26T11:13:49.129225+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 34,
+      "entries": 35,
       "detail": ""
     },
     {
@@ -40,6 +40,19 @@
       "url": "https://t.me/Arabic_News_Papers/135226",
       "handle": "Arabic_News_Papers",
       "post_id": 135226,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الأهرام المسائي",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "evening",
+      "date": "2026-11-26",
+      "url": "https://t.me/Arabic_News_Papers/135235",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135235,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -76,9 +89,9 @@
       "region": "egypt",
       "edition": "morning",
       "date": "2026-11-26",
-      "url": "https://t.me/Arabic_News_Papers/135234",
+      "url": "https://t.me/Arabic_News_Papers/135239",
       "handle": "Arabic_News_Papers",
-      "post_id": 135234,
+      "post_id": 135239,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -312,9 +325,9 @@
       "region": "other",
       "edition": "morning",
       "date": "2026-11-26",
-      "url": "https://t.me/Arabic_News_Papers/135232",
+      "url": "https://t.me/Arabic_News_Papers/135237",
       "handle": "Arabic_News_Papers",
-      "post_id": 135232,
+      "post_id": 135237,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -338,9 +351,9 @@
       "region": "other",
       "edition": "morning",
       "date": "2026-11-26",
-      "url": "https://t.me/Arabic_News_Papers/135233",
+      "url": "https://t.me/Arabic_News_Papers/135238",
       "handle": "Arabic_News_Papers",
-      "post_id": 135233,
+      "post_id": 135238,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -466,7 +479,7 @@
       "code": "EG",
       "name": "مصر",
       "flag": "🇪🇬",
-      "count": 8
+      "count": 9
     },
     {
       "code": "KW",
