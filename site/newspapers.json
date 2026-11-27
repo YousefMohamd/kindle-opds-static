@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-27",
-  "generated_at": "2026-11-26T22:04:31.914199+00:00",
+  "generated_at": "2026-11-27T00:35:59.072996+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 0,
+      "entries": 10,
       "detail": ""
     },
     {
@@ -31,6 +31,45 @@
   "egypt": [],
   "other": [
     {
+      "name": "الأنباء",
+      "country": "KW",
+      "country_name": "الكويت",
+      "flag": "🇰🇼",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135258",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135258,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "السياسة",
+      "country": "KW",
+      "country_name": "الكويت",
+      "flag": "🇰🇼",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135261",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135261,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "القبس",
+      "country": "KW",
+      "country_name": "الكويت",
+      "flag": "🇰🇼",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135257",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135257,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "14اكتوبر",
       "country": "YE",
       "country_name": "اليمن",
@@ -42,18 +81,139 @@
       "handle": "arabJournalism",
       "post_id": 252320,
       "source": "arabJournalism"
+    },
+    {
+      "name": "الرأي",
+      "country": "JO",
+      "country_name": "الأردن",
+      "flag": "🇯🇴",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135259",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135259,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "النهار",
+      "country": "LB",
+      "country_name": "لبنان",
+      "flag": "🇱🇧",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135262",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135262,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الجريدة",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135263",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135263,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشاهد",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135260",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135260,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الوسط",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135264",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135264,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "عرب تايمز",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135266",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135266,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "كويت تايمز",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135265",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135265,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ],
   "countries": [
+    {
+      "code": "KW",
+      "name": "الكويت",
+      "flag": "🇰🇼",
+      "count": 3
+    },
+    {
+      "code": "LB",
+      "name": "لبنان",
+      "flag": "🇱🇧",
+      "count": 1
+    },
+    {
+      "code": "JO",
+      "name": "الأردن",
+      "flag": "🇯🇴",
+      "count": 1
+    },
     {
       "code": "YE",
       "name": "اليمن",
       "flag": "🇾🇪",
       "count": 1
+    },
+    {
+      "code": "XX",
+      "name": "غير محدد",
+      "flag": "🌍",
+      "count": 5
     }
   ],
   "empty": false,
-  "unmatched": [],
+  "unmatched": [
+    "عرب تايمز",
+    "كويت تايمز",
+    "الوسط",
+    "الجريدة",
+    "الشاهد"
+  ],
   "dropped": [
     {
       "name": "🇮🇶",
@@ -136,6 +296,21 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف الكويت  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "😄😁😄  صحف اليوم الجمعه 27-11-26  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
+      "reason": "url",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف السعودية  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -166,18 +341,8 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
-      "name": "😄😁😄  صحف الكويت  😄😁😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
       "name": "😄😁😄  صحف اليوم الخميس 26-11-26  😄😁",
       "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "https://t.me/joinchat/VGPv_tnlgUJlNjdl",
-      "reason": "url",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
