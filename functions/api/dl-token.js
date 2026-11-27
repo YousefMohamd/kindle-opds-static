@@ -569,6 +569,12 @@ export async function driveBookLibrary(db, fileId) {
 export function driveLibraryAllows(lib, viewerTgId, ownerTgId) {
   if (!lib) return true;
   if (lib.visibility === "public") return true;
+  // Removed / unavailable deny everyone — even the submitter and the
+  // owner: the books stay hidden until the library is re-added
+  // (removed) or the folder is shared again (unavailable). This closes
+  // the fail-open fall-through at the bottom for these two states;
+  // genuinely unknown values still fall through as public (legacy).
+  if (lib.visibility === "removed" || lib.visibility === "unavailable") return false;
   const isSubmitter = !!(viewerTgId && lib.submitter && viewerTgId === lib.submitter);
   if (lib.visibility === "private") return isSubmitter;
   if (lib.visibility === "pending_public") {

@@ -127,11 +127,62 @@ def publish_sql_for(folder_id: str, now_iso: str) -> str:
     )
 
 
+def remove_sql_for(folder_id: str, now_iso: str) -> str:
+    """Guarded UPDATE flipping one library to 'removed'.
+
+    The guard (visibility != 'removed') makes a stale entry a
+    harmless 0-row no-op; metadata and books rows are untouched.
+    """
+    if not FOLDER_RE.match(folder_id):
+        raise ValueError(f"bad folder_id {folder_id!r}")
+    return (
+        "UPDATE drive_libraries SET visibility = 'removed', "
+        f"reviewed_at = '{now_iso}' WHERE folder_id = '{folder_id}' "
+        "AND visibility != 'removed';"
+    )
+
+
+def unavailable_sql_for(folder_id: str, now_iso: str) -> str:
+    """Guarded UPDATE flipping one library to 'unavailable'.
+
+    Only from a live visibility (public/private/pending_public):
+    a 'removed' library must NEVER come back via this path, and
+    the guard makes a missing row a harmless 0-row no-op.
+    """
+    if not FOLDER_RE.match(folder_id):
+        raise ValueError(f"bad folder_id {folder_id!r}")
+    return (
+        "UPDATE drive_libraries SET visibility = 'unavailable', "
+        f"reviewed_at = '{now_iso}' WHERE folder_id = '{folder_id}' "
+        "AND visibility IN ('public', 'private', 'pending_public');"
+    )
+
+
+def restore_sql_for(folder_id: str, now_iso: str) -> str:
+    """Guarded UPDATE restoring a re-added library to 'private'.
+
+    Only from 'removed' or 'unavailable': a live library must never
+    be demoted by a re-add, and the guard makes a missing row a
+    harmless 0-row no-op. The submitter re-adds via /addchannel
+    (newest record "pending_index"); the sweep is the backstop that
+    flips the registry row back so the books reappear. No re-index
+    is needed — the books rows were never deleted.
+    """
+    if not FOLDER_RE.match(folder_id):
+        raise ValueError(f"bad folder_id {folder_id!r}")
+    return (
+        "UPDATE drive_libraries SET visibility = 'private', "
+        f"reviewed_at = '{now_iso}' WHERE folder_id = '{folder_id}' "
+        "AND visibility IN ('removed', 'unavailable');"
+    )
+
+
 def parse_pending(records: list, indexed: set[str], failed: set[str],
                   registry_visibility: dict | None = None) -> dict:
     """Newest-wins pending queue from the submissions log.
 
-    Returns {to_index, to_publish, skipped_indexed, skipped_failed, invalid}:
+    Returns {to_index, to_publish, to_remove, to_restore, skipped_indexed,
+    skipped_failed, skipped_removed, invalid}:
     to_index is [{folder_id, submitter_tg_id, submitted_at, status}] in
     submission order (newest first — the log's own order). ``status``
     is the triggering newest-record status (``pending_index`` /
@@ -151,11 +202,30 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
     newest record; skipping it would leave the folder unindexed
     forever, with the monitor 400ing on approve for want of a
     registry row).
+    to_remove is [{folder_id, submitter_tg_id, submitted_at}] — an
+    INDEXED library whose newest record is a removal (status
+    ``removed``): the sweep is the backstop for the
+    /api/drive-remove endpoint (same guarded-UPDATE pattern as
+    to_publish). A ``removed`` record for a folder that was never
+    indexed is a no-op (nothing to hide) and lands in
+    skipped_removed — it must NEVER fall through to to_index and
+    re-index the folder the user just removed.
+    to_restore is [{folder_id, submitter_tg_id, submitted_at}] — an
+    INDEXED library whose newest record re-adds it (status
+    ``pending_index`` / ``pending`` / ``pending_public``) while the
+    registry still says ``removed`` or ``unavailable``: the sweep
+    flips it back to ``private`` so the books reappear. A re-add
+    never demotes a live library (the guard only matches the two
+    dead states) and never re-indexes — the books rows are
+    already there.
     """
     to_index: list[dict] = []
     to_publish: list[dict] = []
+    to_remove: list[dict] = []
+    to_restore: list[dict] = []
     skipped_indexed: list[str] = []
     skipped_failed: list[str] = []
+    skipped_removed: list[str] = []
     invalid: list[str] = []
     seen: set[str] = set()
     vis = registry_visibility or {}
@@ -176,7 +246,7 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
             continue
         status = rec.get("status")
         if rec.get("type") != "channel" or status not in (
-                "pending_index", "pending_public", "pending"):
+                "pending_index", "pending_public", "pending", "removed"):
             continue  # decided by a newer non-pending record
         if key in indexed_lower:
             # Already indexed: only a pending_public request against
@@ -185,7 +255,21 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
             # visibility -> neither action list (fail closed: the
             # endpoint is the fast path, and a missing visibility
             # value must not trigger a write).
-            if status == "pending_public" and vis.get(key) == "private":
+            if status == "removed":
+                submitter = rec.get("user_id")
+                to_remove.append({
+                    "folder_id": folder_id,
+                    "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
+                    "submitted_at": str(rec.get("timestamp") or ""),
+                })
+            elif status in ("pending_index", "pending", "pending_public") and vis.get(key) in ("removed", "unavailable"):
+                submitter = rec.get("user_id")
+                to_restore.append({
+                    "folder_id": folder_id,
+                    "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
+                    "submitted_at": str(rec.get("timestamp") or ""),
+                })
+            elif status == "pending_public" and vis.get(key) == "private":
                 submitter = rec.get("user_id")
                 to_publish.append({
                     "folder_id": folder_id,
@@ -196,6 +280,11 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
         elif key in failed_lower:
             skipped_failed.append(folder_id)
         else:
+            if status == "removed":
+                # Never indexed (or not in the registry mirror):
+                # nothing to hide, and it must NOT be indexed now.
+                skipped_removed.append(folder_id)
+                continue
             submitter = rec.get("user_id")
             to_index.append({
                 "folder_id": folder_id,
@@ -206,8 +295,11 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
     return {
         "to_index": to_index,
         "to_publish": to_publish,
+        "to_remove": to_remove,
+        "to_restore": to_restore,
         "skipped_indexed": skipped_indexed,
         "skipped_failed": skipped_failed,
+        "skipped_removed": skipped_removed,
         "invalid": invalid,
     }
 
@@ -458,6 +550,8 @@ def main() -> int:
             print(text)
         print(f"Plan: {len(plan['to_index'])} to index, "
               f"{len(plan['to_publish'])} to publish, "
+              f"{len(plan['to_remove'])} to remove, "
+              f"{len(plan['to_restore'])} to restore, "
               f"{len(plan['skipped_indexed'])} already indexed, "
               f"{len(plan['skipped_failed'])} failed-known, "
               f"{len(plan['invalid'])} invalid", file=sys.stderr)
@@ -478,8 +572,22 @@ def main() -> int:
                  "publish_sql": publish_sql_for(item["folder_id"], now_iso)}
                 for item in plan["to_publish"]
             ],
+            "to_remove": [
+                {"folder_id": item["folder_id"],
+                 "submitter_tg_id": item["submitter_tg_id"],
+                 "remove_sql": remove_sql_for(item["folder_id"], now_iso)}
+                for item in plan["to_remove"]
+            ],
+            "to_restore": [
+                {"folder_id": item["folder_id"],
+                 "submitter_tg_id": item["submitter_tg_id"],
+                 "restore_sql": restore_sql_for(item["folder_id"], now_iso)}
+                for item in plan["to_restore"]
+            ],
+            "to_unavailable": [],
             "skipped_indexed": plan["skipped_indexed"],
             "skipped_failed": plan["skipped_failed"],
+            "skipped_removed": plan["skipped_removed"],
             "invalid": plan["invalid"],
         }
         start_id = args.start_id
@@ -507,6 +615,19 @@ def main() -> int:
                       f"{args.max_books}", file=sys.stderr)
             else:
                 manifest["failed"].append(entry)
+                if entry.get("reason") == "not_shared_or_missing":
+                    # The folder was submitted but its listing fails
+                    # (gone / unshared / not a folder). If a registry
+                    # row exists (stale mirror, or indexed by another
+                    # path), hide its books; otherwise the guarded
+                    # UPDATE is a harmless 0-row no-op. Never deletes
+                    # metadata.
+                    manifest["to_unavailable"].append({
+                        "folder_id": entry["folder_id"],
+                        "reason": "not_shared_or_missing",
+                        "unavailable_sql": unavailable_sql_for(
+                            entry["folder_id"], now_iso),
+                    })
                 print(f"FAILED {entry['folder_id']}: {entry.get('reason')}",
                       file=sys.stderr)
         manifest["next_start_id"] = start_id
@@ -516,7 +637,10 @@ def main() -> int:
         print(f"Run done: {len(manifest['indexed'])} indexed, "
               f"{len(manifest['failed'])} failed, "
               f"{len(manifest['deferred'])} deferred, "
-              f"{len(manifest['to_publish'])} to publish")
+              f"{len(manifest['to_publish'])} to publish, "
+              f"{len(manifest['to_remove'])} to remove, "
+              f"{len(manifest['to_restore'])} to restore, "
+              f"{len(manifest['to_unavailable'])} to unavailable")
         return 0
 
     print("ERROR: pass one of --plan, --run, --sync-registry",

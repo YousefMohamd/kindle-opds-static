@@ -16,6 +16,12 @@ What it does (user decision, 2026-11-22 — built, not just proposed):
 - Writes a JSON report + the SQL file, and prints the owner
   notification text (the workflow posts it to the run summary; the
   owner DM wiring is a later step).
+- The SQL file also carries library-level visibility flips, and the
+  workflow imports it into D1: a dead folder -> its registry row
+  becomes 'unavailable' (books hidden everywhere, metadata kept);
+  a folder that is back after being 'unavailable' recovers to
+  'private' (fail closed — a public library needs a fresh owner
+  approve). A 'removed' library is never touched here.
 
 Schema (new tables, applied once with the SQL this script emits):
   CREATE TABLE IF NOT EXISTS drive_libraries (
@@ -125,6 +131,7 @@ def main() -> int:
     sql_lines = [SCHEMA_SQL.strip()]
     report: dict = {"checked_at": checked_at, "libraries": []}
     any_down = False
+    flipped: list = []  # folder_ids flipped to 'unavailable' this run
 
     for lib in registry.get("libraries", []):
         folder_id = lib["folder_id"]
@@ -136,15 +143,44 @@ def main() -> int:
                       "indexed": len(indexed),
                       "live": res["live_count"],
                       "missing": len(res["missing"])}
+        vis = str(lib.get("visibility") or "").strip().lower()
         if not res["folder_ok"]:
             any_down = True
             lib_report["folder_error"] = res.get("folder_error", "")
+            # Library-level hide: flip the registry row to
+            # 'unavailable' so search/OPDS/libraries/mint all hide
+            # its books (the drive_health rows below hide individual
+            # files; the visibility flip hides the library). Guarded:
+            # a 'removed' library never comes back through here, and
+            # a missing row is a 0-row no-op. Metadata never deleted.
+            if vis in ("public", "private", "pending_public"):
+                sql_lines.append(
+                    f"UPDATE drive_libraries SET visibility='unavailable', "
+                    f"reviewed_at={sql_escape(checked_at)} "
+                    f"WHERE folder_id={sql_escape(folder_id)} "
+                    f"AND visibility IN ('public', 'private', 'pending_public');")
+                lib_report["visibility"] = "unavailable"
+                flipped.append(folder_id)
             # Whole library down: every indexed file is unavailable.
             for e in indexed:
                 sql_lines.append(
                     f"INSERT OR REPLACE INTO drive_health(url, available, checked_at) "
                     f"VALUES ({sql_escape(e['url'])}, 0, {sql_escape(checked_at)});")
         else:
+            # Recovery: the folder is back and was 'unavailable' —
+            # restore it as PRIVATE (fail closed: a library that was
+            # public needs a fresh owner approve; the monitor
+            # approve path still works from private). A 'removed'
+            # library is never touched here.
+            if vis == "unavailable":
+                sql_lines.append(
+                    f"UPDATE drive_libraries SET visibility='private', "
+                    f"reviewed_at={sql_escape(checked_at)} "
+                    f"WHERE folder_id={sql_escape(folder_id)} "
+                    f"AND visibility='unavailable';")
+                lib_report["visibility"] = "private (recovered)"
+                print(f"[RECOVERED] {lib.get('title') or folder_id}: "
+                      f"folder is back — restored as private, owner re-approves for public")
             for e in res["missing"]:
                 any_down = True
                 sql_lines.append(
@@ -167,8 +203,11 @@ def main() -> int:
                            encoding="utf-8")
     print(f"Wrote {sql_file} + {report_file}")
     if any_down:
+        flipped_txt = (f" مكتبات اتقلبت unavailable: {len(flipped)}."
+                       if flipped else "")
         print("OWNER NOTIFY: بعض كتب Drive بقت غير متاحة (لينك ميت/مشاركة اتلغت) — "
-              "التفاصيل في drive-health-report.json. الميتاداتا محفوظة، مفيش حاجة اتحذفت.")
+              f"التفاصيل في drive-health-report.json.{flipped_txt} "
+              "الميتاداتا محفوظة، مفيش حاجة اتحذفت.")
         return 1
     print("All Drive libraries healthy.")
     return 0

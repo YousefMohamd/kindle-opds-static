@@ -19,7 +19,10 @@ drive_health.py creates; this module extends it with the visibility
 columns). ``drive-libraries.json`` is the file mirror the indexer
 and health workflow read — it carries the same fields.
 
-Visibility values: ``public`` | ``private`` | ``pending_public``.
+Visibility values: ``public`` | ``private`` | ``pending_public`` |
+``removed`` (submitter/owner removed it — books hidden everywhere,
+metadata kept, re-add works) | ``unavailable`` (sweep/health found
+the folder gone / unshared / empty — books hidden, metadata kept).
 Legacy rows (Oriental Music, indexed 2026-11-22 before this table
 existed) have no visibility value: they are treated as PUBLIC by
 every reader (website search, OPDS export, libraries page) — the
@@ -48,7 +51,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-VISIBILITIES = {"public", "private", "pending_public"}
+VISIBILITIES = {"public", "private", "pending_public", "removed", "unavailable"}
 
 # Full table (new databases). drive_health.py's SCHEMA_SQL creates the
 # first five columns; this module's migrations add the rest to a

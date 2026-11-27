@@ -181,7 +181,7 @@ export async function onRequest(context) {
     const res = await db.prepare(
       "SELECT folder_id, title, added_by, added_at, status, submitter_tg_id, visibility, requested_at, reviewed_at"
       + " FROM drive_libraries ORDER BY"
-      + " CASE visibility WHEN 'pending_public' THEN 0 WHEN 'private' THEN 1 ELSE 2 END, title",
+      + " CASE visibility WHEN 'pending_public' THEN 0 WHEN 'private' THEN 1 WHEN 'public' THEN 2 WHEN 'unavailable' THEN 3 ELSE 4 END, title",
     ).bind().all();
     rows = res.results || [];
   } catch (e) {
@@ -225,7 +225,11 @@ export async function onRequest(context) {
       ).bind(source).first();
       unavailable = u ? Number(u.n) || 0 : 0;
     } catch (e) { unavailable = 0; }
-    const visAr = visibility === "public" ? "عامة" : visibility === "private" ? "خاصة" : "بانتظار النشر";
+    const visAr = visibility === "public" ? "عامة" : visibility === "private" ? "خاصة"
+      : visibility === "pending_public" ? "بانتظار النشر"
+      : visibility === "removed" ? "أُزيلت — مخفية، الميتاداتا محفوظة"
+      : visibility === "unavailable" ? "غير متاحة — المجلد ميت/مش متشارك"
+      : "بانتظار النشر";
     body += "<div class=\"card\"><h2>" + esc(r.title || folderId) + "</h2>\n"
       + "<p class=\"meta\">الحالة: <b>" + esc(visAr) + "</b> • " + count + " كتاب"
       + (unavailable ? " • " + unavailable + " غير متاح" : "")

@@ -1050,9 +1050,10 @@ async function d1Coverage(db, env) {
 // in onRequest). When the registry is absent the join/clause are
 // empty strings — the legacy no-filter queries, so search can never
 // 500 on an older D1. `needsFilter` is true only when a RESTRICTED
-// (private / pending_public) Drive library exists: with no restricted
-// library every Drive row is visible to everyone, so the fast
-// direct-FTS count (which cannot carry a books-table filter) stays
+// (private / pending_public / removed / unavailable) Drive library
+// exists: with no restricted library every Drive row is visible to
+// everyone, so the fast direct-FTS count (which cannot carry a
+// books-table filter) stays
 // exact; with one, the count must use the join form below (see
 // countTotal in d1Search).
 function driveVisibility(vis) {
@@ -1795,7 +1796,10 @@ export async function onRequest(context) {
   const viewerFp = viewerTgId !== null ? rawFp : "";
   const ownerId = Number(((env && (env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID)) || "").toString().trim());
   // hasRestrictedDrive (WAVE 7, wave-7 child A): one LIMIT 1 probe
-  // for a private/pending_public Drive library. It decides whether
+  // for a private/pending_public/removed/unavailable Drive library.
+  // (removed/unavailable count as restricted: their books are hidden
+  // by the driveVisibility clause, so the direct-FTS count would
+  // overcount them if the probe missed them.) It decides whether
   // the fast direct-FTS count may run (see countTotal): with no
   // restricted library the direct count is exact, with one the
   // join form must run. The table is tiny (one row per library),
@@ -1808,7 +1812,7 @@ export async function onRequest(context) {
   if (hasRegistry) {
     try {
       const probe = await db
-        .prepare("SELECT 1 AS n FROM drive_libraries WHERE visibility IN ('private', 'pending_public') LIMIT 1")
+        .prepare("SELECT 1 AS n FROM drive_libraries WHERE visibility IN ('private', 'pending_public', 'removed', 'unavailable') LIMIT 1")
         .bind().first();
       hasRestrictedDrive = !!probe;
     } catch (e) {
