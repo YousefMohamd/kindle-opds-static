@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-27",
-  "generated_at": "2026-11-27T09:35:31.938529+00:00",
+  "generated_at": "2026-11-27T11:13:57.003898+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 10,
+      "entries": 16,
       "detail": ""
     },
     {
@@ -31,6 +31,32 @@
   "egypt": [],
   "other": [
     {
+      "name": "Gulf Times",
+      "country": "QA",
+      "country_name": "قطر",
+      "flag": "🇶🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135268",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135268,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "Qatar Tribune",
+      "country": "QA",
+      "country_name": "قطر",
+      "flag": "🇶🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135269",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135269,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "الأنباء",
       "country": "KW",
       "country_name": "الكويت",
@@ -44,6 +70,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "الراية",
+      "country": "QA",
+      "country_name": "قطر",
+      "flag": "🇶🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135270",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135270,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "السياسة",
       "country": "KW",
       "country_name": "الكويت",
@@ -54,6 +93,19 @@
       "url": "https://t.me/Arabic_News_Papers/135261",
       "handle": "Arabic_News_Papers",
       "post_id": 135261,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشرق",
+      "country": "QA",
+      "country_name": "قطر",
+      "flag": "🇶🇦",
+      "region": "gulf",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135271",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135271,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -135,6 +187,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "العرب",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135273",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135273,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "الوسط",
       "country": "XX",
       "country_name": "غير محدد",
@@ -145,6 +210,19 @@
       "url": "https://t.me/Arabic_News_Papers/135264",
       "handle": "Arabic_News_Papers",
       "post_id": 135264,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الوطن",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-27",
+      "url": "https://t.me/Arabic_News_Papers/135272",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135272,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -176,6 +254,12 @@
   ],
   "countries": [
     {
+      "code": "QA",
+      "name": "قطر",
+      "flag": "🇶🇦",
+      "count": 4
+    },
+    {
       "code": "KW",
       "name": "الكويت",
       "flag": "🇰🇼",
@@ -203,11 +287,13 @@
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 5
+      "count": 7
     }
   ],
   "empty": false,
   "unmatched": [
+    "العرب",
+    "الوطن",
     "عرب تايمز",
     "كويت تايمز",
     "الوسط",
@@ -296,6 +382,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف قطر  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف الكويت  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -342,11 +433,6 @@
     },
     {
       "name": "😄😁😄  صحف اليوم الخميس 26-11-26  😄😁",
-      "reason": "header",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف قطر  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
