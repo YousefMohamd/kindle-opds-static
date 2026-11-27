@@ -1,6 +1,6 @@
 # Index report — telegram-book-index
 
-**Date:** 2026-11-26T20:46:32.699686+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
+**Date:** 2026-11-27T05:55:47.989045+00:00 — **Status:** ok — **Mode:** api-backfill — **Duration:** 1s
 **Config:** `channels.yaml` — **DB:** `index.db`
 **Method:** public t.me/s/ previews only, page by page, metadata only (post text, file name/format/size, post link). No API, no login, no account. Book files are never downloaded.
 **Note:** API backfill (manual-only): full history via the MTProto API (Telethon). Credentials from the environment (GitHub Actions secrets); never part of the daily preview job; reads only configured channels/groups, never personal chats. Metadata only — no book files are downloaded.
@@ -17,7 +17,7 @@
 ## This run
 | Channel | New posts | New book files | Scope |
 |---|---|---|---|
-| magazineguy (group) | 0 | 0 | export |
+| aa2tyuq (group) | 0 | 0 | export |
 
 ## Indexed channels (51)
 
