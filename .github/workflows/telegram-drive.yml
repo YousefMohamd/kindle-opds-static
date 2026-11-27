@@ -47,6 +47,19 @@
 # apply the request. The plan step reports both to_index and
 # to_publish; the index step runs when either is non-zero.
 #
+# Remove / restore / unavailable backstop (bot v4.8.84 follow-up):
+# the sweep job also applies the manifest's `remove_sql` (guarded
+# UPDATE ... AND visibility != 'removed') for libraries whose newest
+# KV record is "removed", `restore_sql` for libraries re-added after
+# a removal, and `unavailable_sql` for submitted folders whose
+# listing failed. The plan step reports to_remove and to_restore;
+# the index step runs when to_index, to_publish, to_remove or
+# to_restore is non-zero. The daily 04:00 UTC health step flips
+# already-indexed libraries whose folder died to 'unavailable' (and
+# recovers them to 'private' when the folder is back) and imports
+# drive-health.sql into D1 — the owner monitor reads D1, so the
+# audit shows up there with no new cron and no new workflow.
+#
 # D1 import is automatic for sweep-indexed libraries (wrangler d1
 # execute --remote; batches are INSERT OR IGNORE, idempotent; the
 # registry upsert keeps a stored visibility, so a re-index never
@@ -159,16 +172,29 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'health' }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           python3 telegram/tbi/drive_health.py --client http \
             --registry drive-libraries.json \
             --state drive-state.jsonl \
             --out-dir drive-health-out
+          # Import the health SQL into D1 (drive_health rows + the
+          # library-level visibility flips to 'unavailable' /
+          # recovery to 'private'). Warn-only: the SQL file is also
+          # in the run artifacts, and the next run retries. The
+          # drive_libraries table already has the visibility columns
+          # (wave 7); the CREATE TABLE in the SQL is a no-op on D1.
+          npm install -g wrangler@4
+          wrangler d1 execute rlibook-tg --remote --file drive-health-out/drive-health.sql \
+            || echo "::warning::drive-health.sql import failed — the SQL is in the artifacts; the next run retries"
 
       - name: Health check (scheduled 04:00 UTC)
         if: ${{ github.event_name == 'schedule' }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ "$(date -u +%H)" != "04" ]; then
             echo "not 04:00 UTC — skipping the daily health check"
@@ -178,6 +204,15 @@ jobs:
             --registry drive-libraries.json \
             --state drive-state.jsonl \
             --out-dir drive-health-out
+          # Import the health SQL into D1 (drive_health rows + the
+          # library-level visibility flips to 'unavailable' /
+          # recovery to 'private'). Warn-only: the SQL file is also
+          # in the run artifacts, and the next run retries. The
+          # drive_libraries table already has the visibility columns
+          # (wave 7); the CREATE TABLE in the SQL is a no-op on D1.
+          npm install -g wrangler@4
+          wrangler d1 execute rlibook-tg --remote --file drive-health-out/drive-health.sql \
+            || echo "::warning::drive-health.sql import failed — the SQL is in the artifacts; the next run retries"
 
       # --- Build 1: 2-hourly sweep of the KV pending queue ---
       - name: Fetch pending queue + marker from KV
@@ -248,9 +283,15 @@ jobs:
           TO_PUBLISH=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_publish']))")
           echo "to_publish=$TO_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "folders to publish (backstop): $TO_PUBLISH"
+          TO_REMOVE=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_remove']))")
+          echo "to_remove=$TO_REMOVE" >> "$GITHUB_OUTPUT"
+          echo "folders to remove (backstop): $TO_REMOVE"
+          TO_RESTORE=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_restore']))")
+          echo "to_restore=$TO_RESTORE" >> "$GITHUB_OUTPUT"
+          echo "folders to restore (re-added): $TO_RESTORE"
 
       - name: Index pending folders + import to D1
-        if: ${{ github.event_name == 'schedule' && (steps.plan.outputs.to_index != '0' || steps.plan.outputs.to_publish != '0') }}
+        if: ${{ github.event_name == 'schedule' && (steps.plan.outputs.to_index != '0' || steps.plan.outputs.to_publish != '0' || steps.plan.outputs.to_remove != '0' || steps.plan.outputs.to_restore != '0') }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -326,6 +367,33 @@ jobs:
           PYEOF
             wrangler d1 execute rlibook-tg --remote --file drive-publish.sql \
               || echo "::warning::publish backstop failed — the next sweep retries (guarded UPDATE, idempotent)"
+          fi
+          # Remove / restore / unavailable backstop (bot v4.8.84
+          # follow-up): apply the manifest's guarded UPDATEs —
+          # `remove_sql` for libraries whose newest KV record is
+          # "removed" (the /api/drive-remove endpoint is the fast
+          # path; this is the backstop), `restore_sql` for libraries
+          # re-added after a removal, and `unavailable_sql` for
+          # submitted folders whose listing failed this run. All
+          # three UPDATEs are guarded, so stale entries are harmless
+          # 0-row no-ops; a failure here only warns — the next sweep
+          # retries. Runs AFTER the batch + registry import, so the
+          # rows exist.
+          REMOVE_N=$(python3 -c "import json; m=json.load(open('drive-sweep-manifest.json')); print(len(m.get('to_remove', [])) + len(m.get('to_restore', [])) + len(m.get('to_unavailable', [])))")
+          if [ "$REMOVE_N" = "0" ]; then
+            echo "no remove/restore/unavailable backstop to apply"
+          else
+            python3 - <<'PYEOF'
+          import json
+          m = json.load(open('drive-sweep-manifest.json'))
+          sqls = [e['remove_sql'] for e in m.get('to_remove', []) if e.get('remove_sql')]
+          sqls += [e['restore_sql'] for e in m.get('to_restore', []) if e.get('restore_sql')]
+          sqls += [e['unavailable_sql'] for e in m.get('to_unavailable', []) if e.get('unavailable_sql')]
+          open('drive-visibility.sql', 'w').write('\n'.join(sqls) + '\n')
+          print(f'{len(sqls)} visibility UPDATE(s)')
+          PYEOF
+            wrangler d1 execute rlibook-tg --remote --file drive-visibility.sql \
+              || echo "::warning::remove/restore/unavailable backstop failed — the next sweep retries (guarded UPDATE, idempotent)"
           fi
           # Record verification failures in KV so later runs skip
           # them instead of re-hitting the Drive API every 2 hours.
