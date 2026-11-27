@@ -22,7 +22,10 @@
 #      sources ideally (a few are OK — re-dispatch covers them).
 #   2. Dispatch again with dry_run=false AND execute_d1=true: the
 #      same fetch runs, then the batches are applied to D1 via the
-#      Cloudflare D1 REST /batch endpoint, then verified
+#      Cloudflare D1 REST /query endpoint (50 statements per call),
+#      then verified. (The /batch endpoint returns 404 for this
+#      token — verified 2026-11-27; the /query fallback applied both
+#      holes overnight with zero duplicate rows.)
 #      (window count must equal recovered + pre-existing).
 #   3. If EITHER dispatch exits with "lease held" (exit 3 -> the job
 #      goes green with a warning), a realtime/newspapers run owns
@@ -218,18 +221,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           python3 - <<'PY'
-          # Apply hole-batch-*.sql to D1 via the REST /batch endpoint,
-          # 100 statements per call. INSERT OR IGNORE + the (url,
+          # Apply hole-batch-*.sql to D1 via the REST /query endpoint,
+          # 50 statements per call (multi-statement sql string — the
+          # /batch endpoint returns 404 for this token, verified
+          # 2026-11-27; this /query shape applied both holes overnight
+          # with zero duplicate rows). INSERT OR IGNORE + the (url,
           # filename) UNIQUE key make a re-apply safe (adds nothing).
           # On any chunk failure: stop immediately — the partial
           # application is consistent (per-chunk transactions) and a
           # re-dispatch resumes cleanly (gate + dedupe skip what's in).
-          import glob, json, os, re, urllib.request, urllib.error
+          import glob, json, os, re, time, urllib.request, urllib.error
           tok = os.environ["CLOUDFLARE_API_TOKEN"]
           acct = os.environ["CLOUDFLARE_ACCOUNT_ID"]
           db = os.environ["D1_DATABASE_ID"]
           url = (f"https://api.cloudflare.com/client/v4/accounts/{acct}"
-                 f"/d1/database/{db}/batch")
+                 f"/d1/database/{db}/query")
           files = sorted(glob.glob("hole-out/hole-batch-*.sql"))
           assert files, "no batch files — nothing to apply"
           stmts = []
@@ -241,23 +247,31 @@ jobs:
                       continue
                   stmts.append(s + ";")
           print(f"{len(files)} batch file(s), {len(stmts)} statements")
-          def post(chunk):
+          def post(sql):
               req = urllib.request.Request(
                   url, method="POST",
-                  data=json.dumps({"sql": chunk}).encode(),
+                  data=json.dumps({"sql": sql}).encode(),
                   headers={"Authorization": f"Bearer {tok}",
                            "Content-Type": "application/json"})
-              try:
-                  with urllib.request.urlopen(req, timeout=120) as r:
-                      payload = json.load(r)
-              except urllib.error.HTTPError as e:
-                  raise SystemExit(f"D1 /batch HTTP {e.code}: {e.read()[:500]}")
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  payload = json.load(r)
               if not payload.get("success"):
-                  raise SystemExit(f"D1 /batch failed: {json.dumps(payload)[:1000]}")
+                  raise SystemExit(f"D1 /query failed: {json.dumps(payload)[:1000]}")
               return payload
-          for i in range(0, len(stmts), 100):
-              chunk = stmts[i:i + 100]
-              post(chunk)
+          for i in range(0, len(stmts), 50):
+              chunk = stmts[i:i + 50]
+              for attempt in range(3):
+                  try:
+                      payload = post("\n".join(chunk))
+                      break
+                  except urllib.error.HTTPError as e:
+                      print(f"statements {i + 1}-{i + len(chunk)}: HTTP {e.code} attempt {attempt + 1}")
+                      if attempt == 2:
+                          raise SystemExit(f"D1 /query HTTP {e.code}: {e.read()[:500]}")
+                      time.sleep(10)
+              results = payload.get("result", [])
+              if len(results) != len(chunk):
+                  print(f"WARNING: statements {i + 1}-{i + len(chunk)}: result count {len(results)} != statements {len(chunk)}")
               print(f"applied statements {i + 1}-{i + len(chunk)}")
           print("D1 apply complete")
           PY
