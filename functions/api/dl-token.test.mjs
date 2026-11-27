@@ -280,6 +280,15 @@ console.log("3. Legacy Telegram form (h+p, no lib):");
     (await resolveShortLink(env, r.body.short.slice(3)))?.url === r.body.url);
   const r2 = await call({ lib: "tg", h: "kotobkhana", p: "7559", f: "epub" }, env, "10.0.1.2");
   check("3b lib=tg form mints identically", r2.status === 200 && r2.body.ok === true);
+  // Hyphenated private-channel slugs are valid channel keys: /kindle/get
+  // 400'd them live while public handles minted fine. All four must mint.
+  for (const [i, slug] of ["jami-al-kutub-al-musawwara", "bookstoragebox", "dar-maana", "al-suhuf-wal-majallat-al-ajnabiya"].entries()) {
+    const rSlug = await call({ lib: "tg", h: slug, p: "123", f: "epub" }, env, `10.0.1.${10 + i}`);
+    check(`3b-${i} hyphenated slug ${slug} mints`,
+      rSlug.status === 200 && rSlug.body.ok === true
+      && rSlug.body.url.startsWith(PROXY + `/dl?h=${slug}&p=123&f=epub&t=`),
+      `status=${rSlug.status} url=${rSlug.body.url}`);
+  }
   const badHandle = await call({ h: "x", p: "1", f: "epub" }, env, "10.0.1.3");
   check("3c bad handle -> 400 bad_handle",
     badHandle.status === 400 && badHandle.body.error === "bad_handle", JSON.stringify(badHandle.body));

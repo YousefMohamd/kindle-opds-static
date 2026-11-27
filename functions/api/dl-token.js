@@ -438,7 +438,14 @@ export function parseBookParams(params, opts = {}) {
   if (isTg) {
     const handle = normalizeHandle(params.get("h"));
     const postRaw = (params.get("p") || "").trim();
-    if (!/^[a-z0-9_]{3,64}$/.test(handle)) {
+    // A "handle" here is a channel KEY: a public Telegram handle OR a
+    // private-channel slug (jami-al-kutub-al-musawwara, bookstoragebox,
+    // dar-maana, al-suhuf-wal-majallat-al-ajnabiya). Slugs contain
+    // hyphens, so the pattern allows "-" — rejecting it made /kindle/get
+    // 400 for private channels while public handles minted fine. The
+    // download proxy resolves a slug to its numeric channel id through
+    // its entity map; this function only validates shape.
+    if (!/^[a-z0-9_-]{3,64}$/.test(handle)) {
       return { ok: false, error: "bad_handle" };
     }
     if (!/^\d{1,10}$/.test(postRaw)) {
