@@ -99,6 +99,8 @@ from .entity_cache import (
 from .live import LiveStateClient, live_books_from_post, read_cursor
 from .session_guard import (
     EXIT_REFUSED,
+    EXIT_SKIPPED,
+    LeaseHeld,
     SessionRefused,
     acquire_lease,
     check_sessions_distinct,
@@ -232,10 +234,11 @@ def dedupe_books(
 def acquire_or_refuse(store, holder: str, run_id: str, ttl_seconds: int) -> dict:
     """Claim the DO lease, fail-closed.
 
-    Returns the lease document. Raises :class:`SessionRefused`
-    (caller exits 3) when another run holds a live lease, and
-    :class:`LeaseUnavailable` (caller exits 2) when the lease
-    cannot be used at all — the run must NOT proceed unguarded.
+    Returns the lease document. Raises :class:`LeaseHeld`
+    (caller exits 0 — a quiet skip) when another run holds a
+    live lease, and :class:`LeaseUnavailable` (caller exits 2)
+    when the lease cannot be used at all — the run must NOT
+    proceed unguarded.
     """
     try:
         return acquire_lease(store, holder, run_id, ttl_seconds)
@@ -423,8 +426,9 @@ async def amain(args: argparse.Namespace, _client=None, _store=None,
     log.info("entity cache: %d entries from %s", len(cache), cache_path)
 
     # Session guard, layer 2 — FAIL-CLOSED (see module docstring):
-    # a live lease held by another run refuses this run (exit 3);
-    # a lease that cannot be used at all aborts it (exit 2).
+    # a live lease held by another run refuses this run (exit 0 —
+    # a quiet skip, not a failure); a lease that cannot be used
+    # at all aborts it (exit 2).
     run_id = _run_id()
     lease_held = False
     if not args.no_lease:
@@ -433,6 +437,9 @@ async def amain(args: argparse.Namespace, _client=None, _store=None,
             lease_held = True
             log.info("lease acquired (hole-reread, %s, ttl %ds)",
                      run_id, args.lease_ttl)
+        except LeaseHeld as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return EXIT_SKIPPED
         except SessionRefused as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return EXIT_REFUSED

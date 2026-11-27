@@ -23,15 +23,16 @@ The fix has three layers, and this module is layers 1 and 2:
    ({holder, run_id, expires_at}) through the same /api/live-state
    endpoint the sync already uses. A second runner with the same
    session role — or any runner while the lease is live — refuses
-   to start (exit 3, clear message) instead of connecting and
-   risking a second AuthKeyDuplicatedError. The lease expires on
-   its own (default 15 min, longer than any healthy scan), so a
-   crashed run never blocks the next one forever; the holder
-   releases it on a clean exit. The lease is best-effort: it needs
-   the companion Worker patch (bot-companion/) that allows the
-   ``live:lease`` key — when the Worker answers 400 (key not
-   allowed yet) the guard logs a warning and proceeds, because the
-   workflow-level guards (layer 3) still apply.
+   to start (exit 0, a quiet skip, not a failure) instead of
+   connecting and risking a second AuthKeyDuplicatedError. The
+   lease expires on its own (default 15 min, longer than any
+   healthy scan), so a crashed run never blocks the next one
+   forever; the holder releases it on a clean exit. The lease is
+   best-effort: it needs the companion Worker patch
+   (bot-companion/) that allows the ``live:lease`` key — when the
+   Worker answers 400 (key not allowed yet) the guard logs a
+   warning and proceeds, because the workflow-level guards
+   (layer 3) still apply.
 
 3. WORKFLOW-LEVEL GUARDS (not in this module — see the workflow
    files): the 10-minute dispatcher cron skips a dispatch while
@@ -69,16 +70,39 @@ from .api_history import SESSION_ENV, SESSION_ENV_NEWS
 LEASE_TTL_SECONDS = 15 * 60
 LEASE_KEY = "live:lease"
 
-# Exit code for "refused to start" (distinct from 1 = failed run,
-# 2 = bad usage): the dispatcher treats 3 as "skip, try next
-# tick", not as a failure worth paging the owner about.
+# Exit code for "refused to start: both session secrets hold the
+# SAME value" (distinct from 1 = failed run, 2 = bad usage): a
+# misconfiguration that would recreate the 2026-11-24 incident,
+# so it stays a failure worth noticing — the dispatcher treats 3
+# as a failure, not a skip.
 EXIT_REFUSED = 3
+
+# Exit code for "refused to start: a live lease is held by
+# another run" — a benign skip, not a failure. The run did
+# nothing wrong and nothing is broken; the next tick retries.
+# GitHub marks any non-zero exit as a failed run, so a skip
+# that exits 3 fires noisy failure alerts for healthy behaviour
+# (realtime #1215+ / newspapers #1031+, 2026-11-27). A truly
+# dead sync is still caught by sync-death-watch via the live
+# cursor age (>90 min -> issue), so the skip needs no failure
+# signal of its own.
+EXIT_SKIPPED = 0
 
 
 class SessionRefused(Exception):
     """Raised when this process must NOT start a Telegram session:
     the same secret in both roles, or a live lease held by another
-    run. The message is the whole explanation — print it and exit 3."""
+    run. The message is the whole explanation — print it and exit
+    3 for the same-value misconfiguration, 0 for a lease-held
+    skip (see :class:`LeaseHeld`)."""
+
+
+class LeaseHeld(SessionRefused):
+    """A live lease is held by another run. The runner must NOT
+    start a Telegram session, but the skip is a successful no-op:
+    exit 0. Subclasses :class:`SessionRefused` so existing
+    ``except SessionRefused`` handlers still catch it — callers
+    that distinguish the two catch :class:`LeaseHeld` first."""
 
 
 def _now() -> datetime:
@@ -184,7 +208,7 @@ def acquire_lease(store, holder: str, run_id: str,
     """
     current = read_lease(store)
     if lease_is_live(current):
-        raise SessionRefused(
+        raise LeaseHeld(
             f"live lease held by {current.get('holder')} "
             f"(run {current.get('run_id')}, until "
             f"{current.get('expires_at')}) — refusing to start a "

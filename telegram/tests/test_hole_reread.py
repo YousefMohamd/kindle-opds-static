@@ -36,6 +36,7 @@ from tbi.hole_reread import (  # noqa: E402
     window_date,
     main,
 )
+from tbi.session_guard import EXIT_SKIPPED  # noqa: E402
 from tbi.d1_sync import batch_sql, state_key  # noqa: E402
 from tbi.scrape import Post, FileMeta  # noqa: E402
 
@@ -308,7 +309,7 @@ def test_main_refuses_when_lease_held(monkeypatch, tmp_path):
         "--out-dir", str(tmp_path / "out"), "--lease-ttl", "60",
     ], _client=FakeClient(), _store=store,
         _iter_posts=fake_iter_factory({}))
-    assert code == 3  # EXIT_REFUSED: skip, do not run
+    assert code == EXIT_SKIPPED  # lease-held skip: quiet success, do not run
 
 
 def test_main_fail_closed_when_lease_key_rejected(monkeypatch, tmp_path):

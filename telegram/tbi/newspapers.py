@@ -1702,9 +1702,10 @@ def _acquire_news_lease():
     the lease refuses to start while a realtime run holds it (and
     vice versa). When LIVE_SYNC_TOKEN is absent (local runs) there
     is no DO to lease from — returns (None, None, False) and the
-    run proceeds unguarded. Raises SessionRefused when the lease
-    is live (caller exits 3) or when both session secrets hold
-    the same value. A Worker that answers 400 (companion patch
+    run proceeds unguarded. Raises LeaseHeld when the lease
+    is live (caller exits 0 — a quiet skip) or SessionRefused
+    when both session secrets hold the same value (caller exits
+    3). A Worker that answers 400 (companion patch
     not deployed yet) only warns — the dispatcher stagger +
     workflow in_progress checks still apply.
     """
@@ -1746,14 +1747,24 @@ def _acquire_news_lease():
 
 def main(argv=None) -> int:
     """Newspapers entry point — wraps _main_inner with the DO
-    lease (sync-fix v2). Exit 3 = refused to start (lease live
-    or same session in both roles); the dispatcher retries next
-    tick. The lease is released on every exit path, including
-    the early returns inside _main_inner."""
-    from .session_guard import EXIT_REFUSED, SessionRefused, release_lease
+    lease (sync-fix v2). Exit 0 = lease-held skip (quiet success,
+    the next tick retries); exit 3 = refused to start because
+    both session secrets hold the same value. The lease is
+    released on every exit path, including the early returns
+    inside _main_inner."""
+    from .session_guard import (
+        EXIT_REFUSED,
+        EXIT_SKIPPED,
+        LeaseHeld,
+        SessionRefused,
+        release_lease,
+    )
 
     try:
         store, run_id, held = _acquire_news_lease()
+    except LeaseHeld as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return EXIT_SKIPPED
     except SessionRefused as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return EXIT_REFUSED

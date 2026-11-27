@@ -159,6 +159,8 @@ from .outbox import (
 )
 from .session_guard import (
     EXIT_REFUSED,
+    EXIT_SKIPPED,
+    LeaseHeld,
     SessionRefused,
     acquire_lease,
     check_sessions_distinct,
@@ -602,8 +604,8 @@ async def amain(args: argparse.Namespace) -> int:
 
     # Session guard, layer 1 (sync-fix v2): the two session secrets
     # must not hold the same value, and this workflow uses its OWN
-    # session (TELEGRAM_SESSION_STRING). A refusal exits 3 (skip,
-    # not failure — the dispatcher retries next tick).
+    # session (TELEGRAM_SESSION_STRING). A same-value refusal exits
+    # 3 (a real misconfiguration, not a skip).
     try:
         session_env = check_sessions_distinct()
     except SessionRefused as exc:
@@ -710,7 +712,8 @@ async def amain(args: argparse.Namespace) -> int:
 
     # Session guard, layer 2 (sync-fix v2): claim the DO lease
     # before connecting. A live lease held by another run refuses
-    # this run (exit 3). When the Worker answers 400 the lease
+    # this run (exit 0 — a quiet skip, not a failure; the next
+    # tick retries). When the Worker answers 400 the lease
     # key is not deployed yet — warn and proceed: the dispatcher
     # + workflow in_progress checks still apply.
     scan_run_id = _scan_run_id()
@@ -720,6 +723,9 @@ async def amain(args: argparse.Namespace) -> int:
             acquire_lease(store, "realtime", scan_run_id)
             lease_held = True
             log.info("lease acquired (realtime, %s)", scan_run_id)
+        except LeaseHeld as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return EXIT_SKIPPED
         except SessionRefused as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return EXIT_REFUSED

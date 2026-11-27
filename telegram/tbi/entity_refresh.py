@@ -53,6 +53,8 @@ from .live import LiveStateClient
 from .live_sync import _scan_run_id, refresh_stale_entries
 from .session_guard import (
     EXIT_REFUSED,
+    EXIT_SKIPPED,
+    LeaseHeld,
     SessionRefused,
     acquire_lease,
     check_sessions_distinct,
@@ -115,6 +117,9 @@ async def amain(args: argparse.Namespace) -> int:
     try:
         acquire_lease(store, "entity-refresh", scan_run_id)
         lease_held = True
+    except LeaseHeld as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return EXIT_SKIPPED
     except SessionRefused as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return EXIT_REFUSED
