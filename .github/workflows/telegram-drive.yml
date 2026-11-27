@@ -192,15 +192,29 @@ jobs:
           # The submissions log is the pending queue (bot writes it at
           # submit time). 3 tries, then FAIL — without the queue the
           # sweep cannot see anything; the queue persists in KV, so
-          # the next run retries.
+          # the next run retries. EXCEPTION: HTTP 404 means the key
+          # does not exist yet (nobody has submitted a Drive folder)
+          # — that is an empty queue, not a failure (the first v3
+          # sweep failed on exactly this, 2026-11-27 00:17Z; the key
+          # was created as [] afterwards, but a deleted/never-created
+          # key must not fail the sweep again).
+          HTTP_CODE=0
           for i in 1 2 3; do
-            if curl -fsS --max-time 20 \
+            HTTP_CODE=$(curl -sS --max-time 20 -o submissions.json \
+              -w "%{http_code}" \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              "$KV/submissions" -o submissions.json; then break; fi
-            echo "submissions fetch attempt $i failed — retrying"
+              "$KV/submissions") || HTTP_CODE=0
+            if [ "$HTTP_CODE" = "200" ]; then break; fi
+            echo "submissions fetch attempt $i failed (HTTP $HTTP_CODE) — retrying"
             sleep $((i * 10))
           done
-          test -s submissions.json || { echo "::error::KV submissions fetch failed after 3 attempts"; exit 1; }
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "no submissions key in KV yet — treating as an empty queue"
+            echo '[]' > submissions.json
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::KV submissions fetch failed after 3 attempts (HTTP $HTTP_CODE)"
+            exit 1
+          fi
           # Failed-known folders (drive:failed:<id> keys). Fail-soft:
           # an empty set just means a failed folder gets retried once.
           curl -fsS --max-time 20 \
