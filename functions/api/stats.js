@@ -117,7 +117,11 @@ function countIndexArray(parsed) {
 //   newspapers: parsed /site/newspapers.json (or null)
 //   opdsCounts: { khazendar: 6392 | null, ... } — null = unreadable
 //   d1Count:    MAX(id) FROM books (row-count estimate), or null when D1 is not bound/read
-export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
+//   searchCache: { hit, miss } — today's website search-cache
+//     counters from KV (see searchCacheCountsCached below), or null
+//     when unreadable. Optional: callers that predate the cache
+//     report search_cache null.
+export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count, searchCache = null) {
   const now = new Date().toISOString();
   const t = (manifest && manifest.totals) || {};
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -250,6 +254,25 @@ export function buildStats(manifest, newest, newspapers, opdsCounts, d1Count) {
       source: null,
       note: "Bot usage stats are not published by any API yet (the bot is a separate worker). When the bot publishes a stats endpoint, this endpoint will read it.",
     },
+    // Search-cache counters (v4.8.86, D1 root-fix step 1): today's
+    // website hit/miss for /api/tg-search, from the same KV key
+    // tg-search.js writes (search:cache:<YYYY-MM-DD>, batched flush
+    // every 10 events or 60 s — approximate, and this response is
+    // itself cached 1 h, so the value lags ≤1 h). The bot's counters
+    // live in its Durable Object and are reported on the bot's
+    // /health as search_cache — the two are separate surfaces for
+    // separate caches. hit_ratio is null until the first search.
+    search_cache: (() => {
+      const hit = searchCache && typeof searchCache.hit === "number" ? searchCache.hit : null;
+      const miss = searchCache && typeof searchCache.miss === "number" ? searchCache.miss : null;
+      const total = hit !== null && miss !== null ? hit + miss : null;
+      return {
+        hit,
+        miss,
+        hit_ratio: total !== null && total > 0 ? Math.round((hit / total) * 1000) / 1000 : null,
+        source: "KV search:cache:<today UTC> — today's /api/tg-search hit/miss (website edge cache, 5-min TTL).",
+      };
+    })(),
   };
 }
 
@@ -319,6 +342,31 @@ async function d1CountCached(db, env) {
     return null;
   } catch (e) {
     console.warn("[stats] D1 count failed:", e && e.message);
+    return null;
+  }
+}
+
+// Search-cache counters (v4.8.86, D1 root-fix step 1): today's
+// website hit/miss for /api/tg-search. The SAME key tg-search.js
+// writes (`search:cache:<YYYY-MM-DD>`, 48 h TTL — see
+// searchCacheCounterKey there), read here, never written. Returns
+// { hit, miss } or null on any failure (no KV binding, missing
+// key, malformed value) — the caller reports search_cache null,
+// never a guess. No D1 involved.
+async function searchCacheCountsCached(env) {
+  const kv = env && env.RLIBOOK_KV;
+  if (!kv || typeof kv.get !== "function") return null;
+  try {
+    const key = "search:cache:" + new Date().toISOString().slice(0, 10);
+    const raw = await kv.get(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const hit = Number(parsed.hit);
+    const miss = Number(parsed.miss);
+    if (!Number.isFinite(hit) || !Number.isFinite(miss) || hit < 0 || miss < 0) return null;
+    return { hit: Math.floor(hit), miss: Math.floor(miss) };
+  } catch (e) {
     return null;
   }
 }
@@ -394,7 +442,11 @@ export async function onRequest(context) {
   // to the live estimate once. Never fails the response.
   const d1Count = await d1CountCached(env && env.TG_D1 ? env.TG_D1 : null, env);
 
-  const body = buildStats(manifest, newest, newspapers, opdsCounts, d1Count);
+  // Today's search-cache counters (v4.8.86): a KV read of the key
+  // tg-search.js writes — no D1, never fails the response.
+  const searchCache = await searchCacheCountsCached(env);
+
+  const body = buildStats(manifest, newest, newspapers, opdsCounts, d1Count, searchCache);
   const response = Response.json(body, {
     headers: { "Cache-Control": "public, max-age=" + CACHE_SECONDS },
   });

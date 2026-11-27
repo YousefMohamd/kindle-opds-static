@@ -316,5 +316,60 @@ check("6i KV put throws -> live count still returned, still 200",
   resPutErr.status === 200 && bodyPutErr.books_d1.count === 99996,
   "HTTP " + resPutErr.status + " count=" + bodyPutErr.books_d1.count);
 
+// --- 7. search_cache (v4.8.86, D1 root-fix step 1) --------------------
+// Today's website hit/miss for /api/tg-search, from the same KV key
+// tg-search.js writes (search:cache:<YYYY-MM-DD>). The ratio is
+// hit/(hit+miss); null until the first search.
+const cacheStats = buildStats(manifest, newest, newspapers, opdsCounts, null, { hit: 9, miss: 1 });
+check("7a buildStats with counters -> hit/miss + ratio 0.9",
+  cacheStats.search_cache.hit === 9 && cacheStats.search_cache.miss === 1 && cacheStats.search_cache.hit_ratio === 0.9,
+  JSON.stringify(cacheStats.search_cache));
+check("7b buildStats without counters (old callers) -> nulls, not invented",
+  stats.search_cache.hit === null && stats.search_cache.miss === null && stats.search_cache.hit_ratio === null,
+  JSON.stringify(stats.search_cache));
+const zeroStats = buildStats(manifest, newest, newspapers, opdsCounts, null, { hit: 0, miss: 0 });
+check("7c zero counters -> ratio null (no division by zero)",
+  zeroStats.search_cache.hit === 0 && zeroStats.search_cache.miss === 0 && zeroStats.search_cache.hit_ratio === null,
+  JSON.stringify(zeroStats.search_cache));
+
+function mockKvMap(entries = {}) {
+  const store = new Map(Object.entries(entries));
+  return {
+    get: async (k) => (store.has(k) ? store.get(k) : null),
+    put: async (k, v) => { store.set(k, v); },
+  };
+}
+const todayCacheKey = "search:cache:" + new Date().toISOString().slice(0, 10);
+const resCache = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: {
+    ASSETS: mockAssets(FILE_FOR_PATH),
+    RLIBOOK_KV: mockKvMap({ [todayCacheKey]: JSON.stringify({ hit: 40, miss: 10 }) }),
+  },
+});
+const bodyCache = await resCache.json();
+check("7d onRequest reads the KV counter -> hit/miss + ratio 0.8",
+  bodyCache.search_cache.hit === 40 && bodyCache.search_cache.miss === 10 && bodyCache.search_cache.hit_ratio === 0.8,
+  JSON.stringify(bodyCache.search_cache));
+const resCacheNone = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: { ASSETS: mockAssets(FILE_FOR_PATH) },
+});
+const bodyCacheNone = await resCacheNone.json();
+check("7e onRequest without KV -> search_cache nulls, still 200",
+  resCacheNone.status === 200 && bodyCacheNone.search_cache.hit === null && bodyCacheNone.search_cache.miss === null,
+  JSON.stringify(bodyCacheNone.search_cache));
+const resCacheBad = await onRequest({
+  request: mockRequest("https://rlibook.tech/api/stats"),
+  env: {
+    ASSETS: mockAssets(FILE_FOR_PATH),
+    RLIBOOK_KV: mockKvMap({ [todayCacheKey]: "{\"hit\":\"abc\"}" }),
+  },
+});
+const bodyCacheBad = await resCacheBad.json();
+check("7f onRequest with malformed counter -> search_cache nulls, still 200",
+  resCacheBad.status === 200 && bodyCacheBad.search_cache.hit === null,
+  JSON.stringify(bodyCacheBad.search_cache));
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

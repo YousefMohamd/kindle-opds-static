@@ -20,7 +20,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey, parseDriveFileUrl, driveFlagKey, d1LookupByPost, d1LookupByDriveFile, isDriveLookup } from "./tg-search.js";
+import { onRequest, normalizeArabic, queryWords, parseFormatToken, gatedLinks, isBotRequest, validateSize, formatBytes, botDeepLink, parseFlagsBlob, ladderQueries, stripParticle, dedupeTitleKey, parseDriveFileUrl, driveFlagKey, d1LookupByPost, d1LookupByDriveFile, isDriveLookup, buildSearchCacheKey, buildSuggestCacheKey, searchCacheCounterKey, __resetSearchCacheCountersForTests, SEARCH_CACHE_TTL_SECONDS } from "./tg-search.js";
 
 const SHARD = process.env.TG_SEARCH_TEST_SHARD || "site/telegram/index-0.json";
 const SAMPLE = Number(process.env.TG_SEARCH_TEST_N || 5000);
@@ -241,6 +241,14 @@ async function call(env, path, headers = {}) {
   const req = new Request("https://example.com" + path, { method: "GET", headers });
   const res = await onRequest({ request: req, env, params: {} });
   return { status: res.status, body: await res.json() };
+}
+
+// Same as call(), but also returns the response headers (the cache
+// tests assert x-rlibook-cache: HIT|MISS).
+async function callRaw(env, path, headers = {}) {
+  const req = new Request("https://example.com" + path, { method: "GET", headers });
+  const res = await onRequest({ request: req, env, params: {} });
+  return { status: res.status, headers: res.headers, body: await res.json() };
 }
 
 // A bot-authenticated call: the shared secret as the header + env var.
@@ -1725,6 +1733,211 @@ ZZDRIVE.forEach((f, j) => {
   check("35g live lookup as submitter: private book get carries &fp=",
     fpLk.book && fpLk.book.get !== null && fpLk.book.get.includes("&fp=" + FP_SUB),
     JSON.stringify(fpLk.book));
+}
+
+// 36. Search-response cache (v4.8.86, D1 root-fix step 1): a repeated
+// search is served from caches.default (5 min) with no ladder D1
+// read. Runs LAST: it installs a TTL-aware fake global `caches`
+// (max-age honoured, injectable clock) and removes it in a finally,
+// so no other section sees it. The per-request Drive-registry probes
+// (sqlite_master + drive_libraries LIMIT 1, 2 tiny rows) still run
+// on a HIT — they build the cache key — so the D1 proof is "no
+// books/books_fts SQL", not "zero prepares".
+function makeTtlEdgeCache() {
+  const store = new Map(); // url -> { body, expiresAt }
+  let now = Date.now();
+  const cachesObj = {
+    default: {
+      match: async (url) => {
+        const e = store.get(String(url));
+        if (!e || now >= e.expiresAt) return null;
+        return new Response(e.body, { headers: { "content-type": "application/json" } });
+      },
+      put: async (url, res) => {
+        const cc = res.headers.get("cache-control") || "";
+        const m = /max-age=(\d+)/.exec(cc);
+        const maxAge = m ? parseInt(m[1], 10) : 0;
+        store.set(String(url), { body: await res.text(), expiresAt: now + maxAge * 1000 });
+      },
+    },
+  };
+  return { cachesObj, store, advance: (ms) => { now += ms; } };
+}
+
+// D1 mock that records every prepared SQL (so the tests can prove a
+// HIT ran no ladder query) instead of only counting one statement.
+function countingAllD1(sqlite) {
+  const base = mockD1(sqlite);
+  const sqls = [];
+  return {
+    db: {
+      prepare(sql) {
+        sqls.push(sql);
+        return base.prepare(sql);
+      },
+    },
+    get sqls() { return sqls; },
+    reset() { sqls.length = 0; },
+  };
+}
+
+const SEARCH_Q = "/api/tg-search?q=" + encodeURIComponent("Everyone in This Bank Is a Thief");
+const isProbeSql = (s) => s.startsWith("SELECT 1 AS n");
+{
+  // 36a-c: key builder (pure).
+  const baseKey = buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false });
+  check("36a key folds spellings that normalize alike (tashkeel)",
+    buildSearchCacheKey({ qn: "الجلّاد", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false })
+    === buildSearchCacheKey({ qn: "الجلاد", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false }));
+  check("36a2 key folds Persian letters (چ→ج, ک→ك)",
+    buildSearchCacheKey({ qn: "نوستالچيا", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false })
+    === buildSearchCacheKey({ qn: "نوستالجيا", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false }));
+  check("36a3 key splits on limit/offset/source/smart/bot-key/viewer/owner",
+    buildSearchCacheKey({ qn: "test", source: "", limit: 20, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 10, smart: false, botKey: false, viewerTgId: -1, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "kotobkhana", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: -1, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: true, botKey: false, viewerTgId: -1, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: true, viewerTgId: -1, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: 111, isOwner: false }) !== baseKey
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: false, viewerTgId: 999, isOwner: true }) !== baseKey);
+  check("36a4 key never contains a secret (bot key value / fp token)",
+    buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: BOT_KEY, viewerTgId: -1, isOwner: false }).indexOf(BOT_KEY) === -1
+    && baseKey.indexOf(FP_SUB) === -1
+    && buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: BOT_KEY, viewerTgId: -1, isOwner: false })
+    === buildSearchCacheKey({ qn: "test", source: "", limit: 10, offset: 0, smart: false, botKey: true, viewerTgId: -1, isOwner: false }));
+  check("36b suggest key folds spellings alike",
+    buildSuggestCacheKey("الجلّاد") === buildSuggestCacheKey("الجلاد"));
+  check("36c TTL is 300 seconds", SEARCH_CACHE_TTL_SECONDS === 300);
+
+  const edge = makeTtlEdgeCache();
+  globalThis.caches = edge.cachesObj;
+  try {
+    __resetSearchCacheCountersForTests();
+    const counted = countingAllD1(db);
+    const kv = mockKVStore({});
+    const env = { TG_D1: counted.db, RLIBOOK_KV: kv };
+
+    // 36d MISS then HIT.
+    counted.reset();
+    const first = await callRaw(env, SEARCH_Q);
+    check("36d first search is a MISS", first.headers.get("x-rlibook-cache") === "MISS", first.headers.get("x-rlibook-cache"));
+    check("36d first search ran the FTS ladder", counted.sqls.some((s) => s.includes("books_fts")), JSON.stringify(counted.sqls));
+    counted.reset();
+    const second = await callRaw(env, SEARCH_Q);
+    check("36d second search is a HIT", second.headers.get("x-rlibook-cache") === "HIT", second.headers.get("x-rlibook-cache"));
+    check("36d HIT body is identical to the MISS body", JSON.stringify(second.body) === JSON.stringify(first.body));
+    check("36d HIT ran no ladder D1 read (registry probes only)",
+      counted.sqls.length > 0 && counted.sqls.every(isProbeSql), JSON.stringify(counted.sqls));
+
+    // 36e TTL expiry.
+    edge.advance(299_000);
+    const stillHit = await callRaw(env, SEARCH_Q);
+    check("36e still a HIT at 299s", stillHit.headers.get("x-rlibook-cache") === "HIT", stillHit.headers.get("x-rlibook-cache"));
+    edge.advance(2_000);
+    counted.reset();
+    const expired = await callRaw(env, SEARCH_Q);
+    check("36e MISS again at 301s (TTL expired)", expired.headers.get("x-rlibook-cache") === "MISS", expired.headers.get("x-rlibook-cache"));
+    check("36e expired search ran the ladder again", counted.sqls.some((s) => s.includes("books_fts")), JSON.stringify(counted.sqls));
+
+    // 36f viewer split (fp tokens resolve to numeric ids in the key).
+    edge.store.clear();
+    const kvFp = mockKVStore(fpEntries());
+    const envFp = { TG_D1: counted.db, RLIBOOK_KV: kvFp };
+    const sub1 = await callRaw(envFp, SEARCH_Q + "&fp=" + FP_SUB);
+    check("36f submitter search is a MISS", sub1.headers.get("x-rlibook-cache") === "MISS", sub1.headers.get("x-rlibook-cache"));
+    const other = await callRaw(envFp, SEARCH_Q + "&fp=" + FP_OTHER);
+    check("36f a different viewer is a MISS (no cross-user sharing)", other.headers.get("x-rlibook-cache") === "MISS", other.headers.get("x-rlibook-cache"));
+    const sub2 = await callRaw(envFp, SEARCH_Q + "&fp=" + FP_SUB);
+    check("36f the same viewer again is a HIT", sub2.headers.get("x-rlibook-cache") === "HIT", sub2.headers.get("x-rlibook-cache"));
+
+    // 36g bot-key split.
+    edge.store.clear();
+    const envBot = { TG_D1: counted.db, RLIBOOK_KV: mockKVStore({}), TG_SEARCH_BOT_KEY: BOT_KEY };
+    const pub1 = await callRaw(envBot, SEARCH_Q);
+    check("36g public search is a MISS", pub1.headers.get("x-rlibook-cache") === "MISS", pub1.headers.get("x-rlibook-cache"));
+    const bot1 = await callRaw(envBot, SEARCH_Q, { "x-rlibook-bot-key": BOT_KEY });
+    check("36g bot search is a MISS (different key — the bot gets the raw URL)", bot1.headers.get("x-rlibook-cache") === "MISS", bot1.headers.get("x-rlibook-cache"));
+    const botHit = (bot1.body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+    check("36g bot result carries the raw post URL", botHit && botHit.url === "https://t.me/kotobkhana/7559", JSON.stringify(botHit));
+    const pubHit = (pub1.body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+    check("36g public result carries no raw post URL", pubHit && !("url" in pubHit));
+    const bot2 = await callRaw(envBot, SEARCH_Q, { "x-rlibook-bot-key": BOT_KEY });
+    check("36g bot search again is a HIT", bot2.headers.get("x-rlibook-cache") === "HIT", bot2.headers.get("x-rlibook-cache"));
+    check("36g bot HIT body is identical to the bot MISS body", JSON.stringify(bot2.body) === JSON.stringify(bot1.body));
+
+    // 36h h/p lookup bypass.
+    counted.reset();
+    const look1 = await callRaw(env, "/api/tg-search?h=kotobkhana&p=7559");
+    counted.reset();
+    const look2 = await callRaw(env, "/api/tg-search?h=kotobkhana&p=7559");
+    check("36h lookup bodies are identical", JSON.stringify(look2.body) === JSON.stringify(look1.body));
+    check("36h second lookup still reads D1 (bypassed, never cached)",
+      counted.sqls.some((s) => s.includes("FROM books")), JSON.stringify(counted.sqls));
+
+    // 36i flagged bypass.
+    edge.store.clear();
+    const blob = JSON.stringify({ flagged: ["kotobkhana:7559"], hidden: [] });
+    const kvFlag = mockKVStore({ "flags:all": blob });
+    const envFlag = { TG_D1: counted.db, RLIBOOK_KV: kvFlag };
+    const flag1 = await callRaw(envFlag, SEARCH_Q);
+    const flagHit = (flag1.body.results || []).find((r) => r.title === "Everyone in This Bank Is a Thief");
+    check("36i flagged book is flagged in the reply", flagHit && flagHit.flagged === true, JSON.stringify(flagHit));
+    check("36i flagged search is a MISS", flag1.headers.get("x-rlibook-cache") === "MISS", flag1.headers.get("x-rlibook-cache"));
+    counted.reset();
+    const flag2 = await callRaw(envFlag, SEARCH_Q);
+    check("36i flagged search again is still a MISS (never stored)", flag2.headers.get("x-rlibook-cache") === "MISS", flag2.headers.get("x-rlibook-cache"));
+    check("36i flagged search again still reads D1", counted.sqls.some((s) => s.includes("books_fts")), JSON.stringify(counted.sqls));
+
+    // 36j degraded bypass (KV throws).
+    edge.store.clear();
+    const kvThrow = { get: async () => { throw new Error("KV down"); }, put: async () => {} };
+    const envThrow = { TG_D1: counted.db, RLIBOOK_KV: kvThrow };
+    const deg1 = await callRaw(envThrow, SEARCH_Q);
+    check("36j degraded search reports flagStatus degraded", deg1.body.flagStatus === "degraded", deg1.body.flagStatus);
+    check("36j degraded search is a MISS", deg1.headers.get("x-rlibook-cache") === "MISS", deg1.headers.get("x-rlibook-cache"));
+    counted.reset();
+    const deg2 = await callRaw(envThrow, SEARCH_Q);
+    check("36j degraded search again is still a MISS", deg2.headers.get("x-rlibook-cache") === "MISS", deg2.headers.get("x-rlibook-cache"));
+    check("36j degraded search again still reads D1", counted.sqls.some((s) => s.includes("books_fts")), JSON.stringify(counted.sqls));
+
+    // 36k suggest caching.
+    counted.reset();
+    const sug1 = await callRaw(env, "/api/tg-search?suggest=" + encodeURIComponent("مغامرات"));
+    check("36k first suggest is a MISS", sug1.headers.get("x-rlibook-cache") === "MISS", sug1.headers.get("x-rlibook-cache"));
+    counted.reset();
+    const sug2 = await callRaw(env, "/api/tg-search?suggest=" + encodeURIComponent("مغامرات"));
+    check("36k second suggest is a HIT", sug2.headers.get("x-rlibook-cache") === "HIT", sug2.headers.get("x-rlibook-cache"));
+    check("36k suggest HIT body identical", JSON.stringify(sug2.body) === JSON.stringify(sug1.body));
+    check("36k suggest HIT ran zero D1 prepares", counted.sqls.length === 0, JSON.stringify(counted.sqls));
+
+    // 36l empty-q caching (the no-D1 live-verification path).
+    counted.reset();
+    const eq1 = await callRaw(env, "/api/tg-search");
+    check("36l first empty-q is a MISS", eq1.headers.get("x-rlibook-cache") === "MISS", eq1.headers.get("x-rlibook-cache"));
+    check("36l empty-q body is the empty reply", eq1.body.ok === true && eq1.body.total === 0 && Array.isArray(eq1.body.results) && eq1.body.results.length === 0);
+    counted.reset();
+    const eq2 = await callRaw(env, "/api/tg-search");
+    check("36l second empty-q is a HIT", eq2.headers.get("x-rlibook-cache") === "HIT", eq2.headers.get("x-rlibook-cache"));
+    check("36l empty-q HIT body identical", JSON.stringify(eq2.body) === JSON.stringify(eq1.body));
+    check("36l empty-q HIT ran no ladder D1 read (registry probes only)",
+      counted.sqls.length > 0 && counted.sqls.every(isProbeSql), JSON.stringify(counted.sqls));
+
+    // 36m counters: batched flush every 10 events.
+    edge.store.clear();
+    __resetSearchCacheCountersForTests();
+    const kvCount = mockKVStore({});
+    const envCount = { TG_D1: counted.db, RLIBOOK_KV: kvCount };
+    const counterKey = searchCacheCounterKey();
+    for (let i = 0; i < 9; i++) await callRaw(envCount, SEARCH_Q);
+    check("36m no KV counter write before 10 events", !kvCount.store.has(counterKey), JSON.stringify([...kvCount.store.keys()]));
+    await callRaw(envCount, SEARCH_Q);
+    const counterRaw = kvCount.store.get(counterKey);
+    check("36m counter flushed at 10 events", !!counterRaw, JSON.stringify([...kvCount.store.keys()]));
+    const counter = counterRaw ? JSON.parse(counterRaw) : {};
+    check("36m counter is 9 hits + 1 miss", counter.hit === 9 && counter.miss === 1, counterRaw);
+  } finally {
+    delete globalThis.caches;
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

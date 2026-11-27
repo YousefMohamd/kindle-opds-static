@@ -715,6 +715,199 @@ async function flagsBlobGet(env) {
   return parsed;
 }
 
+// --- search-response cache (D1 root-fix step 1, v4.8.86) ------------
+// The problem: every search reads D1, and the free tier allows 5M
+// rows/day account-wide — exhausted 2026-11-27 ~18:15. The fix is
+// to stop reading the DB for repeat searches, not a bigger DB. A
+// repeated search (same normalized query + filters + viewer) is
+// answered from caches.default for 5 minutes, costing zero D1
+// rows. The bot's /search goes through this endpoint too, so one
+// cache serves the website and the bot at once; the bot adds its
+// own layer for its colo (see the bot's searchTelegramCatalogCached).
+//
+// Key: a synthetic URL under https://rlibook.tech/cache/tg-search
+// (never a real route) with: qn = normalizeQuery(q) — the format
+// token rides inside it ("بيت الحرير epub" normalizes with "epub"
+// as a word, so it keys separately from "بيت الحرير"), src, limit,
+// offset, smart (the smart path changes results), bk (bot-key
+// presence only — the secret itself is NEVER in the key; the bot
+// gets the raw post URL, the public caller does not), vt (the
+// viewer's numeric Telegram id, -1 when anonymous — Drive
+// visibility is per-fingerprint, so two users must never share an
+// entry), own (the owner sees more Drive rows than anyone else).
+// The fp TOKEN itself is never in the key (only the resolved
+// numeric id). The suggest (?suggest=) path has its own key:
+// suggest=<normalizeQuery(prefix)> — autocomplete reads the
+// prefix_counts table and is viewer-independent.
+//
+// Bypass (never cached, always fresh from D1):
+//   - the h/p single-book lookup (a delivery lookup, not a search);
+//   - flagStatus "degraded" (flag state unknown — a cached copy
+//     would freeze an untrusted answer);
+//   - any page containing a flagged result (flagged flows stay
+//     fresh; a flag landing mid-TTL must show within minutes);
+//   - anything that is not a 200 ok:true search reply (400/405/
+//     500/503 are never stored).
+// Empty results (total 0) ARE cached — a repeated no-match is the
+// commonest duplicate. The empty-q reply is cached too (it costs
+// no D1 rows at all — it also skips the KV coverage read — so the
+// live check can run with the D1 budget exhausted).
+//
+// TTL: 5 min (SEARCH_CACHE_TTL_SECONDS), stored as
+// `public, max-age=300` on the cached copy; the live reply stays
+// `no-store` and carries x-rlibook-cache: HIT|MISS so a caller can
+// tell which path served it.
+//
+// Measurement: every search records a hit/miss in KV under
+// search:cache:<YYYY-MM-DD> = { hit, miss } (today, UTC), flushed
+// from a module-level batch every 10 events or 60 s (best-effort,
+// approximate — a cold isolate loses at most 9 events; the key has
+// a 48 h TTL). /api/stats reads the same key and reports it as
+// search_cache (the stats response is itself cached 1 h, so the
+// value lags ≤1 h). The duplicate-search ratio over any window is
+// hit/(hit+miss).
+export const SEARCH_CACHE_TTL_SECONDS = 300;
+const SEARCH_CACHE_BASE_URL = "https://rlibook.tech/cache/tg-search";
+const SEARCH_CACHE_COUNTER_PREFIX = "search:cache:";
+const SEARCH_CACHE_COUNTER_TTL_SECONDS = 48 * 3600; // 2 days
+const SEARCH_CACHE_COUNTER_FLUSH_AFTER = 10; // events
+const SEARCH_CACHE_COUNTER_FLUSH_MS = 60_000; // 1 min
+let searchCachePending = { hit: 0, miss: 0 };
+let searchCacheLastFlush = Date.now();
+
+/** KV key for one day's search-cache counters (UTC date). Exported
+ *  for /api/stats (which reads the same key) and for tests. */
+export function searchCacheCounterKey(now = new Date()) {
+  return SEARCH_CACHE_COUNTER_PREFIX + now.toISOString().slice(0, 10);
+}
+
+/** Cache key for one search reply. `parts` is the parsed request
+ *  context (see onRequest): the normalized query, source, limit,
+ *  offset, smart flag, bot-key presence, viewer id and owner flag.
+ *  Exported for tests. */
+export function buildSearchCacheKey(parts) {
+  const u = new URL(SEARCH_CACHE_BASE_URL);
+  // Normalized here (not only by the caller) so the folding is
+  // guaranteed: "الجلّاد" and "الجلاد" key alike by construction.
+  u.searchParams.set("qn", normalizeQuery(parts.qn || ""));
+  u.searchParams.set("src", parts.source || "");
+  u.searchParams.set("limit", String(parts.limit));
+  u.searchParams.set("offset", String(parts.offset));
+  u.searchParams.set("smart", parts.smart ? "1" : "0");
+  u.searchParams.set("bk", parts.botKey ? "1" : "0");
+  u.searchParams.set("vt", String(parts.viewerTgId == null ? -1 : parts.viewerTgId));
+  u.searchParams.set("own", parts.isOwner ? "1" : "0");
+  return u.toString();
+}
+
+/** Cache key for one autocomplete reply (viewer-independent).
+ *  Exported for tests. */
+export function buildSuggestCacheKey(prefix) {
+  const u = new URL(SEARCH_CACHE_BASE_URL);
+  u.searchParams.set("suggest", normalizeQuery(prefix || ""));
+  return u.toString();
+}
+
+/** A cached reply (HIT): the stored body, re-served no-store with
+ *  x-rlibook-cache: HIT. */
+function cachedReply(stored) {
+  return new Response(JSON.stringify(stored), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-rlibook-cache": "HIT",
+    },
+  });
+}
+
+/** A fresh reply (MISS): no-store + x-rlibook-cache: MISS. */
+function freshReply(obj) {
+  return new Response(JSON.stringify(obj), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-rlibook-cache": "MISS",
+    },
+  });
+}
+
+/** Store one reply in the edge cache for SEARCH_CACHE_TTL_SECONDS.
+ *  Best-effort: a failure never fails the request. */
+async function searchCacheStore(cache, key, obj) {
+  if (!cache || !key) return;
+  try {
+    await cache.put(
+      key,
+      new Response(JSON.stringify(obj), {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, max-age=${SEARCH_CACHE_TTL_SECONDS}`,
+        },
+      }),
+    );
+  } catch {
+    // Best-effort only.
+  }
+}
+
+/** Flush the pending hit/miss batch to KV (best-effort). Reads the
+ *  day's counter, adds the pending counts, writes it back with a
+ *  48 h TTL. Never throws. */
+async function searchCacheFlush(env) {
+  const kv = env && env.RLIBOOK_KV;
+  const pending = searchCachePending;
+  searchCachePending = { hit: 0, miss: 0 };
+  searchCacheLastFlush = Date.now();
+  if ((pending.hit === 0 && pending.miss === 0) || !kv || typeof kv.put !== "function") return;
+  try {
+    const key = searchCacheCounterKey();
+    let cur = { hit: 0, miss: 0 };
+    try {
+      const raw = await kv.get(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          cur.hit = Number(parsed.hit) || 0;
+          cur.miss = Number(parsed.miss) || 0;
+        }
+      }
+    } catch {
+      // Treat an unreadable counter as zero.
+    }
+    await kv.put(
+      key,
+      JSON.stringify({ hit: cur.hit + pending.hit, miss: cur.miss + pending.miss }),
+      { expirationTtl: SEARCH_CACHE_COUNTER_TTL_SECONDS },
+    );
+  } catch {
+    // Best-effort only.
+  }
+}
+
+/** Record one search-cache event (hit or miss). Batched: the KV
+ *  write happens every SEARCH_CACHE_COUNTER_FLUSH_AFTER events or
+ *  SEARCH_CACHE_COUNTER_FLUSH_MS, whichever comes first. Never
+ *  throws; without a KV binding the counts are dropped silently. */
+async function recordSearchCacheEvent(env, hit) {
+  if (hit) searchCachePending.hit += 1;
+  else searchCachePending.miss += 1;
+  const total = searchCachePending.hit + searchCachePending.miss;
+  if (total >= SEARCH_CACHE_COUNTER_FLUSH_AFTER || Date.now() - searchCacheLastFlush >= SEARCH_CACHE_COUNTER_FLUSH_MS) {
+    await searchCacheFlush(env);
+  }
+}
+
+/** Test-only reset of the module-level counter batch (the suite
+ *  runs many searches before the cache section; without a reset the
+ *  flush-threshold test would see earlier sections' events). */
+export function __resetSearchCacheCountersForTests() {
+  searchCachePending = { hit: 0, miss: 0 };
+  searchCacheLastFlush = Date.now();
+}
+
 // The denylist for one page of rows: { status, flagged, hidden }
 // (see the header above). `rows` is needed only for the legacy
 // fallback (the per-row gets); the blob path ignores it.
@@ -1770,10 +1963,29 @@ export async function onRequest(context) {
 
   // Autocomplete (smart path): ?suggest=<prefix> returns up to 10
   // real catalog titles starting with the prefix (3+ chars).
+  // Cached like search (v4.8.86, its own key — the suggestions are
+  // viewer-independent catalog titles, so no viewer context in it).
   const suggestRaw = (url.searchParams.get("suggest") || "").trim();
   if (suggestRaw) {
+    const suggestCache = typeof caches !== "undefined" && caches.default ? caches.default : null;
+    const suggestKey = suggestCache ? buildSuggestCacheKey(suggestRaw) : null;
+    if (suggestCache && suggestKey) {
+      try {
+        const hit = await suggestCache.match(suggestKey);
+        if (hit) {
+          const stored = await hit.json();
+          await recordSearchCacheEvent(env, true);
+          return cachedReply(stored);
+        }
+      } catch {
+        // Edge-cache failure: fall through to a fresh lookup.
+      }
+    }
     const suggestions = await d1Autocomplete(db, suggestRaw, 10);
-    return json({ ok: true, suggest: suggestRaw, results: suggestions });
+    const out = { ok: true, suggest: suggestRaw, results: suggestions };
+    await searchCacheStore(suggestCache, suggestKey, out);
+    await recordSearchCacheEvent(env, false);
+    return freshReply(out);
   }
 
   // Drive-visibility context (WAVE 4, WS8 — see the header docs):
@@ -1829,6 +2041,49 @@ export async function onRequest(context) {
   // Only an authenticated bot caller gets the raw t.me post URL in
   // results (see isBotRequest). Everyone else gets the gated links.
   const includeUrl = isBotRequest(request, env);
+
+  // Search-response cache (v4.8.86, D1 root-fix step 1): a repeated
+  // search is answered from caches.default (5 min) without touching
+  // D1 at all. The check sits here — after the viewer context
+  // (viewerTgId / isOwner / bot-key presence) is known, before the
+  // coverage read — and is skipped for the h/p delivery lookup.
+  const searchCache = typeof caches !== "undefined" && caches.default ? caches.default : null;
+  const hasPostLookup = !!(url.searchParams.get("h") || url.searchParams.get("p"));
+  const cacheKey = !hasPostLookup
+    ? buildSearchCacheKey({
+        qn: q,
+        source,
+        limit,
+        offset,
+        smart: isSmartSearch(request, env),
+        botKey: includeUrl,
+        viewerTgId: viewerTgId === null ? -1 : viewerTgId,
+        isOwner: vis.isOwner,
+      })
+    : null;
+  if (searchCache && cacheKey) {
+    try {
+      const hit = await searchCache.match(cacheKey);
+      if (hit) {
+        const stored = await hit.json();
+        await recordSearchCacheEvent(env, true);
+        return cachedReply(stored);
+      }
+    } catch {
+      // Edge-cache failure: fall through to a fresh search.
+    }
+  }
+
+  // Reply to a fresh search and (when the bypass rules allow) store
+  // it for 5 min. `cacheable` is false for a degraded flag state
+  // or any flagged result on the page — those stay fresh from D1.
+  // The stored copy carries public, max-age=300; the live reply
+  // stays no-store and carries x-rlibook-cache: MISS.
+  const replySearch = async (obj, cacheable = true) => {
+    if (cacheable) await searchCacheStore(searchCache, cacheKey, obj);
+    await recordSearchCacheEvent(env, false);
+    return freshReply(obj);
+  };
 
   // Coverage is computed once per request and attached to every ok:true
   // reply below (spread as `...cov`); a failed or barred count yields
@@ -1917,14 +2172,14 @@ export async function onRequest(context) {
     // was given). A bare format token never browses the whole
     // catalog.
     if (!source) {
-      return json({ ok: true, q, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
+      return replySearch({ ok: true, q, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
     }
     try {
       // Browse over-fetches like search (see DEDUP_OVERFETCH): the
       // same title can be reposted inside one library too.
       const found = await d1Search(db, null, Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH), offset, source, format, vis);
       if (found.total === 0) {
-        return json({ ok: true, q, source, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
+        return replySearch({ ok: true, q, source, total: 0, limit, offset, ...cov, ...fmtField, results: [] });
       }
       // Hidden rows (owner /hide) are dropped before the reply;
       // `total` is adjusted by the hidden rows on this page only.
@@ -1932,11 +2187,11 @@ export async function onRequest(context) {
       // whether the denylist was trusted for this page. Same-title
       // reposts collapse to one tile (see visibleResults).
       const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit, viewerFp);
-      return json({
+      return replySearch({
         ok: true, q, source, total: Math.max(0, found.total - hiddenCount), limit, offset, ...cov, ...fmtField,
         flagStatus,
         results,
-      });
+      }, flagStatus !== "degraded" && !results.some((r) => r.flagged));
     } catch (e) {
       // Never leak the database error to the caller (it can carry
       // table/column names); log it, return a generic failure.
@@ -1966,7 +2221,7 @@ export async function onRequest(context) {
       suggestion = smart.suggestion;
     }
     if (found.total === 0) {
-      return json({
+      return replySearch({
         ok: true, q, match: null, total: 0, limit, offset, ...cov, ...fmtField,
         ...(suggestion ? { suggestion } : {}),
         results: [],
@@ -1980,7 +2235,7 @@ export async function onRequest(context) {
     // Same-title reposts collapse to one tile (see visibleResults);
     // `total` stays the raw match count, not distinct titles.
     const { results, hiddenCount, flagStatus } = await visibleResults(env, found.rows, includeUrl, limit, viewerFp);
-    return json({
+    return replySearch({
       ok: true,
       q,
       ...(source ? { source } : {}),
@@ -1993,7 +2248,7 @@ export async function onRequest(context) {
       flagStatus,
       ...(suggestion ? { suggestion } : {}),
       results,
-    });
+    }, flagStatus !== "degraded" && !results.some((r) => r.flagged));
   } catch (e) {
     // Never leak the database error to the caller (it can carry
     // table/column names); log it, return a generic failure.
