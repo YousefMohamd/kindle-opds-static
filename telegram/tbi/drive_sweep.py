@@ -56,6 +56,17 @@ after the batch import. The UPDATE is always guarded by
 library back, and a stale entry is a harmless 0-row no-op. The
 sweep NEVER creates a registry row for publish.
 
+Sync backstop (Drive UX redesign): the bot's per-library Sync
+button logs a ``sync_requested`` record to the same KV submissions
+log. ``parse_pending`` yields a ``to_sync`` category for an
+INDEXED library whose newest record is ``sync_requested`` and
+whose registry visibility is still live (public / private /
+pending_public); ``--run`` carries it in the manifest as
+(folder_id, submitter_tg_id) and the workflow step executes
+drive_index.py --sync for it (fresh listing diffed against the
+current D1 rows by fileId). A sync never resurrects a removed /
+unavailable library and never indexes an unindexed one.
+
 No network in this module except the drive_index.py subprocess
 (which calls the Drive API with DRIVE_API_KEY from the environment).
 No secrets are printed: folder ids and counts only.
@@ -178,11 +189,13 @@ def restore_sql_for(folder_id: str, now_iso: str) -> str:
 
 
 def parse_pending(records: list, indexed: set[str], failed: set[str],
-                  registry_visibility: dict | None = None) -> dict:
+                  registry_visibility: dict | None = None,
+                  synced: dict | None = None) -> dict:
     """Newest-wins pending queue from the submissions log.
 
-    Returns {to_index, to_publish, to_remove, to_restore, skipped_indexed,
-    skipped_failed, skipped_removed, invalid}:
+    Returns {to_index, to_publish, to_remove, to_restore, to_sync,
+    skipped_indexed, skipped_failed, skipped_removed,
+    skipped_sync_unindexed, invalid}:
     to_index is [{folder_id, submitter_tg_id, submitted_at, status}] in
     submission order (newest first — the log's own order). ``status``
     is the triggering newest-record status (``pending_index`` /
@@ -218,14 +231,33 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
     never demotes a live library (the guard only matches the two
     dead states) and never re-indexes — the books rows are
     already there.
+    to_sync is [{folder_id, submitter_tg_id, submitted_at}] — an
+    INDEXED library whose newest record is a Sync request (status
+    ``sync_requested``, logged by the bot's per-library Sync
+    button) while the registry visibility is still LIVE
+    (``public`` / ``private`` / ``pending_public``): the workflow
+    re-lists the folder and runs drive_index.py --sync against the
+    current D1 rows (new files INSERT, renames UPDATE in place,
+    vanished files left untouched). A ``sync_requested`` record for
+    a folder that is ``removed`` / ``unavailable`` /
+    ``pending_index`` (not indexed yet) is skipped — a dead library
+    is never resurrected by a sync, and an unindexed one is never
+    indexed by it (it lands in skipped_sync_unindexed). A newer
+    non-sync record (e.g. a removal after the request) cancels the
+    sync, newest-wins like everything else. --run carries to_sync
+    in the manifest (folder_id, submitter_tg_id) for the workflow
+    step to execute; the sweep itself never touches the books rows
+    for a sync.
     """
     to_index: list[dict] = []
     to_publish: list[dict] = []
     to_remove: list[dict] = []
     to_restore: list[dict] = []
+    to_sync: list[dict] = []
     skipped_indexed: list[str] = []
     skipped_failed: list[str] = []
     skipped_removed: list[str] = []
+    skipped_sync_unindexed: list[str] = []
     invalid: list[str] = []
     seen: set[str] = set()
     vis = registry_visibility or {}
@@ -246,7 +278,8 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
             continue
         status = rec.get("status")
         if rec.get("type") != "channel" or status not in (
-                "pending_index", "pending_public", "pending", "removed"):
+                "pending_index", "pending_public", "pending", "removed",
+                "sync_requested"):
             continue  # decided by a newer non-pending record
         if key in indexed_lower:
             # Already indexed: only a pending_public request against
@@ -276,6 +309,28 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
                     "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
                     "submitted_at": str(rec.get("timestamp") or ""),
                 })
+            elif status == "sync_requested" and vis.get(key) in (
+                    "public", "private", "pending_public"):
+                # Live library only: a sync must never resurrect a
+                # removed/unavailable library, and an unknown
+                # visibility must not trigger a write (fail closed).
+                # Consumption: a sync_requested record is actionable
+                # only when it is NEWER than the last successful sync
+                # marker for this folder (KV drive:synced:<id>). A
+                # sync changes no registry state, so without this the
+                # same request would re-sync on every sweep and block
+                # any new request forever (bot "already queued" guard).
+                # Both timestamps are UTC ISO, so lexicographic
+                # compare works. No marker -> actionable.
+                if synced and str(rec.get("timestamp") or "") <= str(
+                        synced.get(folder_id, synced.get(key, ""))):
+                    continue
+                submitter = rec.get("user_id")
+                to_sync.append({
+                    "folder_id": folder_id,
+                    "submitter_tg_id": int(submitter) if isinstance(submitter, int) else 0,
+                    "submitted_at": str(rec.get("timestamp") or ""),
+                })
             skipped_indexed.append(folder_id)
         elif key in failed_lower:
             skipped_failed.append(folder_id)
@@ -284,6 +339,12 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
                 # Never indexed (or not in the registry mirror):
                 # nothing to hide, and it must NOT be indexed now.
                 skipped_removed.append(folder_id)
+                continue
+            if status == "sync_requested":
+                # A sync needs D1 rows to diff against — an
+                # unindexed folder has none. Never index it here
+                # (a sync is not a submission).
+                skipped_sync_unindexed.append(folder_id)
                 continue
             submitter = rec.get("user_id")
             to_index.append({
@@ -297,9 +358,11 @@ def parse_pending(records: list, indexed: set[str], failed: set[str],
         "to_publish": to_publish,
         "to_remove": to_remove,
         "to_restore": to_restore,
+        "to_sync": to_sync,
         "skipped_indexed": skipped_indexed,
         "skipped_failed": skipped_failed,
         "skipped_removed": skipped_removed,
+        "skipped_sync_unindexed": skipped_sync_unindexed,
         "invalid": invalid,
     }
 
@@ -479,6 +542,8 @@ def main() -> int:
     ap.add_argument("--registry", default="drive-libraries.json")
     ap.add_argument("--failed", default="",
                     help="failed-folders JSON file (KV drive:failed:* list)")
+    ap.add_argument("--synced", default="",
+                    help="sync-marker JSON file ({folder_id: ISO time of last successful sync} from KV drive:synced:*)")
     ap.add_argument("--out", default="",
                     help="write the plan JSON here (default: stdout)")
     ap.add_argument("--out-dir", default="d1-batches-drive")
@@ -529,6 +594,9 @@ def main() -> int:
         return 2
     records = json.loads(Path(args.submissions).read_text(encoding="utf-8"))
     failed = load_failed(Path(args.failed) if args.failed else None)
+    synced = {}
+    if args.synced:
+        synced = json.loads(Path(args.synced).read_text(encoding="utf-8"))
     # Registry visibility (lower-cased folder -> visibility) for the
     # to_publish backstop: drive-libraries.json is the registry as
     # of the last commit. It may be stale vs D1 (the endpoint may
@@ -540,7 +608,7 @@ def main() -> int:
         for e in registry.get("libraries", [])
     }
     plan = parse_pending(records, registry_folders(registry), failed,
-                         registry_visibility)
+                         registry_visibility, synced)
 
     if args.plan and not args.run:
         text = json.dumps(plan, ensure_ascii=False, indent=2)
@@ -552,6 +620,7 @@ def main() -> int:
               f"{len(plan['to_publish'])} to publish, "
               f"{len(plan['to_remove'])} to remove, "
               f"{len(plan['to_restore'])} to restore, "
+              f"{len(plan['to_sync'])} to sync, "
               f"{len(plan['skipped_indexed'])} already indexed, "
               f"{len(plan['skipped_failed'])} failed-known, "
               f"{len(plan['invalid'])} invalid", file=sys.stderr)
@@ -584,10 +653,20 @@ def main() -> int:
                  "restore_sql": restore_sql_for(item["folder_id"], now_iso)}
                 for item in plan["to_restore"]
             ],
+            # Sync requests: the workflow step executes
+            # drive_index.py --sync per folder (rows JSON +
+            # --start-id MAX(id)+1, then wrangler import of the
+            # emitted SQL). The sweep itself writes no SQL here.
+            "to_sync": [
+                {"folder_id": item["folder_id"],
+                 "submitter_tg_id": item["submitter_tg_id"]}
+                for item in plan["to_sync"]
+            ],
             "to_unavailable": [],
             "skipped_indexed": plan["skipped_indexed"],
             "skipped_failed": plan["skipped_failed"],
             "skipped_removed": plan["skipped_removed"],
+            "skipped_sync_unindexed": plan["skipped_sync_unindexed"],
             "invalid": plan["invalid"],
         }
         start_id = args.start_id
@@ -640,6 +719,7 @@ def main() -> int:
               f"{len(manifest['to_publish'])} to publish, "
               f"{len(manifest['to_remove'])} to remove, "
               f"{len(manifest['to_restore'])} to restore, "
+              f"{len(manifest['to_sync'])} to sync, "
               f"{len(manifest['to_unavailable'])} to unavailable")
         return 0
 

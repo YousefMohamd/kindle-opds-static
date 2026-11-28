@@ -2,15 +2,24 @@
 // Standalone Node script — run from the repo root:
 //   node functions/libraries-monitor.test.mjs
 //
+// Password gate (user decision 2026-11-28): ONE monitor link for the
+// whole project, protected by a password the OWNER sets
+// (MONITOR_PASSWORD secret) — the old ?fp= / ?key= auth is removed.
 // Builds a LOCAL SQLite database (node:sqlite, same engine as D1)
 // with a drive_libraries registry + books + drive_health rows, mocks
 // RLIBOOK_KV with a Map, imports the real Function module, and calls
-// onRequest(). Asserts: owner gating (fingerprint and key), no leak
-// to anonymous callers, pending_public listed first with counts,
-// samples and unavailable counts, approve/reject POSTs update the
-// registry, and non-owners cannot write. No network, no production
-// D1/KV. Exit 0 = all pass.
+// onRequest(). Asserts: unauthenticated visitors get the login form
+// only (no titles leaked), the old fingerprint/key auth is dead,
+// login sets an HttpOnly session cookie holding SHA-256(password)
+// (never the plaintext), wrong passwords get a generic 401, the
+// session cookie opens the list and authorizes approve/reject POSTs,
+// an unset MONITOR_PASSWORD locks the monitor (503, fail closed), and
+// approve/reject still write the drive:surfaces-stale KV marker.
+// No network, no production D1/KV. Exit 0 = all pass.
+//
+// NOTE: MON_PASSWORD below is a TEST-ONLY value, never a real password.
 
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { onRequest } from "./libraries-monitor.js";
 
@@ -29,10 +38,8 @@ function check(name, cond, extra = "") {
 const F_PUB = "1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP";
 const F_PRIV = "PRIVFOLDER1234567890";
 const F_PEND = "PENDFOLDER1234567890";
-const FP_SUB = "AAAAAAAAAAAAAAAAAAAAAA";
-const FP_OWNER = "CCCCCCCCCCCCCCCCCCCCCC";
-const OWNER_ID = 7283934644;
-const MON_KEY = "monitor-test-key";
+const MON_PASSWORD = "monitor-test-password";
+const MON_HASH = createHash("sha256").update(MON_PASSWORD).digest("hex");
 
 function buildDb() {
   const db = new DatabaseSync(":memory:");
@@ -98,13 +105,9 @@ function mockKV(entries = {}) {
   kv._map = m;
   return kv;
 }
-const KV = mockKV({
-  ["fp:" + FP_SUB]: JSON.stringify({ tg_id: 111, created_at: "2026-11-26" }),
-  ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
-});
 
-async function call(env, path, method = "GET", form = null) {
-  const init = { method };
+async function call(env, path, method = "GET", form = null, headers = {}) {
+  const init = { method, headers };
   if (form) {
     init.body = new FormData();
     for (const [k, v] of Object.entries(form)) init.body.append(k, v);
@@ -114,115 +117,179 @@ async function call(env, path, method = "GET", form = null) {
   return { status: res.status, headers: res.headers, text: await res.text() };
 }
 const env = (db, extra = {}) => ({
-  TG_D1: mockD1(db), RLIBOOK_KV: KV,
-  RLIBOOK_OWNER_ID: String(OWNER_ID),
-  LIBRARY_MONITOR_KEY: MON_KEY, ...extra,
+  TG_D1: mockD1(db), RLIBOOK_KV: mockKV(),
+  MONITOR_PASSWORD: MON_PASSWORD, ...extra,
 });
 
-// 1. Anonymous GET -> 403, no titles leaked.
+// Log in with the correct password; return the session cookie value.
+async function loginCookie(e, db) {
+  const { status, headers } = await call(e, "/libraries/monitor", "POST", { password: MON_PASSWORD });
+  if (status !== 303) return null;
+  const setCookie = headers.get("set-cookie") || "";
+  const m = setCookie.match(/rlb_mon=([^;]+)/);
+  return m ? m[1] : null;
+}
+const authHeaders = (token) => ({ Cookie: "rlb_mon=" + token });
+
+// 1. Anonymous GET -> 200 login form, no titles leaked.
 {
   const db = buildDb();
   const { status, text } = await call(env(db), "/libraries/monitor");
-  check("1a anonymous GET -> 403", status === 403, `status=${status}`);
-  check("1b anonymous sees no titles", !text.includes("مكتبة بانتظار") && !text.includes("نزهة الزمان"));
-}
-// 2. Owner fingerprint GET -> 200, pending first, counts + samples.
-{
-  const db = buildDb();
-  const { status, text } = await call(env(db), "/libraries/monitor?fp=" + FP_OWNER);
-  check("2a owner fp GET -> 200", status === 200, `status=${status}`);
-  check("2b pending listed (Arabic status label)", text.includes("مكتبة بانتظار") && text.includes("بانتظار النشر"));
-  check("2b2 approve/reject form carries the fp as a hidden input",
-    text.includes('name="fp"') && text.includes('name="folder_id"'));
-  check("2c public + private listed", text.includes("Oriental Music") && text.includes("مكتبة خاصة"));
-  check("2d pending before public", text.indexOf("مكتبة بانتظار") < text.indexOf("Oriental Music"));
-  check("2e sample title shown", text.includes("نزهة الزمان"));
-  check("2f unavailable count shown", text.includes("غير متاح") || text.includes("1 غير متاح"));
-}
-// 3. Key auth GET -> 200; submitter fp -> 403.
-{
-  const db = buildDb();
-  const { status } = await call(env(db), "/libraries/monitor?key=" + MON_KEY);
-  check("3a monitor key GET -> 200", status === 200, `status=${status}`);
-  const { status: s2 } = await call(env(db), "/libraries/monitor?fp=" + FP_SUB);
-  check("3b submitter fp GET -> 403", s2 === 403, `status=${s2}`);
-  const { status: s3 } = await call(env(db), "/libraries/monitor?key=wrong");
-  check("3c wrong key -> 403", s3 === 403, `status=${s3}`);
-}
-// 4. Approve: POST (owner fp) flips pending_public -> public, 303.
-// POST auth comes from the form body (hidden fp/key inputs), and the
-// folder field is `folder_id` — same shape the page's own form posts.
-{
-  const db = buildDb();
-  const { status, headers } = await call(env(db), "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_OWNER });
-  check("4a approve POST -> 303 redirect", status === 303 && (headers.get("location") || "").includes("/libraries/monitor"), `status=${status}`);
-  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
-  check("4b registry now public", row.visibility === "public", JSON.stringify(row));
-  const reviewed = db.prepare("SELECT reviewed_at FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
-  check("4c reviewed_at stamped", reviewed.reviewed_at !== null, JSON.stringify(reviewed));
-}
-// 5. Reject: POST flips pending_public -> private (stays with submitter).
-{
-  const db = buildDb();
-  const { status } = await call(env(db), "/libraries/monitor", "POST", { action: "reject", folder_id: F_PEND, fp: FP_OWNER });
-  check("5a reject POST -> 303", status === 303, `status=${status}`);
-  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
-  check("5b registry now private", row.visibility === "private", JSON.stringify(row));
-}
-// 6. Non-owner POST -> 403 and no write; bad folder -> 400.
-{
-  const db = buildDb();
-  const { status } = await call(env(db), "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_SUB });
-  check("6a submitter POST -> 403", status === 403, `status=${status}`);
-  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
-  check("6b no write happened", row.visibility === "pending_public", JSON.stringify(row));
-  const { status: s2 } = await call(env(db), "/libraries/monitor", "POST", { action: "approve", folder_id: "NOPEFOLDER1234567890", fp: FP_OWNER });
-  check("6c unknown folder -> 400", s2 === 400, `status=${s2}`);
-  const { status: s3 } = await call(env(db), "/libraries/monitor", "POST", { action: "explode", folder_id: F_PEND, fp: FP_OWNER });
-  check("6d unknown action -> 400", s3 === 400, `status=${s3}`);
+  check("1a anonymous GET -> 200 login form", status === 200, `status=${status}`);
+  check("1b login form has a password field", text.includes('name="password"') && text.includes('type="password"'));
+  check("1c anonymous sees no titles", !text.includes("مكتبة بانتظار") && !text.includes("نزهة الزمان"));
 }
 
-// 7. Build 2: approve/reject writes the drive:surfaces-stale KV
-// marker (the telegram-drive sweep consumes it to regenerate the
-// public surfaces); a KV failure never fails the approve itself.
+// 2. Old auth is dead: ?fp= and ?key= no longer open the monitor.
 {
   const db = buildDb();
-  const kv = mockKV({
-    ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
-  });
+  const { status, text } = await call(env(db), "/libraries/monitor?fp=CCCCCCCCCCCCCCCCCCCCCC");
+  check("2a old fp param -> login form, not the list", status === 200 && !text.includes("مكتبة بانتظار"), `status=${status}`);
+  const { status: s2, text: t2 } = await call(env(db), "/libraries/monitor?key=monitor-test-key");
+  check("2b old key param -> login form, not the list", s2 === 200 && !t2.includes("مكتبة بانتظار"), `status=${s2}`);
+}
+
+// 3. Login: wrong password -> 401 + generic error, no cookie;
+//    correct password -> 303 + session cookie (SHA-256, not plaintext).
+{
+  const db = buildDb();
+  const e = env(db);
+  const { status, headers, text } = await call(e, "/libraries/monitor", "POST", { password: "wrong-password" });
+  check("3a wrong password -> 401", status === 401, `status=${status}`);
+  check("3b wrong password shows generic error", text.includes("غير صحيحة"));
+  check("3c wrong password sets no cookie", !(headers.get("set-cookie") || "").includes("rlb_mon"));
+  const { status: s2 } = await call(e, "/libraries/monitor", "POST", { password: "" });
+  check("3d empty password -> 401", s2 === 401, `status=${s2}`);
+  const { status: s3, headers: h3 } = await call(e, "/libraries/monitor", "POST", { password: MON_PASSWORD });
+  check("3e correct password -> 303", s3 === 303, `status=${s3}`);
+  const setCookie = h3.get("set-cookie") || "";
+  check("3f cookie is HttpOnly + scoped to the monitor",
+    setCookie.includes("HttpOnly") && setCookie.includes("Path=/libraries/monitor"), setCookie);
+  check("3g cookie value is the SHA-256 hash, not the password",
+    setCookie.includes("rlb_mon=" + MON_HASH) && !setCookie.includes(MON_PASSWORD), setCookie);
+}
+
+// 4. Authed GET (session cookie) -> 200 list, pending first, counts
+//    + samples; approve/reject forms carry no fp/key hidden inputs.
+{
+  const db = buildDb();
+  const e = env(db);
+  const token = await loginCookie(e, db);
+  check("4a login yields a session cookie", token === MON_HASH, `token=${token}`);
+  const { status, text } = await call(e, "/libraries/monitor", "GET", null, authHeaders(token));
+  check("4b authed GET -> 200", status === 200, `status=${status}`);
+  check("4c pending listed (Arabic status label)", text.includes("مكتبة بانتظار") && text.includes("بانتظار النشر"));
+  check("4d approve/reject form carries no fp/key hidden input",
+    !text.includes('name="fp"') && !text.includes('name="key"') && text.includes('name="folder_id"'));
+  check("4e public + private listed", text.includes("Oriental Music") && text.includes("مكتبة خاصة"));
+  check("4f pending before public", text.indexOf("مكتبة بانتظار") < text.indexOf("Oriental Music"));
+  check("4g sample title shown", text.includes("نزهة الزمان"));
+  check("4h unavailable count shown", text.includes("غير متاح") || text.includes("1 غير متاح"));
+  const { status: s2, text: t2 } = await call(e, "/libraries/monitor", "GET", null, authHeaders("deadbeef"));
+  check("4i wrong cookie -> login form", s2 === 200 && !t2.includes("مكتبة بانتظار"), `status=${s2}`);
+}
+
+// 5. Approve: POST (session cookie) flips pending_public -> public, 303.
+{
+  const db = buildDb();
+  const e = env(db);
+  const token = await loginCookie(e, db);
+  const { status, headers } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND }, authHeaders(token));
+  check("5a approve POST -> 303 redirect", status === 303 && (headers.get("location") || "") === "https://example.com/libraries/monitor", `status=${status} loc=${headers.get("location")}`);
+  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
+  check("5b registry now public", row.visibility === "public", JSON.stringify(row));
+  const reviewed = db.prepare("SELECT reviewed_at FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
+  check("5c reviewed_at stamped", reviewed.reviewed_at !== null, JSON.stringify(reviewed));
+}
+
+// 6. Reject: POST flips pending_public -> private (stays with submitter).
+{
+  const db = buildDb();
+  const e = env(db);
+  const token = await loginCookie(e, db);
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "reject", folder_id: F_PEND }, authHeaders(token));
+  check("6a reject POST -> 303", status === 303, `status=${status}`);
+  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
+  check("6b registry now private", row.visibility === "private", JSON.stringify(row));
+}
+
+// 7. Non-authed POST -> 403 and no write; bad folder/action -> 400.
+{
+  const db = buildDb();
+  const e = env(db);
+  const token = await loginCookie(e, db);
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND });
+  check("7a no-cookie POST -> 403", status === 403, `status=${status}`);
+  const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
+  check("7b no write happened", row.visibility === "pending_public", JSON.stringify(row));
+  const { status: s2 } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: "NOPEFOLDER1234567890" }, authHeaders(token));
+  check("7c unknown folder -> 400", s2 === 400, `status=${s2}`);
+  const { status: s3 } = await call(e, "/libraries/monitor", "POST", { action: "explode", folder_id: F_PEND }, authHeaders(token));
+  check("7d unknown action -> 400", s3 === 400, `status=${s3}`);
+}
+
+// 8. Approve/reject writes the drive:surfaces-stale KV marker (the
+// telegram-drive sweep consumes it to regenerate the public
+// surfaces); a KV failure never fails the approve itself.
+{
+  const db = buildDb();
+  const kv = mockKV();
   const e = env(db, { RLIBOOK_KV: kv });
-  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_OWNER });
-  check("7a approve POST -> 303", status === 303, `status=${status}`);
+  const token = await loginCookie(e, db);
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND }, authHeaders(token));
+  check("8a approve POST -> 303", status === 303, `status=${status}`);
   const raw = kv._map.get("drive:surfaces-stale");
-  check("7b marker written", typeof raw === "string", `marker=${raw}`);
+  check("8b marker written", typeof raw === "string", `marker=${raw}`);
   const marker = JSON.parse(raw || "{}");
-  check("7c marker carries folder + new visibility + title",
+  check("8c marker carries folder + new visibility + title",
     marker.folder_id === F_PEND && marker.visibility === "public" && marker.title === "مكتبة بانتظار",
     JSON.stringify(marker));
-  check("7d marker carries the submitter", marker.submitter_tg_id === 111, JSON.stringify(marker));
+  check("8d marker carries the submitter", marker.submitter_tg_id === 111, JSON.stringify(marker));
 }
 {
   const db = buildDb();
-  const kv = mockKV({
-    ["fp:" + FP_OWNER]: JSON.stringify({ tg_id: OWNER_ID, created_at: "2026-11-26" }),
-  });
+  const kv = mockKV();
   const e = env(db, { RLIBOOK_KV: kv });
-  const { status } = await call(e, "/libraries/monitor", "POST", { action: "reject", folder_id: F_PEND, fp: FP_OWNER });
-  check("7e reject POST -> 303", status === 303, `status=${status}`);
+  const token = await loginCookie(e, db);
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "reject", folder_id: F_PEND }, authHeaders(token));
+  check("8e reject POST -> 303", status === 303, `status=${status}`);
   const marker = JSON.parse(kv._map.get("drive:surfaces-stale") || "{}");
-  check("7f reject marker says private", marker.visibility === "private", JSON.stringify(marker));
+  check("8f reject marker says private", marker.visibility === "private", JSON.stringify(marker));
 }
 {
   const db = buildDb();
   const kv = {
-    get: async (k) => (k === "fp:" + FP_OWNER ? JSON.stringify({ tg_id: OWNER_ID }) : null),
+    get: async () => null,
     put: async () => { throw new Error("kv down"); },
   };
   const e = env(db, { RLIBOOK_KV: kv });
-  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND, fp: FP_OWNER });
-  check("7g KV-down approve still 303s", status === 303, `status=${status}`);
+  const token = await loginCookie(e, db);
+  const { status } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND }, authHeaders(token));
+  check("8g KV-down approve still 303s", status === 303, `status=${status}`);
   const row = db.prepare("SELECT visibility FROM drive_libraries WHERE folder_id = ?").get(F_PEND);
-  check("7h KV-down approve still updates D1", row.visibility === "public", JSON.stringify(row));
+  check("8h KV-down approve still updates D1", row.visibility === "public", JSON.stringify(row));
+}
+
+// 9. Fail CLOSED when MONITOR_PASSWORD is unset: no login form, no
+// list, no fingerprint/key fallback — the monitor is locked.
+{
+  const db = buildDb();
+  const e = env(db, { MONITOR_PASSWORD: undefined });
+  delete e.MONITOR_PASSWORD;
+  const { status, text } = await call(e, "/libraries/monitor");
+  check("9a unset secret GET -> 503 locked", status === 503, `status=${status}`);
+  check("9b locked page says the monitor is locked", text.includes("مقفولة"));
+  check("9c locked page shows no login form", !text.includes('name="password"'));
+  const { status: s2 } = await call(e, "/libraries/monitor", "POST", { password: MON_PASSWORD });
+  check("9d unset secret login POST -> 503", s2 === 503, `status=${s2}`);
+  const { status: s3 } = await call(e, "/libraries/monitor", "POST", { action: "approve", folder_id: F_PEND });
+  check("9e unset secret action POST -> 503", s3 === 503, `status=${s3}`);
+}
+{
+  const db = buildDb();
+  const e = env(db, { MONITOR_PASSWORD: "" });
+  const { status } = await call(e, "/libraries/monitor");
+  check("9f empty secret GET -> 503 locked", status === 503, `status=${status}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

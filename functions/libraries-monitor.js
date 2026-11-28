@@ -1,13 +1,18 @@
 // Cloudflare Pages Function: owner-only Drive library monitor (WAVE 4 WS8).
-// Route: /libraries/monitor?fp=... (or ?key=...)
+// Route: /libraries/monitor
 //
-//   GET  /libraries/monitor?fp=<owner fingerprint>
-//     -> 200 text/html — every Drive library: title, folder, visibility,
-//        submitter, book count, unavailable count (drive_health),
-//        5 sample titles. pending_public first, each with
-//        Approve / Reject buttons.
+//   GET  /libraries/monitor
+//     -> 200 text/html — the login form (password only) when the
+//        request carries no valid session cookie; the library list
+//        (title, folder, visibility, submitter, book count,
+//        unavailable count, 5 sample titles; pending_public first,
+//        each with Approve / Reject buttons) when authed.
+//   POST /libraries/monitor (form: password=...)
+//     -> login: correct password -> 303 back to GET + a session
+//        cookie; wrong password -> 401 + the login form with a
+//        generic error.
 //   POST /libraries/monitor (form: action=approve|reject,
-//        folder_id=..., fp=... / key=...)
+//        folder_id=...)
 //     -> 303 back to the GET view. Approve sets visibility='public';
 //        Reject sets visibility='private' — the library STAYS private
 //        to its submitter (never deleted, never hidden from them).
@@ -25,54 +30,67 @@
 //        the public surfaces and commits them. Best-effort: a KV
 //        failure never fails the approve itself — D1 is the truth.
 //
-// Auth (either — the owner already has both):
-//   * ?fp= — the owner's catalog fingerprint, verified against KV
-//     (fp:<token> -> { tg_id }) and compared to RLIBOOK_OWNER_ID.
-//     Same mechanism as the private OPDS feed ([[fp]].js).
-//   * ?key= — env LIBRARY_MONITOR_KEY (a shared secret set in the
-//     Pages dashboard; fallback when the fingerprint is not at hand).
-// Anyone else gets a 403 page that says only "for the owner" — the
-// library list itself never leaks to a non-owner.
+// Auth (password gate, user decision 2026-11-28):
+//   * ONE link for the whole project, protected by a password the
+//     OWNER sets (not the fingerprint — the fingerprint is project
+//     identity, the monitor belongs to the owner himself).
+//   * MONITOR_PASSWORD (secret, Pages dashboard): the password.
+//     Fail CLOSED when unset — the monitor shows "locked", no login
+//     form, no list, no fingerprint/key fallback.
+//   * Session: on a correct password the server sets an HttpOnly
+//     cookie `rlb_mon` holding SHA-256(password) (30 days,
+//     SameSite=Lax, Path=/libraries/monitor). Later requests compare
+//     the cookie against SHA-256(MONITOR_PASSWORD) — the plaintext
+//     password never travels in a cookie.
+//   * Wrong password -> generic "wrong password" only; no hints.
+//   * The old ?fp= / ?key= auth is REMOVED. The bot's /libraries
+//     fingerprint link now lands on the login form — the owner types
+//     the password. That is the intended behavior (one link, one
+//     password).
 //
 // Env (Pages dashboard -> Settings -> Functions):
 //   D1 binding  TG_D1       (required).
-//   KV binding  RLIBOOK_KV  (optional — needed for ?fp= auth).
-//   RLIBOOK_OWNER_ID (var) — the owner's Telegram id.
-//   LIBRARY_MONITOR_KEY (secret, optional) — fallback shared key.
+//   KV binding  RLIBOOK_KV  (optional — best-effort surfaces-stale
+//     marker on approve/reject).
+//   MONITOR_PASSWORD (secret, required) — the monitor password.
 
-const FP_RE = /^[A-Za-z0-9_-]{22}$/;
+import { parseCookies } from "./api/identify.js";
+
 const FOLDER_RE = /^[A-Za-z0-9_-]{10,64}$/;
+const COOKIE_NAME = "rlb_mon";
+const COOKIE_MAX_AGE = 30 * 24 * 3600; // 30 days
 
-async function verifyFingerprint(env, fp) {
-  if (!FP_RE.test(fp || "")) return null;
-  const kv = env && env.RLIBOOK_KV;
-  if (!kv || typeof kv.get !== "function") return null;
-  try {
-    const raw = await kv.get("fp:" + fp);
-    if (!raw) return null;
-    const v = JSON.parse(raw);
-    const id = v && Number(v.tg_id);
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
-  } catch (e) {
-    return null;
-  }
+async function sha256Hex(str) {
+  const data = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(data)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// True when the request carries owner auth (fp or key). `params` is a
-// URLSearchParams (GET) or a FormData-like getter (POST).
-async function isOwnerAuth(env, get) {
-  const fp = (get("fp") || "").trim();
-  if (fp) {
-    const tgId = await verifyFingerprint(env, fp);
-    const ownerRaw = Number((env && (env.RLIBOOK_OWNER_ID || env.OWNER_TG_ID)) || 0);
-    if (tgId && Number.isSafeInteger(ownerRaw) && ownerRaw > 0 && tgId === ownerRaw) {
-      return true;
-    }
-  }
-  const key = (get("key") || "").trim();
-  const want = (env && env.LIBRARY_MONITOR_KEY) || "";
-  if (key && want && key === want) return true;
-  return false;
+// Constant-time-ish string compare (lengths must match first).
+function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function sessionCookieHeader(token) {
+  return COOKIE_NAME + "=" + encodeURIComponent(token)
+    + "; Path=/libraries/monitor; Max-Age=" + COOKIE_MAX_AGE + "; SameSite=Lax; HttpOnly";
+}
+
+// The configured password ("" when unset — the monitor is locked).
+function monitorPassword(env) {
+  const pw = (env && env.MONITOR_PASSWORD) || "";
+  return typeof pw === "string" && pw.length > 0 ? pw : "";
+}
+
+// True when the request carries a valid monitor session cookie.
+async function isAuthed(env, request) {
+  const pw = monitorPassword(env);
+  if (!pw) return false;
+  const cookie = (parseCookies(request.headers.get("Cookie") || "")[COOKIE_NAME] || "").trim();
+  if (!cookie) return false;
+  return safeEqual(cookie, await sha256Hex(pw));
 }
 
 function esc(s) {
@@ -81,19 +99,44 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
+const head = (title) => "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
+  + "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+  + "<title>" + esc(title) + " — RliBook</title>\n"
+  + "<style>body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
+  + "margin:0 auto;padding:1rem;line-height:1.7;color:#1C2826;background:#DFF1F4}"
+  + "h1{font-size:1.4rem}a{color:#0b5cad}.btn{display:inline-block;padding:.4rem .9rem;margin:.2rem;"
+  + "border-radius:6px;background:#44667b;color:#fff;text-decoration:none;font-weight:600;border:0;cursor:pointer;font-size:1rem}"
+  + ".btn.danger{background:#8a3b00}.card{border:1px solid #C4E0EB;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
+  + ".meta{color:#555;font-size:.9rem}.note{color:#555;font-size:.9rem}ul{margin:.3rem 0}</style>\n"
+  + "</head>\n<body>\n<h1>مكتبات Drive — المراقبة</h1>\n";
+
+const foot = "<p class=\"note\"><a href=\"/\">← الرئيسية</a> • "
+  + "<a href=\"/telegram/libraries.html\">كل المكتبات</a></p>\n</body></html>";
+
+const HTML_HEADERS = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" };
+
+function loginForm(wrong) {
+  return head("مكتبات Drive — المراقبة")
+    + "<p>هذه الصفحة للمالك فقط — أدخل كلمة المرور.</p>\n"
+    + (wrong ? "<p><b>كلمة المرور غير صحيحة.</b></p>\n" : "")
+    + "<form method=\"post\" action=\"/libraries/monitor\">"
+    + "<label>كلمة المرور <input type=\"password\" name=\"password\" autocomplete=\"current-password\" required></label> "
+    + "<button class=\"btn\" type=\"submit\">دخول</button></form>\n"
+    + foot;
+}
+
 function forbidden() {
-  const body = "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
-    + "<meta charset=\"utf-8\">\n<title>مكتبات Drive — RliBook</title>\n"
-    + "<style>body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
-    + "margin:0 auto;padding:1rem;line-height:1.7;color:#1C2826;background:#DFF1F4}"
-    + "a{color:#0b5cad}</style>\n</head>\n<body>\n"
-    + "<h1>مكتبات Drive</h1>\n"
-    + "<p>هذه الصفحة للمالك فقط — افتحها من رابط البوت (ببصمتك)، أو أضف مفتاح المراقبة.</p>\n"
-    + "<p><a href=\"/\">← الرئيسية</a></p>\n</body></html>";
-  return new Response(body, {
-    status: 403,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  const body = head("مكتبات Drive — المراقبة")
+    + "<p>هذه الصفحة للمالك فقط — <a href=\"/libraries/monitor\">أدخل كلمة المرور</a>.</p>\n"
+    + foot;
+  return new Response(body, { status: 403, headers: HTML_HEADERS });
+}
+
+function lockedPage() {
+  const body = head("مكتبات Drive — المراقبة")
+    + "<p>المراقبة مقفولة — كلمة المرور غير مضبوطة بعد.</p>\n"
+    + foot;
+  return new Response(body, { status: 503, headers: HTML_HEADERS });
 }
 
 export async function onRequest(context) {
@@ -104,20 +147,6 @@ export async function onRequest(context) {
     return new Response("search unavailable (TG_D1 not bound)", { status: 503 });
   }
 
-  const head = (title) => "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n"
-    + "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-    + "<title>" + esc(title) + " — RliBook</title>\n"
-    + "<style>body{font-family:system-ui,Tahoma,sans-serif;max-width:760px;"
-    + "margin:0 auto;padding:1rem;line-height:1.7;color:#1C2826;background:#DFF1F4}"
-    + "h1{font-size:1.4rem}a{color:#0b5cad}.btn{display:inline-block;padding:.4rem .9rem;margin:.2rem;"
-    + "border-radius:6px;background:#44667b;color:#fff;text-decoration:none;font-weight:600;border:0;cursor:pointer;font-size:1rem}"
-    + ".btn.danger{background:#8a3b00}.card{border:1px solid #C4E0EB;border-radius:8px;background:#fff;padding:.8rem 1rem;margin:.8rem 0}"
-    + ".meta{color:#555;font-size:.9rem}.note{color:#555;font-size:.9rem}ul{margin:.3rem 0}</style>\n"
-    + "</head>\n<body>\n<h1>مكتبات Drive — المراقبة</h1>\n";
-
-  const foot = "<p class=\"note\"><a href=\"/\">← الرئيسية</a> • "
-    + "<a href=\"/telegram/libraries.html\">كل المكتبات</a></p>\n</body></html>";
-
   if (request.method === "POST") {
     let form;
     try {
@@ -126,7 +155,24 @@ export async function onRequest(context) {
       return new Response("bad form", { status: 400 });
     }
     const get = (k) => { const v = form.get(k); return typeof v === "string" ? v : ""; };
-    if (!(await isOwnerAuth(env, get))) return forbidden();
+    if (!monitorPassword(env)) return lockedPage();
+    // Login attempt: the form carries a password field.
+    if (form.has("password")) {
+      const pw = monitorPassword(env);
+      const given = get("password");
+      const ok = given.length > 0
+        && safeEqual(await sha256Hex(given), await sha256Hex(pw));
+      if (!ok) {
+        return new Response(loginForm(true), { status: 401, headers: HTML_HEADERS });
+      }
+      const back = new URL("/libraries/monitor", url.origin);
+      return new Response(null, {
+        status: 303,
+        headers: { location: back.toString(), "set-cookie": sessionCookieHeader(await sha256Hex(pw)) },
+      });
+    }
+    // Approve/reject: session cookie only.
+    if (!(await isAuthed(env, request))) return forbidden();
     const action = (get("action") || "").trim();
     const folderId = (get("folder_id") || "").trim();
     if ((action !== "approve" && action !== "reject") || !FOLDER_RE.test(folderId)) {
@@ -163,18 +209,18 @@ export async function onRequest(context) {
         }));
       }
     } catch (e) { /* marker is best-effort; D1 is the truth */ }
-    // POST-redirect-GET: back to the list, keeping the same auth.
+    // POST-redirect-GET: back to the list.
     const back = new URL("/libraries/monitor", url.origin);
-    if (get("fp")) back.searchParams.set("fp", get("fp"));
-    if (get("key")) back.searchParams.set("key", get("key"));
     return new Response(null, { status: 303, headers: { location: back.toString() } });
   }
 
   if (request.method !== "GET") {
     return new Response("method not allowed", { status: 405 });
   }
-  const get = (k) => url.searchParams.get(k) || "";
-  if (!(await isOwnerAuth(env, get))) return forbidden();
+  if (!monitorPassword(env)) return lockedPage();
+  if (!(await isAuthed(env, request))) {
+    return new Response(loginForm(false), { headers: HTML_HEADERS });
+  }
 
   let rows;
   try {
@@ -190,11 +236,6 @@ export async function onRequest(context) {
       + foot;
     return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
   }
-
-  const fp = (get("fp") || "").trim();
-  const key = (get("key") || "").trim();
-  const authHidden = (fp ? "<input type=\"hidden\" name=\"fp\" value=\"" + esc(fp) + "\">" : "")
-    + (key ? "<input type=\"hidden\" name=\"key\" value=\"" + esc(key) + "\">" : "");
 
   let body = head("مكتبات Drive — المراقبة");
   body += "<p class=\"note\">الموافقة تجعل المكتبة عامة للجميع. الرفض يُبقيها خاصة "
@@ -244,7 +285,7 @@ export async function onRequest(context) {
       body += "<ul>\n" + samples.map((t) => "<li>" + esc(t) + "</li>").join("\n") + "\n</ul>\n";
     }
     if (visibility === "pending_public") {
-      body += "<form method=\"post\" action=\"/libraries/monitor\">" + authHidden
+      body += "<form method=\"post\" action=\"/libraries/monitor\">"
         + "<input type=\"hidden\" name=\"folder_id\" value=\"" + esc(folderId) + "\">"
         + "<button class=\"btn\" type=\"submit\" name=\"action\" value=\"approve\">✅ موافقة — اجعلها عامة</button> "
         + "<button class=\"btn danger\" type=\"submit\" name=\"action\" value=\"reject\">✖️ رفض — تبقى خاصة</button></form>\n";

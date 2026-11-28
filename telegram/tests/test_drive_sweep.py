@@ -380,3 +380,141 @@ def test_plan_cli_lists_to_publish(monkeypatch, tmp_path):
     plan = json.loads(out.read_text(encoding="utf-8"))
     assert [t["folder_id"] for t in plan["to_publish"]] == [F_A]
     assert plan["to_index"] == []
+
+
+# --- Drive sync backstop (Drive UX redesign) -------------------------
+
+def test_parse_pending_to_sync_live_visibility():
+    # Indexed + newest sync_requested + live visibility (each of
+    # public/private/pending_public) -> the sync list.
+    for vis in ("public", "private", "pending_public"):
+        plan = parse_pending([_sub(F_A, "sync_requested")], {F_A}, set(),
+                             {F_A.lower(): vis})
+        assert [t["folder_id"] for t in plan["to_sync"]] == [F_A]
+        assert plan["to_sync"][0]["submitter_tg_id"] == 111
+        assert plan["to_index"] == [] and plan["to_publish"] == []
+
+
+def test_parse_pending_to_sync_skipped_when_dead_or_unindexed():
+    # removed / unavailable / pending_index (not indexed yet) ->
+    # never a sync; the dead states are not resurrected, the
+    # unindexed folder is not indexed by a sync request.
+    for vis in ("removed", "unavailable"):
+        plan = parse_pending([_sub(F_A, "sync_requested")], {F_A}, set(),
+                             {F_A.lower(): vis})
+        assert plan["to_sync"] == []
+    plan = parse_pending([_sub(F_A, "sync_requested")], set(), set())
+    assert plan["to_sync"] == [] and plan["to_index"] == []
+    assert plan["skipped_sync_unindexed"] == [F_A]
+
+
+def test_parse_pending_to_sync_unknown_visibility_is_neither():
+    # Missing visibility value must not trigger a write (fail closed).
+    plan = parse_pending([_sub(F_A, "sync_requested")], {F_A}, set(), {})
+    assert plan["to_sync"] == [] and plan["to_index"] == []
+
+
+def test_parse_pending_to_sync_newest_wins():
+    # A newer removal after the sync request cancels it; a newer
+    # pending_index (re-add flow) also cancels it — newest record
+    # decides, like every other category.
+    recs = [_sub(F_A, "removed", ts="2026-11-26T12:00:00Z"),
+            _sub(F_A, "sync_requested", ts="2026-11-26T11:00:00Z")]
+    plan = parse_pending(recs, {F_A}, set(), {F_A.lower(): "private"})
+    assert plan["to_sync"] == []
+    assert [t["folder_id"] for t in plan["to_remove"]] == [F_A]
+    recs = [_sub(F_A, "pending_index", ts="2026-11-26T12:00:00Z"),
+            _sub(F_A, "sync_requested", ts="2026-11-26T11:00:00Z")]
+    plan = parse_pending(recs, {F_A}, set(), {F_A.lower(): "private"})
+    assert plan["to_sync"] == [] and plan["to_index"] == []
+
+
+# --- Sync consumption markers (KV drive:synced:<id>) ---------------------
+
+def test_parse_pending_to_sync_newer_than_marker_is_actionable():
+    # Request submitted AFTER the last successful sync -> the folder
+    # is still in to_sync (a new request must not be blocked by the
+    # marker of an earlier sync).
+    plan = parse_pending(
+        [_sub(F_A, "sync_requested", ts="2026-11-26T12:00:00Z")],
+        {F_A}, set(), {F_A.lower(): "private"},
+        {F_A: "2026-11-26T11:00:00Z"})
+    assert [t["folder_id"] for t in plan["to_sync"]] == [F_A]
+
+
+def test_parse_pending_to_sync_older_than_or_equal_to_marker_consumed():
+    # Request submitted BEFORE the last successful sync -> already
+    # consumed, never re-syncs. Equal timestamps (same run) are
+    # consumed too — the marker is written after the import.
+    for marker in ("2026-11-26T11:00:00Z", "2026-11-26T10:00:00Z"):
+        plan = parse_pending(
+            [_sub(F_A, "sync_requested", ts="2026-11-26T10:00:00Z")],
+            {F_A}, set(), {F_A.lower(): "private"}, {F_A: marker})
+        assert plan["to_sync"] == []
+
+
+def test_parse_pending_to_sync_no_marker_is_actionable():
+    # No marker at all (never synced, or --synced not passed) -> the
+    # request is actionable, exactly as before the marker fix.
+    for synced in (None, {}, {F_B: "2026-11-26T11:00:00Z"}):
+        plan = parse_pending(
+            [_sub(F_A, "sync_requested")], {F_A}, set(),
+            {F_A.lower(): "private"}, synced)
+        assert [t["folder_id"] for t in plan["to_sync"]] == [F_A]
+
+
+def test_parse_pending_to_sync_marker_for_other_folder_ignored():
+    # A marker for another folder must not consume this folder's
+    # request — the lookup is per folder_id.
+    plan = parse_pending(
+        [_sub(F_A, "sync_requested", ts="2026-11-26T10:00:00Z")],
+        {F_A}, set(), {F_A.lower(): "private"},
+        {F_B: "2026-11-26T11:00:00Z"})
+    assert [t["folder_id"] for t in plan["to_sync"]] == [F_A]
+
+
+def test_run_manifest_carries_to_sync_without_indexing(monkeypatch, tmp_path):
+    # Indexed public library + sync_requested record: no indexing
+    # happens (no subprocess call), but the manifest carries the
+    # folder for the workflow step to execute --sync on.
+    import sys
+    subs = tmp_path / "subs.json"
+    subs.write_text(json.dumps([_sub(F_A, "sync_requested")]),
+                    encoding="utf-8")
+    reg = tmp_path / "drive-libraries.json"
+    reg.write_text(json.dumps({"libraries": [
+        {"folder_id": F_A, "title": "Pub", "visibility": "public"}]}),
+        encoding="utf-8")
+    fake = _FakeRun({})
+    monkeypatch.setattr(drive_sweep.subprocess, "run", fake)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", ["drive_sweep.py", "--run",
+        "--submissions", str(subs), "--registry", str(reg),
+        "--out-dir", str(tmp_path / "batches"),
+        "--state-file", str(tmp_path / "s.jsonl"),
+        "--start-id", "100", "--manifest", str(manifest)])
+    assert drive_sweep.main() == 0
+    assert fake.calls == []  # nothing to index
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["indexed"] == []
+    assert data["to_sync"] == [
+        {"folder_id": F_A, "submitter_tg_id": 111}]
+
+
+def test_plan_cli_lists_to_sync(monkeypatch, tmp_path):
+    import sys
+    subs = tmp_path / "subs.json"
+    subs.write_text(json.dumps([_sub(F_A, "sync_requested")]),
+                    encoding="utf-8")
+    reg = tmp_path / "drive-libraries.json"
+    reg.write_text(json.dumps({"libraries": [
+        {"folder_id": F_A, "title": "Priv", "visibility": "private"}]}),
+        encoding="utf-8")
+    out = tmp_path / "plan.json"
+    monkeypatch.setattr(sys, "argv", ["drive_sweep.py", "--plan",
+        "--submissions", str(subs), "--registry", str(reg),
+        "--out", str(out)])
+    assert drive_sweep.main() == 0
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [t["folder_id"] for t in plan["to_sync"]] == [F_A]
+    assert plan["to_index"] == []

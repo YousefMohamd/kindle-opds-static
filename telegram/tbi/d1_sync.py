@@ -335,8 +335,49 @@ def update_sql(b: dict) -> str:
     ])
 
 
-def batch_sql(books: list[dict], start_id: int, changed: Optional[list[dict]] = None
-              ) -> tuple[str, int]:
+def update_sql_by_url(b: dict, row_id: int | None = None) -> str:
+    """UPDATE statements for one CHANGED Drive book (Drive sync mode):
+    same shape as update_sql, but keyed on the url ALONE.
+
+    A Drive book's url carries the stable file id
+    (https://drive.google.com/file/d/<fileId>/view), so the url is
+    the file's identity — a RENAMED file keeps its url and is fixed
+    IN PLACE (same books.id, new filename, new title), never
+    re-inserted as a second row. update_sql cannot do this: it
+    matches on (url, filename), so a rename looks like a new book
+    and the old row survives as a duplicate. The FTS row is rebuilt
+    for the same rowid, exactly as in update_sql.
+
+    ``row_id`` (rare): when the fileId already has DUPLICATE D1
+    rows (a rename under the old flow left two rows with one url),
+    the UPDATE is pinned to the canonical (max-id) row only — an
+    unpinned UPDATE would set the same filename on both rows and
+    trip the UNIQUE(url, filename) constraint, failing the batch.
+    The older duplicate rows are left untouched (metadata is NEVER
+    deleted) and listed in the sync report.
+    """
+    fts_title = normalize_for_fts(b["title"])
+    fts_author = normalize_for_fts(b["author"])
+    where = f"url={sql_escape(b['url'])}"
+    if row_id is not None:
+        where += f" AND id={int(row_id)}"
+    return "\n".join([
+        "UPDATE books SET "
+        f"title={sql_escape(b['title'])},author={sql_escape(b['author'])},"
+        f"source={sql_escape(b['source'])},kind={sql_escape(b['kind'])},"
+        f"ext={sql_escape(b['ext'])},size={sql_escape(b['size'])},"
+        f"date={sql_escape(b['date'])},filename={sql_escape(b['filename'])} "
+        f"WHERE {where};",
+        "DELETE FROM books_fts WHERE rowid = "
+        f"(SELECT id FROM books WHERE {where});",
+        "INSERT OR IGNORE INTO books_fts(rowid,title,author) "
+        f"SELECT id,{sql_escape(fts_title)},{sql_escape(fts_author)} "
+        f"FROM books WHERE {where};",
+    ])
+
+
+def batch_sql(books: list[dict], start_id: int, changed: Optional[list[dict]] = None,
+              changed_by_url: bool = False) -> tuple[str, int]:
     """One SQL batch: INSERTs into books + books_fts for these books.
     IDs are assigned sequentially from start_id (stable within a run;
     the (url, filename) UNIQUE constraint is the real dedup key). The
@@ -347,6 +388,11 @@ def batch_sql(books: list[dict], start_id: int, changed: Optional[list[dict]] = 
     ``changed`` (sync-fix v2): books already in D1 whose content
     changed — emitted as UPDATEs (update_sql) in the same
     transaction, after the inserts. They consume no new ids.
+    ``changed_by_url`` (Drive sync mode): the changed books are
+    keyed on the url alone (update_sql_by_url) — a renamed Drive
+    file is fixed in place instead of duplicating. A changed entry
+    may be a (book, row_id) tuple: row_id pins the UPDATE to one
+    canonical row when the fileId has duplicate D1 rows.
     """
     lines = ["BEGIN TRANSACTION;"]
     next_id = start_id
@@ -377,8 +423,12 @@ def batch_sql(books: list[dict], start_id: int, changed: Optional[list[dict]] = 
             f"FROM books WHERE url = {sql_escape(url)} "
             f"AND filename = {sql_escape(filename)};"
         )
-    for b in (changed or []):
-        lines.append(update_sql(b))
+    for item in (changed or []):
+        if isinstance(item, tuple):
+            b, row_id = item
+            lines.append(update_sql_by_url(b, row_id) if changed_by_url else update_sql(b))
+        else:
+            lines.append(update_sql_by_url(item) if changed_by_url else update_sql(item))
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n", next_id
 

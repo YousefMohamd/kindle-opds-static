@@ -58,6 +58,12 @@ Usage:
   python3 telegram/tbi/drive_index.py --measure --folder 1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP
   python3 telegram/tbi/drive_index.py --folder <id-or-url> --out-dir d1-batches-drive --start-id 422454
   python3 telegram/tbi/drive_index.py --folder <id-or-url> --dry-run
+  # Sync an already-indexed library (per-library Sync button):
+  python3 telegram/tbi/drive_index.py --sync --folder <id-or-url> \
+      --rows d1-rows.json --start-id <MAX(id)+1> --out-dir d1-batches-drive \
+      --no-transaction
+  # (d1-rows.json: wrangler SELECT id,url,filename FROM books
+  #  WHERE source='drive:<folderId>' --json, unwrapped or bare list)
 """
 
 from __future__ import annotations
@@ -260,6 +266,94 @@ def list_recursive(client, folder_id: str, stats: dict | None = None) -> list[di
     return out
 
 
+_DRIVE_FILE_URL_RE = re.compile(r"drive\.google\.com/file/d/([A-Za-z0-9_-]+)")
+
+
+def file_id_from_url(url: str) -> str | None:
+    """Drive file id from a book url
+    (https://drive.google.com/file/d/<fileId>/view), or None."""
+    m = _DRIVE_FILE_URL_RE.search(url or "")
+    return m.group(1) if m else None
+
+
+def sync_diff(d1_rows: list[dict], books: list[dict]) -> dict:
+    """Diff current D1 rows against a fresh Drive listing, by fileId.
+
+    d1_rows: [{id, url, filename}] (the workflow's SELECT for this
+    folder). books: fresh to_book() dicts from list_recursive.
+    The url carries the stable Drive fileId, so a file is identified
+    by its fileId even after a rename.
+
+    Returns {new, changed, unchanged, vanished, duplicates}:
+    - new: fresh books whose fileId is absent from D1 (INSERT).
+    - changed: [(book, row_id)] — same fileId, filename (or any
+      metadata field the D1 row carries) differs; the update is
+      keyed on the url, so the row is fixed IN PLACE (same id, new
+      filename), never re-inserted. row_id is None normally; it is
+      set only when the fileId had DUPLICATE D1 rows (a rename under
+      the old flow left two rows with one url) — then the update
+      targets the canonical (max-id) row only.
+    - unchanged: count of fileIds present in both, identical.
+    - vanished: D1 rows whose fileId is no longer in Drive — LEFT
+      UNTOUCHED (metadata is NEVER deleted); listed for the report.
+    - duplicates: extra D1 rows sharing a fileId with a newer row —
+      also LEFT UNTOUCHED (same rule); listed for the report.
+    Pure function, unit-tested.
+    """
+    by_file: dict[str, list[dict]] = {}
+    for r in d1_rows or []:
+        fid = file_id_from_url(r.get("url") or "")
+        if not fid:
+            continue  # unparseable url: cannot match, never touched
+        by_file.setdefault(fid, []).append(r)
+    fresh: dict[str, dict] = {}
+    for b in books:
+        fresh[b["file_id"]] = b
+    new: list[dict] = []
+    changed: list[tuple[dict, int | None]] = []
+    unchanged = 0
+    duplicates: list[dict] = []
+    for fid, b in fresh.items():
+        rows = by_file.get(fid)
+        if not rows:
+            new.append(b)
+            continue
+        # Canonical row: the newest id. Any older row with the same
+        # url is a pre-existing duplicate from the old rename flow.
+        rows_sorted = sorted(rows, key=lambda r: int(r.get("id") or 0))
+        canonical = rows_sorted[-1]
+        duplicates.extend(rows_sorted[:-1])
+        row_id = int(canonical.get("id") or 0) if len(rows) > 1 else None
+        if _row_matches(canonical, b):
+            unchanged += 1
+        else:
+            changed.append((b, row_id))
+    vanished: list[dict] = []
+    for fid, rows in by_file.items():
+        if fid not in fresh:
+            vanished.extend(rows)
+    return {"new": new, "changed": changed, "unchanged": unchanged,
+            "vanished": vanished, "duplicates": duplicates}
+
+
+def _row_matches(row: dict, book: dict) -> bool:
+    """True when a D1 row already holds this fresh book's data.
+
+    The workflow's rows carry id/url/filename only, so the filename
+    is the comparison that matters (title/ext derive from it). Any
+    wider field the row DOES carry (title/size/date/ext) is also
+    compared, so a wider future SELECT picks up metadata changes
+    without a code change.
+    """
+    if str(row.get("filename") or "") != str(book.get("filename") or ""):
+        return False
+    for field in ("title", "size", "date", "ext"):
+        if field in row and row[field] not in (None, ""):
+            if str(row[field]) != str(book.get(field) or ""):
+                return False
+    return True
+
+
 def to_book(item: dict, folder_id: str) -> dict:
     """One Drive file -> d1_sync book dict (display values as-is)."""
     name = item["name"]
@@ -280,6 +374,113 @@ def to_book(item: dict, folder_id: str) -> dict:
     }
 
 
+def _unwrap_rows(data) -> list | None:
+    """Unwrap a wrangler --json SELECT result (or a bare list) into
+    the D1 rows list. Same shape as drive_sweep._d1_rows_from_json,
+    plus the wrangler envelope: `d1 execute --json` returns a LIST
+    whose first element carries "results" (see the MAX(id) parse in
+    telegram-drive.yml), so a bare list is only rows when its first
+    element is NOT such an envelope."""
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict) and isinstance(
+                data[0].get("results"), list):
+            return data[0]["results"]
+        return data
+    if isinstance(data, dict):
+        for key in ("results", "result", "rows"):
+            v = data.get(key)
+            if isinstance(v, list):
+                return v
+    return None
+
+
+def run_sync(args, folder_id: str, meta: dict, books: list[dict]) -> int:
+    """--sync: diff a fresh listing against current D1 rows by fileId.
+
+    NEW fileId -> INSERT (ids from --start-id, which MUST exceed
+    every D1 id in --rows — a colliding start-id would silently
+    drop books through INSERT OR IGNORE, so it is refused here).
+    SAME fileId, changed filename/metadata -> UPDATE keyed on the
+    url (update_sql_by_url: same id, new filename, FTS rebuilt).
+    VANISHED fileId -> the D1 row is LEFT UNTOUCHED (metadata is
+    NEVER deleted) and listed in the report. Visibility/registry
+    are never touched in sync mode: no registry upsert, no books
+    JSON, no state-file append.
+
+    Writes one batch SQL file (a single BEGIN/COMMIT batch;
+    --no-transaction strips the transaction statements for
+    `wrangler d1 execute`, which rejects them) + a report JSON
+    {folder_id, inserted, updated, unchanged, vanished_left,
+    duplicate_rows_left}. Returns 0 on success, 2 on bad input.
+    """
+    if not args.rows:
+        print("ERROR: --sync needs --rows <d1-rows.json>", file=sys.stderr)
+        return 2
+    if args.start_id is None:
+        print("ERROR: --sync needs --start-id (next free books.id, "
+              "MAX(id)+1 for this folder)", file=sys.stderr)
+        return 2
+    rows_path = Path(args.rows)
+    if not rows_path.is_file():
+        print(f"ERROR: --rows file not found: {args.rows}", file=sys.stderr)
+        return 2
+    try:
+        rows = _unwrap_rows(json.loads(rows_path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        print(f"ERROR: --rows is not valid JSON: {e}", file=sys.stderr)
+        return 2
+    if rows is None:
+        print("ERROR: --rows JSON holds no rows list (expected a list "
+              "or {results: [...]})", file=sys.stderr)
+        return 2
+    diff = sync_diff(rows, books)
+    max_id = max((int(r.get("id") or 0) for r in rows), default=0)
+    if args.start_id <= max_id:
+        print(f"ERROR: refusing --start-id {args.start_id} <= max D1 id "
+              f"{max_id} in --rows — new inserts would collide and be "
+              "silently dropped (INSERT OR IGNORE). Pass MAX(id)+1.",
+              file=sys.stderr)
+        return 2
+    if args.measure or args.dry_run:
+        print(f"Sync diff for {folder_id}: {len(diff['new'])} new, "
+              f"{len(diff['changed'])} changed, {diff['unchanged']} unchanged, "
+              f"{len(diff['vanished'])} vanished (left untouched), "
+              f"{len(diff['duplicates'])} duplicate rows (left untouched)")
+        return 0
+
+    sql, next_id = batch_sql(diff["new"], args.start_id,
+                             changed=diff["changed"], changed_by_url=True)
+    if args.no_transaction:
+        sql = strip_transaction_statements(sql)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / f"drive-{folder_id[:12]}-sync.sql"
+    out_file.write_text(sql, encoding="utf-8")
+    report = {
+        "folder_id": folder_id,
+        "inserted": len(diff["new"]),
+        "updated": len(diff["changed"]),
+        "unchanged": diff["unchanged"],
+        "vanished_left": diff["vanished"],
+        "duplicate_rows_left": diff["duplicates"],
+    }
+    report_path = Path(args.sync_report) if args.sync_report else \
+        out_dir / f"drive-{folder_id[:12]}-sync-report.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=1)
+                           + "\n", encoding="utf-8")
+    print(f"Sync {folder_id} ({meta.get('name', '')}): "
+          f"{report['inserted']} inserted, {report['updated']} updated, "
+          f"{report['unchanged']} unchanged, "
+          f"{len(report['vanished_left'])} vanished (left untouched), "
+          f"{len(report['duplicate_rows_left'])} duplicate rows (left untouched)")
+    print(f"Wrote {out_file} (next free id {next_id})")
+    print(f"Wrote {report_path}")
+    print("Import with: wrangler d1 execute rlibook-tg --remote --file "
+          f"{out_file}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--folder", required=True, help="Drive folder id or URL")
@@ -290,8 +491,27 @@ def main() -> int:
                     help="list + build books, print counts, write nothing")
     ap.add_argument("--out-dir", default="d1-batches-drive",
                     help="where to write the D1 batch SQL file")
-    ap.add_argument("--start-id", type=int, default=1,
-                    help="first books.id to assign in the batch")
+    ap.add_argument("--start-id", type=int, default=None,
+                    help="first books.id to assign in the batch "
+                         "(default 1; for --incremental pass the next "
+                         "free id; REQUIRED for --sync)")
+    ap.add_argument("--sync", action="store_true",
+                    help="sync mode (per-library Sync button): diff a "
+                         "fresh listing against current D1 rows "
+                         "(--rows) by fileId — NEW files INSERT, "
+                         "renamed/changed files UPDATE in place "
+                         "(same id, no duplicate), vanished files "
+                         "LEFT untouched. Never touches the registry. "
+                         "Writes one batch SQL file + a sync report "
+                         "JSON. Needs --rows and --start-id.")
+    ap.add_argument("--rows", default="",
+                    help="sync mode: JSON file with the current D1 "
+                         "rows for this folder [{id, url, filename}] "
+                         "(workflow: wrangler SELECT id,url,filename "
+                         "FROM books WHERE source='drive:<folderId>')")
+    ap.add_argument("--sync-report", default="",
+                    help="sync mode: write the sync report JSON here "
+                         "(default: <out-dir>/drive-<folder12>-sync-report.json)")
     ap.add_argument("--state-file", default="",
                     help="append one JSON line per indexed file "
                          "(folder_id, file_id, url, filename) — read back "
@@ -388,13 +608,17 @@ def main() -> int:
         print(f"Books that would be indexed: {len(books)}")
         return 0
 
+    if args.sync:
+        return run_sync(args, folder_id, meta, books)
+
+    start_id = args.start_id if args.start_id is not None else 1
     if args.max_books and len(books) > args.max_books:
         print(f"ERROR: folder holds {len(books)} book files, over --max-books "
               f"{args.max_books} — refusing to write; import manually.",
               file=sys.stderr)
         return 4
 
-    sql, _ = batch_sql(books, args.start_id)
+    sql, _ = batch_sql(books, start_id)
     if args.no_transaction:
         sql = strip_transaction_statements(sql)
     out_dir = Path(args.out_dir)
