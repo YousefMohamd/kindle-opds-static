@@ -88,6 +88,12 @@ const FIXTURES = [
   ["كتاب الدرايف الخاص", "مؤلف الدرايف", "drive:PRIVFOLDERID1234567890", "drive", "pdf", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEPRIVFILEID01/view", "كتاب الدرايف الخاص.pdf"],
   ["كتاب الدرايف المعلق", "مؤلف الدرايف", "drive:PENDFOLDERID1234567890", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEPENDFILEID01/view", "كتاب الدرايف المعلق.epub"],
   ["كتاب الدرايف القديم", "مؤلف الدرايف", "drive:LEGACYFOLDER123456789", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVELEGFILEID001/view", "كتاب الدرايف القديم.epub"],
+  // Removed / unavailable fixtures (Drive UX redesign, §31k): a
+  // removed library and an unavailable one — hidden from EVERYONE,
+  // submitter and owner included (metadata is never deleted, but
+  // the books disappear from all surfaces).
+  ["كتاب الدرايف المحذوف", "مؤلف الدرايف", "drive:REMFOLDERID1234567890", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEREMFILEID01/view", "كتاب الدرايف المحذوف.epub"],
+  ["كتاب الدرايف غير المتاح", "مؤلف الدرايف", "drive:UNAVFOLDERID123456789", "drive", "epub", "1.0 MB", "2026-11-20", "https://drive.google.com/file/d/DRIVEUNAVFILEID1/view", "كتاب الدرايف غير المتاح.epub"],
 ];
 const shard = JSON.parse(readFileSync(SHARD, "utf-8"));
 const rows = shard.books.slice(0, SAMPLE);
@@ -115,12 +121,16 @@ const F_PUB = "1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP"; // Oriental Music (real)
 const F_PRIV = "PRIVFOLDERID1234567890";
 const F_PEND = "PENDFOLDERID1234567890";
 const F_LEG = "LEGACYFOLDER123456789";
+const F_REM = "REMFOLDERID1234567890";
+const F_UNAV = "UNAVFOLDERID123456789";
 const insLib = db.prepare(
   "INSERT INTO drive_libraries(folder_id,title,visibility,submitter_tg_id,added_at) VALUES (?,?,?,?,?)",
 );
 insLib.run(F_PUB, "Oriental Music", "public", null, "2026-11-22");
 insLib.run(F_PRIV, "مكتبة خاصة", "private", 111, "2026-11-26");
 insLib.run(F_PEND, "مكتبة معلقة", "pending_public", 111, "2026-11-26");
+insLib.run(F_REM, "مكتبة محذوفة", "removed", 111, "2026-11-26");
+insLib.run(F_UNAV, "مكتبة غير متاحة", "unavailable", 111, "2026-11-26");
 // kind comes from the manifest; the test shard is one file, so resolve
 // kind from a tiny built-in map of the sources present in the sample
 // (channel unless the name is a known group in this sample).
@@ -1375,6 +1385,22 @@ const driveTitles = (body) => (body.results || []).map((r) => r.title);
   // 31j bad Drive source: a folder id under 10 chars is a 400.
   const { status: badStatus } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:short"));
   check("31j source=drive:short -> 400", badStatus === 400, `status=${badStatus}`);
+  // 31k removed / unavailable Drive libraries: hidden from
+  // EVERYONE — anonymous, submitter, and owner alike (the books
+  // rows stay in D1, but no surface shows them). Even a direct
+  // browse of the removed library by its own submitter is empty.
+  const { body: remAnon } = await call(driveEnv(fpEntries()), DRIVE_Q);
+  check("31k anonymous does NOT see the removed Drive book", !driveTitles(remAnon).includes("كتاب الدرايف المحذوف"));
+  check("31k2 anonymous does NOT see the unavailable Drive book", !driveTitles(remAnon).includes("كتاب الدرايف غير المتاح"));
+  const { body: remSub } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_SUB);
+  check("31k3 submitter does NOT see the removed Drive book", !driveTitles(remSub).includes("كتاب الدرايف المحذوف"), JSON.stringify(driveTitles(remSub)));
+  check("31k4 submitter does NOT see the unavailable Drive book", !driveTitles(remSub).includes("كتاب الدرايف غير المتاح"));
+  const { body: remOwn } = await call(driveEnv(fpEntries()), DRIVE_Q + "&fp=" + FP_OWNER);
+  check("31k5 owner does NOT see the removed Drive book", !driveTitles(remOwn).includes("كتاب الدرايف المحذوف"));
+  check("31k6 owner does NOT see the unavailable Drive book", !driveTitles(remOwn).includes("كتاب الدرايف غير المتاح"));
+  const { body: brRem } = await call(driveEnv(fpEntries()), "/api/tg-search?source=" + encodeURIComponent("drive:" + F_REM) + "&fp=" + FP_SUB);
+  check("31k7 submitter browsing the removed library gets nothing",
+    brRem.total === 0 && (brRem.results || []).length === 0, `total=${brRem.total}`);
 }
 
 // 32. D1 read-budget fix (2026-11-26, wave 4 workstream 7):

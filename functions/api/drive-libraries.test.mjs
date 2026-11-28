@@ -28,6 +28,8 @@ function check(name, cond, extra = "") {
 const F_PUB = "1EFegWouzH4CXHzX2N-NfD18mJbtDLQAP";
 const F_PRIV = "PRIVFOLDER1234567890";
 const F_PEND = "PENDFOLDER1234567890";
+const F_REM = "REMFOLDER1234567890";
+const F_UNAV = "UNAVFOLDER123456789";
 const FP_SUB = "AAAAAAAAAAAAAAAAAAAAAA";
 const FP_OTHER = "BBBBBBBBBBBBBBBBBBBBBB";
 const FP_OWNER = "CCCCCCCCCCCCCCCCCCCCCC";
@@ -51,11 +53,15 @@ db.exec(`
   INSERT INTO drive_libraries(folder_id, title, submitter_tg_id, visibility) VALUES
     ('${F_PUB}', 'Oriental Music', NULL, 'public'),
     ('${F_PRIV}', 'مكتبة خاصة', 111, 'private'),
-    ('${F_PEND}', 'مكتبة بانتظار', 111, 'pending_public');
+    ('${F_PEND}', 'مكتبة بانتظار', 111, 'pending_public'),
+    ('${F_REM}', 'مكتبة محذوفة', 111, 'removed'),
+    ('${F_UNAV}', 'مكتبة غير متاحة', 111, 'unavailable');
   INSERT INTO books(id,title,author,source,kind,ext,size,date,url,filename) VALUES
     (1, 'نزهة الزمان', '', 'drive:${F_PUB}', 'drive', 'PDF', '', '2025-07-03', 'https://drive.google.com/file/d/F1/view', 'a.pdf'),
     (2, 'كتاب خاص', '', 'drive:${F_PRIV}', 'drive', 'EPUB', '', '2025-07-03', 'https://drive.google.com/file/d/F2/view', 'b.epub'),
-    (3, 'كتاب بانتظار', '', 'drive:${F_PEND}', 'drive', 'PDF', '', '2025-07-03', 'https://drive.google.com/file/d/F3/view', 'c.pdf');
+    (3, 'كتاب بانتظار', '', 'drive:${F_PEND}', 'drive', 'PDF', '', '2025-07-03', 'https://drive.google.com/file/d/F3/view', 'c.pdf'),
+    (4, 'كتاب محذوف', '', 'drive:${F_REM}', 'drive', 'PDF', '', '2025-07-03', 'https://drive.google.com/file/d/F4/view', 'd.pdf'),
+    (5, 'كتاب غير متاح', '', 'drive:${F_UNAV}', 'drive', 'PDF', '', '2025-07-03', 'https://drive.google.com/file/d/F5/view', 'e.pdf');
 `);
 
 function mockD1(sqlite) {
@@ -164,6 +170,26 @@ const FP_UNKNOWN = "DDDDDDDDDDDDDDDDDDDDDD"; // 22 chars, not in KV
   check("7f malformed cookie -> 200, public only (never a 500)", sBad === 200 && JSON.stringify(ids(bad)) === JSON.stringify([F_PUB]), `status=${sBad} ${JSON.stringify(ids(bad))}`);
   const { body: noc } = await call(env(), "/api/drive-libraries", { Cookie: "other=1; session=abc" });
   check("7g unrelated cookies only -> public only", JSON.stringify(ids(noc)) === JSON.stringify([F_PUB]), JSON.stringify(ids(noc)));
+}
+// 8. Removed / unavailable libraries (Drive UX redesign): invisible
+// to EVERYONE — submitter and owner included (the books rows stay
+// in D1, but no surface lists them). And `mine` is strictly a
+// submitter match: the owner viewing a NULL-submitter public
+// library gets mine:false.
+{
+  const { body: sub } = await call(env(), "/api/drive-libraries?fp=" + FP_SUB);
+  check("8a submitter does NOT see removed", !ids(sub).includes(F_REM), JSON.stringify(ids(sub)));
+  check("8b submitter does NOT see unavailable", !ids(sub).includes(F_UNAV));
+  const { body: own } = await call(env(), "/api/drive-libraries?fp=" + FP_OWNER);
+  check("8c owner does NOT see removed", !ids(own).includes(F_REM), JSON.stringify(ids(own)));
+  check("8d owner does NOT see unavailable", !ids(own).includes(F_UNAV));
+  const pubOwn = own.libraries.find((l) => l.folder_id === F_PUB);
+  check("8e owner on NULL-submitter public library: mine:false",
+    pubOwn && pubOwn.mine === false, JSON.stringify(pubOwn));
+  const { body: oth } = await call(env(), "/api/drive-libraries?fp=" + FP_OTHER);
+  const pubOth = oth.libraries.find((l) => l.folder_id === F_PUB);
+  check("8f stranger on public library: mine:false",
+    pubOth && pubOth.mine === false, JSON.stringify(pubOth));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -124,7 +124,15 @@ export async function onRequest(context) {
     const mine = !!(viewerTgId && submitter && viewerTgId === submitter);
     // Visibility gate (same rule as tg-search.js): public for
     // everyone; private/pending only for the submitter; pending also
-    // for the owner (who reviews it). Anything else is invisible.
+    // for the owner (who reviews it). Anything else is invisible —
+    // removed / unavailable / unknown NEVER list, not even to their
+    // own submitter: `mine` must not bypass the dead states (a
+    // removed library otherwise kept appearing in its submitter's
+    // own list while its books were hidden from search).
+    if (visibility !== "public" && visibility !== "private"
+        && visibility !== "pending_public") {
+      continue;
+    }
     if (visibility !== "public" && !mine && !(visibility === "pending_public" && isOwner)) {
       continue;
     }
