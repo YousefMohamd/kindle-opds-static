@@ -704,7 +704,7 @@ qEl.addEventListener("input", function () {
 // from site/telegram/index.json by scripts/refresh-counts.py — run
 // it after each manifest regeneration (the daily telegram-sync
 // workflow runs it with the new staging manifest). Never edit the
-// numbers by hand. Manifest used here: generated 2026-11-27T11:46:31.975888+00:00.
+// numbers by hand. Manifest used here: generated 2026-11-28T11:22:27.257018+00:00.
 fetch("/telegram/index.json").then(function (r) { return r.json(); }).then(function (d) {
   var t = d.totals || {};
   if (t.sources && t.books) {
