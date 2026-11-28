@@ -256,6 +256,34 @@ jobs:
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             "$KV?prefix=drive%3Afailed%3A" -o failed.json \
             || echo '{"keys":[]}' > failed.json
+          # Sync-consumption markers (drive:synced:<id> -> ISO time of
+          # the last successful sync). Fail-soft: an empty set just
+          # means every sync_requested record is actionable.
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$KV?prefix=drive%3Asynced%3A" -o synced-keys.json \
+            || echo '{"keys":[]}' > synced-keys.json
+          python3 - <<'PYEOF'
+          import json, os, subprocess
+          base = ("https://api.cloudflare.com/client/v4/accounts/"
+                  + os.environ["CLOUDFLARE_ACCOUNT_ID"]
+                  + "/storage/kv/namespaces/"
+                  + os.environ["RLIBOOK_KV_ID"] + "/values")
+          tok = os.environ["CLOUDFLARE_API_TOKEN"]
+          keys = json.load(open("synced-keys.json")).get("keys", [])
+          out = {}
+          for k in keys:
+              name = k["key"] if isinstance(k, dict) else k
+              fid = name.split("drive:synced:", 1)[-1]
+              r = subprocess.run(["curl", "-fsS", "--max-time", "20",
+                  "-H", f"Authorization: Bearer {tok}",
+                  base + "/drive%3Asynced%3A" + fid],
+                  capture_output=True, text=True)
+              if r.returncode == 0:
+                  out[fid] = r.stdout.strip().strip('"')
+          json.dump(out, open("synced.json", "w"))
+          print(f"synced markers: {len(out)}")
+          PYEOF
           # Approve marker (Build 2). Fail-soft: absent = no approve
           # happened since the last publish.
           if curl -fsS --max-time 20 \
@@ -276,7 +304,7 @@ jobs:
           python3 telegram/tbi/drive_sweep.py --plan \
             --submissions submissions.json \
             --registry drive-libraries.json \
-            --failed failed.json --out sweep-plan.json
+            --failed failed.json --synced synced.json --out sweep-plan.json
           TO_INDEX=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_index']))")
           echo "to_index=$TO_INDEX" >> "$GITHUB_OUTPUT"
           echo "folders to index: $TO_INDEX"
@@ -289,13 +317,17 @@ jobs:
           TO_RESTORE=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_restore']))")
           echo "to_restore=$TO_RESTORE" >> "$GITHUB_OUTPUT"
           echo "folders to restore (re-added): $TO_RESTORE"
+          TO_SYNC=$(python3 -c "import json; print(len(json.load(open('sweep-plan.json'))['to_sync']))")
+          echo "to_sync=$TO_SYNC" >> "$GITHUB_OUTPUT"
+          echo "folders to sync: $TO_SYNC"
 
       - name: Index pending folders + import to D1
-        if: ${{ github.event_name == 'schedule' && (steps.plan.outputs.to_index != '0' || steps.plan.outputs.to_publish != '0' || steps.plan.outputs.to_remove != '0' || steps.plan.outputs.to_restore != '0') }}
+        if: ${{ github.event_name == 'schedule' && (steps.plan.outputs.to_index != '0' || steps.plan.outputs.to_publish != '0' || steps.plan.outputs.to_remove != '0' || steps.plan.outputs.to_restore != '0' || steps.plan.outputs.to_sync != '0') }}
         env:
           DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RLIBOOK_KV_ID: ${{ secrets.RLIBOOK_KV_ID }}
         run: |
           npm install -g wrangler@4
           # Next free books.id (one indexed PK lookup — cheap; never
@@ -314,7 +346,7 @@ jobs:
           python3 telegram/tbi/drive_sweep.py --run \
             --submissions submissions.json \
             --registry drive-libraries.json \
-            --failed failed.json \
+            --failed failed.json --synced synced.json \
             --out-dir d1-batches-drive \
             --state-file drive-state.jsonl \
             --start-id "$START_ID" --max-books 10000 \
@@ -394,6 +426,47 @@ jobs:
           PYEOF
             wrangler d1 execute rlibook-tg --remote --file drive-visibility.sql \
               || echo "::warning::remove/restore/unavailable backstop failed — the next sweep retries (guarded UPDATE, idempotent)"
+          fi
+          # Drive re-index (bot v4.8.87 Sync button): for each folder
+          # in the manifest's to_sync, diff the fresh Drive listing
+          # against current D1 rows by fileId (drive_index.py --sync),
+          # import the emitted SQL, then write the consumption marker
+          # drive:synced:<folderId> so the next sweep does not re-sync
+          # the same request. Per-folder failure only warns — the
+          # queue persists (no marker written) and the next run
+          # retries. Runs inside the existing
+          # kindle-opds-static-telegram-d1-incremental concurrency
+          # group; the start-id advances by each report's `inserted`
+          # count. A sync never touches registry/visibility, never
+          # deletes, never re-indexes a whole library.
+          SYNC_N=$(python3 -c "import json; print(len(json.load(open('drive-sweep-manifest.json')).get('to_sync', [])))")
+          if [ "$SYNC_N" = "0" ]; then
+            echo "no folders to sync"
+          else
+            SYNC_ID=$(python3 -c "import json; print(json.load(open('drive-sweep-manifest.json'))['next_start_id'])")
+            for fid in $(python3 -c "import json; [print(e['folder_id']) for e in json.load(open('drive-sweep-manifest.json'))['to_sync']]"); do
+              echo "=== syncing $fid (start_id $SYNC_ID) ==="
+              wrangler d1 execute rlibook-tg --remote \
+                --command "SELECT id,url,filename FROM books WHERE source='drive:$fid'" \
+                --json > "d1-rows-$fid.json" \
+                || { echo "::warning::D1 rows read failed for $fid — skipping this folder, queue persists"; continue; }
+              python3 telegram/tbi/drive_index.py --sync --folder "$fid" \
+                --rows "d1-rows-$fid.json" --start-id "$SYNC_ID" \
+                --out-dir d1-batches-drive --no-transaction \
+                --sync-report "d1-batches-drive/drive-${fid:0:12}-sync-report.json" \
+                || { echo "::warning::sync diff failed for $fid — skipping, queue persists"; continue; }
+              SYNC_SQL="d1-batches-drive/drive-${fid:0:12}-sync.sql"
+              if [ -s "$SYNC_SQL" ]; then
+                wrangler d1 execute rlibook-tg --remote --file "$SYNC_SQL" \
+                  || { echo "::warning::sync import failed for $fid — nothing committed, queue persists"; continue; }
+              fi
+              INS=$(python3 -c "import json; print(json.load(open('d1-batches-drive/drive-${fid:0:12}-sync-report.json'))['inserted'])")
+              SYNC_ID=$((SYNC_ID + INS))
+              wrangler kv key put --namespace-id "$RLIBOOK_KV_ID" \
+                "drive:synced:$fid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                && echo "synced $fid, marker written" \
+                || echo "::warning::sync import succeeded for $fid but the marker write failed — the next sweep will re-sync it once (harmless no-op)"
+            done
           fi
           # Record verification failures in KV so later runs skip
           # them instead of re-hitting the Drive API every 2 hours.
