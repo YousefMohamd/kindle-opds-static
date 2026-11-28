@@ -28,7 +28,7 @@
 #      skip=true and the rest of the job does not run (a skip is
 #      quiet success, not a failure — the next tick retries).
 #   3. The runner claims a DO lease (live:lease) before connecting;
-#      a live lease refuses the run (exit 3, skip not failure).
+#      a live lease refuses the run (exit 0, quiet success — a skip, not a failure).
 # The concurrency group stays cancel-in-progress: false — a scan is
 # never killed mid-write, it is skipped before it starts.
 #
