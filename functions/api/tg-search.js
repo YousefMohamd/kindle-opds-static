@@ -293,6 +293,7 @@
 // work. D1 writes happen only in the population script, never here.
 
 import { parseCookies, COOKIE_NAME } from "./identify.js";
+import { searchStaticIndex } from "./static-search.mjs";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
@@ -1906,6 +1907,22 @@ async function applySmartSearch(db, words, found, limit, offset, source, format,
   }
 }
 
+// fetchJson for the static search index (D1 root-fix step 2):
+// fetch a shard from the site origin; a 404 means "no such file"
+// (the reader treats a missing idx/rec shard as empty — a letter
+// with no words/books has no file at all), any other failure
+// propagates so the caller can 500 honestly. Exported for tests.
+export async function staticFetchJson(url) {
+  const res = await fetch(url);
+  if (res.status === 404) {
+    const err = new Error(`static index file not found: ${url}`);
+    err.status = 404;
+    throw err;
+  }
+  if (!res.ok) throw new Error(`static index fetch failed: ${res.status} ${url}`);
+  return res.json();
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -2250,12 +2267,64 @@ export async function onRequest(context) {
       results,
     }, flagStatus !== "degraded" && !results.some((r) => r.flagged));
   } catch (e) {
+    // D1 failed — the read-limit exhaustion is the usual cause, and
+    // it is exactly what the static search index exists for (D1
+    // root-fix step 2): the index is built from the seed DB by
+    // `tbi build-search-index`, published under
+    // site/telegram/search/, and reads ZERO D1 rows. Fall back to
+    // it and reply in the same shape (same visibleResults pipeline,
+    // same cache rules), with coverage: "static" so callers know
+    // the results came from the static index — which is rebuilt
+    // periodically, so a book added since the last rebuild is not
+    // in it yet. Smart search is D1-only (vocab tables) and is
+    // skipped here; the static ladder already has the same tiers.
+    // A static miss is a normal empty result, never a 500 — only
+    // a static fetch failure falls through to the generic 500.
     // Never leak the database error to the caller (it can carry
-    // table/column names); log it, return a generic failure.
-    console.warn("[tg-search] search failed:", e && e.message);
-    return json(
-      { ok: false, error: "search failed — try again later" },
-      500,
-    );
+    // table/column names).
+    console.warn("[tg-search] D1 search failed, trying static index:", e && e.message);
+    try {
+      const staticFound = await searchStaticIndex({
+        fetchJson: staticFetchJson,
+        base: `${new URL(request.url).origin}/site/telegram/search`,
+        manifest: null,
+        words: searchWords,
+        format,
+        source,
+        // Over-fetch like the D1 ladder so visibleResults can
+        // collapse same-title reposts and still fill `limit` tiles;
+        // `total` is the full resolved match count (see the reader).
+        limit: Math.min(MAX_LIMIT, limit * DEDUP_OVERFETCH),
+        offset,
+      });
+      if (staticFound.total === 0) {
+        return replySearch({
+          ok: true, q, match: null, total: 0, limit, offset,
+          coverage: "static", ...fmtField, results: [],
+        });
+      }
+      const { results, hiddenCount, flagStatus } = await visibleResults(
+        env, staticFound.rows, includeUrl, limit, viewerFp,
+      );
+      return replySearch({
+        ok: true,
+        q,
+        ...(source ? { source } : {}),
+        match: staticFound.match,
+        total: Math.max(0, staticFound.total - hiddenCount),
+        limit,
+        offset,
+        coverage: "static",
+        ...fmtField,
+        flagStatus,
+        results,
+      }, flagStatus !== "degraded" && !results.some((r) => r.flagged));
+    } catch (staticErr) {
+      console.warn("[tg-search] static fallback failed:", staticErr && staticErr.message);
+      return json(
+        { ok: false, error: "search failed — try again later" },
+        500,
+      );
+    }
   }
 }

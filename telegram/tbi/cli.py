@@ -42,6 +42,7 @@ from .entity_cache import DEFAULT_ENTITY_CACHE, EntityCache, ResolveFloodWait
 from .books import BOOK_EXTS, NEW_FORMATS, dedupe_key, parse_title_author
 from .config import load_config
 from .export_static import export_static
+from .build_search_index import cmd_build_search_index
 from .exports import is_book_file, parse_export
 from .report import ChannelRun, GroupRun, RunRecord, build_report, write_report
 from .scrape import classify, normalize_link, search_channel, walk
@@ -1677,6 +1678,22 @@ def build_parser() -> argparse.ArgumentParser:
              "the manifest and shards (v4.8.65). Without it, no filtering.",
     )
     pe.set_defaults(func=cmd_export_static)
+
+    pb = sub.add_parser(
+        "build-search-index",
+        help="Build the static search index (search/manifest.json + "
+             "rec/ + idx/ shards) from the DB",
+    )
+    pb.add_argument("--db", default="index.db")
+    pb.add_argument("--out", default="site/telegram/search",
+                    help="Output directory (default: site/telegram/search)")
+    pb.add_argument(
+        "--flags-json", default=None,
+        help="flags:all JSON blob ({\"flagged\": [...], \"hidden\": [...]}) "
+             "- books whose handle:post key is listed are excluded from "
+             "the index (same file export-static takes). Without it, no filtering.",
+    )
+    pb.set_defaults(func=cmd_build_search_index)
 
     pval = sub.add_parser(
         "validate", help="Check the DB and generated JSON are publishable"
