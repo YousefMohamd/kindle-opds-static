@@ -1,14 +1,14 @@
 {
   "version": 2,
   "date": "2026-11-28",
-  "generated_at": "2026-11-28T07:05:44.844808+00:00",
+  "generated_at": "2026-11-28T10:43:55.783895+00:00",
   "sources": [
     {
       "key": "arabJournalism",
       "label": "الصحافة العربية",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 3,
+      "entries": 5,
       "detail": ""
     },
     {
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 17,
+      "entries": 23,
       "detail": ""
     },
     {
@@ -29,6 +29,19 @@
     }
   ],
   "egypt": [
+    {
+      "name": "الأهرام المسائي",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "evening",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135344",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135344,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
     {
       "name": "الأهرام++",
       "country": "EG",
@@ -53,6 +66,32 @@
       "url": "https://t.me/Arabic_News_Papers/135336",
       "handle": "Arabic_News_Papers",
       "post_id": 135336,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الشروق",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135339",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135339,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "المساء",
+      "country": "EG",
+      "country_name": "مصر",
+      "flag": "🇪🇬",
+      "region": "egypt",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135340",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135340,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
@@ -133,6 +172,19 @@
       "url": "https://t.me/arabJournalism/252347",
       "handle": "arabJournalism",
       "post_id": 252347,
+      "source": "arabJournalism"
+    },
+    {
+      "name": "الحياة الجديدة",
+      "country": "PS",
+      "country_name": "فلسطين",
+      "flag": "🇵🇸",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/arabJournalism/252402",
+      "handle": "arabJournalism",
+      "post_id": 252402,
       "source": "arabJournalism"
     },
     {
@@ -227,6 +279,19 @@
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
+      "name": "العقل المشتت",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135343",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135343,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "الوطن",
       "country": "XX",
       "country_name": "غير محدد",
@@ -251,6 +316,32 @@
       "handle": "Arabic_News_Papers",
       "post_id": 135327,
       "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "علم النفس التحليلي",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135342",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135342,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "مانشيتات الصحف",
+      "country": "XX",
+      "country_name": "غير محدد",
+      "flag": "🌍",
+      "region": "other",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135341",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135341,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ],
   "countries": [
@@ -258,7 +349,7 @@
       "code": "EG",
       "name": "مصر",
       "flag": "🇪🇬",
-      "count": 3
+      "count": 6
     },
     {
       "code": "SA",
@@ -276,17 +367,20 @@
       "code": "PS",
       "name": "فلسطين",
       "flag": "🇵🇸",
-      "count": 1
+      "count": 2
     },
     {
       "code": "XX",
       "name": "غير محدد",
       "flag": "🌍",
-      "count": 8
+      "count": 11
     }
   ],
   "empty": false,
   "unmatched": [
+    "العقل المشتت",
+    "علم النفس التحليلي",
+    "مانشيتات الصحف",
     "Daily Tribbune",
     "أخبار الخليج",
     "البلاد",
@@ -297,6 +391,21 @@
     "العرب"
   ],
   "dropped": [
+    {
+      "name": "🇱🇧",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
+    {
+      "name": "🇯🇴",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
+    {
+      "name": "🇵🇸",
+      "reason": "flag_or_emoji_only",
+      "source": "arabJournalism"
+    },
     {
       "name": "🇪🇬",
       "reason": "flag_or_emoji_only",
@@ -358,19 +467,14 @@
       "source": "arabJournalism"
     },
     {
-      "name": "🇵🇸",
-      "reason": "flag_or_emoji_only",
-      "source": "arabJournalism"
-    },
-    {
-      "name": "🇯🇴",
-      "reason": "flag_or_emoji_only",
-      "source": "arabJournalism"
-    },
-    {
       "name": "25 Nov 2026",
       "reason": "bare_date",
       "source": "arabJournalism"
+    },
+    {
+      "name": "😄😁😄  صحف لبنان  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
       "name": "😄😁😄  صحف مصر  😄😁😁",
@@ -475,11 +579,6 @@
     {
       "name": "1375.pdf",
       "reason": "empty",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف لبنان  😄😁😁",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     },
     {
