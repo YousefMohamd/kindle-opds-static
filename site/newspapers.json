@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-28",
-  "generated_at": "2026-11-28T13:24:10.824688+00:00",
+  "generated_at": "2026-11-28T13:44:22.778816+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 38,
+      "entries": 40,
       "detail": ""
     },
     {
