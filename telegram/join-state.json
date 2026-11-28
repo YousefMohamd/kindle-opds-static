@@ -555,19 +555,19 @@
       "folder": null
     },
     "ahn2323": {
-      "status": "pending",
-      "joined_at": null,
+      "status": "joined",
+      "joined_at": "2026-11-28T19:20:12.510165+00:00",
       "fail_reason": null,
       "flood_wait_seconds": null,
-      "attempts": 0,
-      "folder": null
+      "attempts": 1,
+      "folder": "added"
     },
     "alanbyawardmsr": {
-      "status": "pending",
+      "status": "failed",
       "joined_at": null,
-      "fail_reason": null,
+      "fail_reason": "join failed: The authorization key (session file) was used under two different IP addresses simultaneously, and can no longer be used. Use the same session exclusively, or use different sessions (caused by JoinChannelRequest)",
       "flood_wait_seconds": null,
-      "attempts": 0,
+      "attempts": 1,
       "folder": null
     },
     "almaktbhh": {
