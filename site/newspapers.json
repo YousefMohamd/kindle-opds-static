@@ -1,7 +1,7 @@
 {
   "version": 2,
   "date": "2026-11-28",
-  "generated_at": "2026-11-28T11:04:23.971469+00:00",
+  "generated_at": "2026-11-28T12:04:15.310673+00:00",
   "sources": [
     {
       "key": "arabJournalism",
@@ -16,7 +16,7 @@
       "label": "الصحف اليومية - م.محمد",
       "status": "ok",
       "posts_seen": 300,
-      "entries": 29,
+      "entries": 32,
       "detail": ""
     },
     {
@@ -422,6 +422,45 @@
       "source": "arabJournalism"
     },
     {
+      "name": "الدستور",
+      "country": "JO",
+      "country_name": "الأردن",
+      "flag": "🇯🇴",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135356",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135356,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الرأي",
+      "country": "JO",
+      "country_name": "الأردن",
+      "flag": "🇯🇴",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135355",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135355,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
+      "name": "الغد",
+      "country": "JO",
+      "country_name": "الأردن",
+      "flag": "🇯🇴",
+      "region": "arab",
+      "edition": "morning",
+      "date": "2026-11-28",
+      "url": "https://t.me/Arabic_News_Papers/135354",
+      "handle": "Arabic_News_Papers",
+      "post_id": 135354,
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "القدس",
       "country": "PS",
       "country_name": "فلسطين",
@@ -687,6 +726,12 @@
       "count": 3
     },
     {
+      "code": "JO",
+      "name": "الأردن",
+      "flag": "🇯🇴",
+      "count": 3
+    },
+    {
       "code": "PS",
       "name": "فلسطين",
       "flag": "🇵🇸",
@@ -803,6 +848,11 @@
       "source": "arabJournalism"
     },
     {
+      "name": "😄😁😄  صحف الاردن  😄😁😁",
+      "reason": "header",
+      "source": "joinchat/VGPv_tnlgUJlNjdl"
+    },
+    {
       "name": "😄😁😄  صحف فلسطين  😄😁😁",
       "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
@@ -910,11 +960,6 @@
     {
       "name": "1375.pdf",
       "reason": "empty",
-      "source": "joinchat/VGPv_tnlgUJlNjdl"
-    },
-    {
-      "name": "😄😁😄  صحف الاردن  😄😁😁",
-      "reason": "header",
       "source": "joinchat/VGPv_tnlgUJlNjdl"
     }
   ]
