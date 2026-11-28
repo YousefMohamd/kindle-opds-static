@@ -102,6 +102,14 @@ jobs:
           done
           test -s flags.json || { echo "::error::flags:all fetch failed after 3 attempts — refusing an unfiltered export"; exit 1; }
           tbi export-static --db index.db --out ../site/telegram.new --report index-report.md --flags-json flags.json
+          # Static search index (D1 root-fix step 2): two-tier JSON
+          # index the website reads when D1 is exhausted — same seed
+          # DB, same flags file, built into the same staging dir so
+          # it publishes atomically with the shards. Fails the run
+          # on error (an unbuilt index must not silently publish a
+          # stale one — the old search/ stays live on failure).
+          tbi build-search-index --db index.db --out ../site/telegram.new/search --flags-json flags.json
+          test -s ../site/telegram.new/search/manifest.json || { echo "::error::search index manifest missing"; exit 1; }
           # Job default cwd is telegram/ (see defaults above), so newest
           # needs PYTHONPATH=.. to find the telegram package at repo root.
           # Same newest.json protection layer as telegram-sync: RETRY
